@@ -6,6 +6,8 @@
  * diverge between modules. Side-effect-free data module safe for esbuild IIFE
  * bundling and tree-shaking; consumers must read limits, never write them.
  */
+// CHANGELOG:
+// - Sprint 1: Created numeric GL enum table as dependency-graph leaf (M1 scaffold).
 /** gl-constants: single source of truth numeric GL enum table. Dependency-graph leaf: zero imports, pure const exports. */
 export const POINTS = 0x0000;
 export const LINES = 0x0001;

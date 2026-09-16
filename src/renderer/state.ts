@@ -4,6 +4,8 @@
  * Owns no pixel memory and never touches the error queue — violations are
  * reported to the caller as return codes.
  */
+// CHANGELOG:
+// - Sprint 1: Created GLState capability store with spec-exact defaults and validation.
 import {
   BLEND,
   DEPTH_TEST,

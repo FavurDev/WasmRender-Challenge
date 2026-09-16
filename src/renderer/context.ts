@@ -1,6 +1,8 @@
 /**
  * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, error queue.
  */
+// CHANGELOG:
+// - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError } from "./errors";

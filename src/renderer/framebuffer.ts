@@ -6,6 +6,8 @@
  * fill loops. Color layout matches 2D ImageData RGBA order so presentation
  * needs no conversion.
  */
+// CHANGELOG:
+// - Sprint 1: Created framebuffer triple with masked clear, readPixels, and putImageData presentation.
 import { COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
 import { OutOfMemoryError } from './errors';
 

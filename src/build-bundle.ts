@@ -1,4 +1,6 @@
 /** Build-time only: esbuild IIFE bundle + SOW-REQ-013 gates. Never imported by runtime code. */
+// CHANGELOG:
+// - Sprint 1: Created esbuild IIFE bundle script with 800 KB and no-require gates.
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, statSync } from "node:fs";
 

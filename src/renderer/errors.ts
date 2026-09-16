@@ -1,6 +1,8 @@
 /**
  * @fileoverview FIFO error-code queue and named diagnostic types.
  */
+// CHANGELOG:
+// - Sprint 1: Created FIFO error queue (cap 8) and named diagnostic error classes.
 import { NO_ERROR } from "./gl-constants";
 
 /** Maximum entries retained in the error queue. */
