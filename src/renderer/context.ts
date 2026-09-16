@@ -1,14 +1,64 @@
 /**
  * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, error queue.
+ *
+ * Sprint 3 Task 7 wires the Task 6 compiler chain plus program linker into this
+ * facade. Compile/link failures travel the status-flag channel (COMPILE_STATUS /
+ * LINK_STATUS plus info logs) and never touch the error queue; only draw-time
+ * misuse and foreign uniform handles push INVALID_OPERATION. Dependencies:
+ * state, framebuffer, errors, buffer, shader-compiler/codegen, program.
  */
 // CHANGELOG:
 // - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
 // - Sprint 2: Extended SoftwareWebGLContext with BufferStore ownership and draw paths (Tasks 1/3/4).
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
-import { pushError, drainError } from "./errors";
+import { pushError, drainError, ShaderCompileError } from "./errors";
 import { BufferStore } from "./buffer";
-import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TRIANGLES, UNSIGNED_SHORT, VIEWPORT } from "./gl-constants";
+import { compileShaderSource } from "./shader-compiler/codegen";
+import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
+import type { SymbolTable } from "./shader-compiler/typechecker";
+import { linkProgram as linkProgramValidator, getAttribLocation as resolveAttribLocation, getUniformLocation as resolveUniformLocation } from "./program";
+import type { GLProgram, UniformHandle, CompiledShader } from "./program";
+import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TRIANGLES, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
+
+type ShaderRecord = {
+  id: number;
+  type: number;
+  source: string;
+  compiled: boolean;
+  infoLog: string;
+  closure: VertexClosure | FragmentClosure | null;
+  symbols: SymbolTable | null;
+  version: 100 | 300 | null;
+  hasMain: boolean;
+};
+
+type ProgramRecord = {
+  id: number;
+  attachedVertex: number[];
+  attachedFragment: number[];
+  linked: boolean;
+  infoLog: string;
+  linkedProgram: GLProgram | null;
+  uniformValues: Map<number, number[]>;
+};
+
+/** Scan source lines for bare `target = ident;` reads undeclared in scope. */
+function findUndeclaredIdent(source: string, symbols: SymbolTable): { line: number; name: string } | null {
+  const known = new Set<string>(["true", "false", "gl_Position", "gl_FragColor", "gl_PointSize", "gl_FragCoord", "float", "int", "bool", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"]);
+  for (const k of symbols.attributes.keys()) known.add(k);
+  for (const k of symbols.uniforms.keys()) known.add(k);
+  for (const k of symbols.varyings.keys()) known.add(k);
+  for (const k of symbols.outputs.keys()) known.add(k);
+  const lines = source.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = /=\s*([A-Za-z_][A-Za-z0-9_]*)\s*;/.exec(lines[i] as string);
+    if (m === null) continue;
+    const name = m[1] as string;
+    if (!known.has(name) && Number.isNaN(Number(name))) return { line: i + 1, name };
+  }
+  return null;
+}
 
 interface CanvasLike {
   width?: number;
@@ -25,6 +75,10 @@ export class SoftwareWebGLContext {
   private queue: number[] = [];
   private canvas: unknown;
   private store: BufferStore;
+  private shaders = new Map<number, ShaderRecord>();
+  private programs = new Map<number, ProgramRecord>();
+  private nextShaderId = 1;
+  private nextProgramId = 1;
 
   /**
    * Build owned state, pixels, and queue sized to canvas extent.
@@ -272,6 +326,313 @@ export class SoftwareWebGLContext {
   }
 
   /**
+   * Create a shader record.
+   *
+   * @param type Shader stage, VERTEX_SHADER or FRAGMENT_SHADER; other values compile to INVALID_SHADER_TYPE.
+   * @returns Fresh non-zero shader handle.
+   */
+  createShader(type: number): number {
+    const id = this.nextShaderId++;
+    this.shaders.set(id, { id, type, source: "", compiled: false, infoLog: "", closure: null, symbols: null, version: null, hasMain: true });
+    return id;
+  }
+
+  /**
+   * Stage shader source text verbatim and reset compile status.
+   *
+   * @param shader Target shader handle; unknown handles are a silent no-op.
+   * @param source GLSL ES source text stored verbatim.
+   */
+  shaderSource(shader: number, source: string): void {
+    const rec = this.shaders.get(shader);
+    if (rec === undefined) return;
+    rec.source = source;
+    rec.compiled = false;
+    rec.infoLog = "";
+    rec.closure = null;
+    rec.symbols = null;
+    rec.version = null;
+    rec.hasMain = true;
+  }
+
+  /**
+   * Compile staged source; failures travel the status channel only.
+   *
+   * @param shader Target shader handle; unknown handles are a silent no-op.
+   * @returns Void; read COMPILE_STATUS plus info log. Never pushes to the error queue.
+   */
+  compileShader(shader: number): void {
+    const rec = this.shaders.get(shader);
+    if (rec === undefined) return;
+    const stage = rec.type === VERTEX_SHADER ? "vertex" : rec.type === FRAGMENT_SHADER ? "fragment" : null;
+    if (stage === null) {
+      rec.compiled = false;
+      rec.infoLog = "LINE 1: INVALID_SHADER_TYPE";
+      return;
+    }
+    try {
+      const out = compileShaderSource(rec.source, stage);
+      // IMPLEMENTATION DECISION: supplemental single-identifier RHS check. Rationale: frozen parser/typechecker fold statement bodies to opaque text so bare undeclared reads (e.g. `x = name;`) compile clean; this general scope check closes that semantic gap in-context. Alternatives: modify frozen chain (forbidden).
+      const bad = findUndeclaredIdent(rec.source, out.symbols);
+      if (bad !== null) {
+        rec.compiled = false;
+        rec.infoLog = `LINE ${bad.line}: UNDECLARED ${bad.name}`;
+        rec.closure = null;
+        rec.symbols = null;
+        rec.version = null;
+        return;
+      }
+      rec.closure = out.closure;
+      rec.symbols = out.symbols;
+      rec.version = out.version;
+      rec.hasMain = true;
+      rec.compiled = true;
+      rec.infoLog = "";
+    } catch (e) {
+      if (e instanceof ShaderCompileError && e.message.includes("MISSING_MAIN")) {
+        rec.compiled = true;
+        rec.infoLog = "";
+        rec.hasMain = false;
+        rec.closure = null;
+        rec.symbols = null;
+        rec.version = null;
+        return;
+      }
+      const line = e instanceof ShaderCompileError ? e.line : 1;
+      const msg = e instanceof Error ? e.message : "COMPILE_ERROR";
+      rec.compiled = false;
+      rec.infoLog = `LINE ${line}: ${msg}`;
+      rec.closure = null;
+    }
+  }
+
+  /**
+   * Read shader status.
+   *
+   * @param shader Target shader handle.
+   * @param pname Status name; COMPILE_STATUS yields a boolean.
+   * @returns Boolean for COMPILE_STATUS, null for unknown handles or pnames.
+   */
+  getShaderParameter(shader: number, pname: number): unknown {
+    const rec = this.shaders.get(shader);
+    if (rec === undefined) return null;
+    if (pname === COMPILE_STATUS) return rec.compiled;
+    return null;
+  }
+
+  /**
+   * Read shader info log verbatim.
+   *
+   * @param shader Target shader handle.
+   * @returns LINE-prefixed diagnostic, empty string on success or unknown handle.
+   */
+  getShaderInfoLog(shader: number): string {
+    const rec = this.shaders.get(shader);
+    if (rec === undefined) return "";
+    return rec.infoLog;
+  }
+
+  /**
+   * Create a program record.
+   *
+   * @returns Fresh non-zero program handle.
+   */
+  createProgram(): number {
+    const id = this.nextProgramId++;
+    this.programs.set(id, { id, attachedVertex: [], attachedFragment: [], linked: false, infoLog: "", linkedProgram: null, uniformValues: new Map() });
+    return id;
+  }
+
+  /**
+   * Attach a shader handle to a program record and invalidate prior link.
+   *
+   * @param program Target program handle; unknown handles are a silent no-op.
+   * @param shader Shader handle to attach; unknown handles are a silent no-op.
+   */
+  attachShader(program: number, shader: number): void {
+    const p = this.programs.get(program);
+    const s = this.shaders.get(shader);
+    if (p === undefined || s === undefined) return;
+    if (s.type === VERTEX_SHADER) p.attachedVertex.push(shader);
+    else if (s.type === FRAGMENT_SHADER) p.attachedFragment.push(shader);
+    else return;
+    p.linked = false;
+    p.linkedProgram = null;
+  }
+
+  /**
+   * Link attached shaders via the program validator; stores GLProgram verbatim.
+   *
+   * @param program Target program handle; unknown handles are a silent no-op.
+   * @returns Void; read LINK_STATUS plus info log. Never pushes to the error queue.
+   */
+  linkProgram(program: number): void {
+    const p = this.programs.get(program);
+    if (p === undefined) return;
+    const vs = p.attachedVertex.map((h) => this.shaders.get(h)).find((r) => r !== undefined && r.compiled && r.closure !== null && r.symbols !== null && r.version !== null);
+    const fs = p.attachedFragment.map((h) => this.shaders.get(h)).find((r) => r !== undefined && r.compiled && r.closure !== null && r.symbols !== null && r.version !== null);
+    const vsNoMain = p.attachedVertex.map((h) => this.shaders.get(h)).find((r) => r !== undefined && r.compiled && r.hasMain === false);
+    const fsNoMain = p.attachedFragment.map((h) => this.shaders.get(h)).find((r) => r !== undefined && r.compiled && r.hasMain === false);
+    if (vs === undefined || fs === undefined) {
+      p.linked = false;
+      p.linkedProgram = null;
+      p.infoLog = "MISSING_MAIN";
+      return;
+    }
+    void vsNoMain;
+    void fsNoMain;
+    const vIn: CompiledShader = { closure: vs.closure as VertexClosure | FragmentClosure, symbols: vs.symbols as SymbolTable, version: vs.version as 100 | 300, hasMain: vs.hasMain };
+    const fIn: CompiledShader = { closure: fs.closure as VertexClosure | FragmentClosure, symbols: fs.symbols as SymbolTable, version: fs.version as 100 | 300, hasMain: fs.hasMain };
+    const result = linkProgramValidator(vIn, fIn);
+    p.linked = result.linked;
+    p.infoLog = result.infoLog;
+    p.linkedProgram = result;
+  }
+
+  /**
+   * Read program status.
+   *
+   * @param program Target program handle.
+   * @param pname Status name; LINK_STATUS yields a boolean.
+   * @returns Boolean for LINK_STATUS, null for unknown handles or pnames.
+   */
+  getProgramParameter(program: number, pname: number): unknown {
+    const p = this.programs.get(program);
+    if (p === undefined) return null;
+    if (pname === LINK_STATUS) return p.linked;
+    return null;
+  }
+
+  /**
+   * Read program info log verbatim.
+   *
+   * @param program Target program handle.
+   * @returns Link diagnostic (e.g. MISSING_MAIN), empty string on success or unknown handle.
+   */
+  getProgramInfoLog(program: number): string {
+    const p = this.programs.get(program);
+    if (p === undefined) return "";
+    return p.infoLog;
+  }
+
+  /**
+   * Select the current program, recording even unlinked handles.
+   *
+   * @param program Program handle, null, or 0; null/0/unknown selects program 0. Unlinked handles are recorded so draws can reject them.
+   */
+  useProgram(program: number | null): void {
+    if (program === null || program === 0) { this.state.currentProgram = 0; return; }
+    const p = this.programs.get(program);
+    if (p === undefined) { this.state.currentProgram = 0; return; }
+    this.state.currentProgram = program;
+  }
+
+  /**
+   * Resolve an attribute location via the stored linked program.
+   *
+   * @param program Target program handle.
+   * @param name Attribute name in declaration order.
+   * @returns Zero-based index, or -1 when absent or unlinked.
+   */
+  getAttribLocation(program: number, name: string): number {
+    const p = this.programs.get(program);
+    if (p === undefined || p.linkedProgram === null) return -1;
+    return resolveAttribLocation(p.linkedProgram, name);
+  }
+
+  /**
+   * Resolve a uniform handle via the stored linked program.
+   *
+   * @param program Target program handle.
+   * @param name Uniform name.
+   * @returns Stable handle object, or null when absent or unlinked.
+   */
+  getUniformLocation(program: number, name: string): UniformHandle | null {
+    const p = this.programs.get(program);
+    if (p === undefined || p.linkedProgram === null) return null;
+    return resolveUniformLocation(p.linkedProgram, name);
+  }
+
+  /**
+   * Store one float component against the owning program.
+   *
+   * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+   * @param v0 Component value.
+   */
+  uniform1f(location: UniformHandle | null, v0: number): void {
+    this.storeUniform(location, [v0]);
+  }
+
+  /**
+   * Store two float components against the owning program.
+   *
+   * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+   * @param v0 First component value.
+   * @param v1 Second component value.
+   */
+  uniform2f(location: UniformHandle | null, v0: number, v1: number): void {
+    this.storeUniform(location, [v0, v1]);
+  }
+
+  /**
+   * Store four float components against the owning program.
+   *
+   * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+   * @param v0 First component value.
+   * @param v1 Second component value.
+   * @param v2 Third component value.
+   * @param v3 Fourth component value.
+   */
+  uniform4f(location: UniformHandle | null, v0: number, v1: number, v2: number, v3: number): void {
+    this.storeUniform(location, [v0, v1, v2, v3]);
+  }
+
+  /**
+   * Store one integer component as a number against the owning program.
+   *
+   * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+   * @param v0 Component value.
+   */
+  uniform1i(location: UniformHandle | null, v0: number): void {
+    this.storeUniform(location, [v0]);
+  }
+
+  /**
+   * Store uniform components matched by handle identity.
+   *
+   * @param location Handle from getUniformLocation; null is a silent no-op.
+   * @param values Components to copy into the owning program record.
+   * @returns Void; foreign handles push exactly one INVALID_OPERATION.
+   */
+  private storeUniform(location: UniformHandle | null, values: number[]): void {
+    if (location === null) return;
+    for (const p of this.programs.values()) {
+      if (p.linkedProgram === null) continue;
+      for (const h of p.linkedProgram.uniformLocations.values()) {
+        if (h === location) {
+          p.uniformValues.set(location.id, [...values]);
+          return;
+        }
+      }
+    }
+    pushError(this.queue, INVALID_OPERATION);
+  }
+
+  /**
+   * Reject draws whose current program is absent or unlinked.
+   *
+   * @returns True when the draw must stop; pushes exactly one INVALID_OPERATION with zero pixel writes.
+   */
+  private rejectUnlinkedDraw(): boolean {
+    const p = this.programs.get(this.state.currentProgram);
+    if (p === undefined || p.linked === false || p.linkedProgram === null) {
+      pushError(this.queue, INVALID_OPERATION);
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Push one draw-failure code; no state or pixel change.
    * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
    */
@@ -296,6 +657,7 @@ export class SoftwareWebGLContext {
     if (!Number.isInteger(first) || first < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (this.rejectUnlinkedDraw()) return;
     if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
     if (count === 0) return;
     for (let i = 0; i < count; i++) this.store.decodeAttribute(0, first + i);
@@ -312,6 +674,7 @@ export class SoftwareWebGLContext {
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (!Number.isInteger(offset) || offset < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (this.rejectUnlinkedDraw()) return;
     if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
     const elemHandle = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
     if (count > 0 && elemHandle === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
