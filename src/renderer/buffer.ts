@@ -1,6 +1,8 @@
 /**
  * @fileoverview BufferStore owning buffer lifecycle and vertex attribute decoding.
  */
+// CHANGELOG:
+// - Sprint 2: Created BufferStore owning buffer lifecycle and vertex attribute decoding.
 import { ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER, FLOAT, INVALID_ENUM, INVALID_VALUE, MAX_VERTEX_ATTRIBS } from "./gl-constants";
 
 interface AttribSlot {

@@ -8,6 +8,7 @@
  */
 // CHANGELOG:
 // - Sprint 1: Created framebuffer triple with masked clear, readPixels, and putImageData presentation.
+// - Sprint 2: Added scissor confinement param to clear (Task 5).
 import { COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
 import { OutOfMemoryError } from './errors';
 

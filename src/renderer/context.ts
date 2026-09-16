@@ -3,6 +3,7 @@
  */
 // CHANGELOG:
 // - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
+// - Sprint 2: Extended SoftwareWebGLContext with BufferStore ownership and draw paths (Tasks 1/3/4).
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError } from "./errors";

@@ -26,23 +26,52 @@ var __swgl = (() => {
   });
 
   // src/renderer/gl-constants.ts
+  var TRIANGLES = 4;
   var ZERO = 0;
   var ONE = 1;
   var FUNC_ADD = 32774;
+  var BLEND_EQUATION = 32777;
+  var BLEND_DST_RGB = 32968;
+  var BLEND_SRC_RGB = 32969;
   var LESS = 513;
   var BLEND = 3042;
   var DEPTH_TEST = 2929;
   var STENCIL_TEST = 2960;
   var SCISSOR_TEST = 3089;
+  var CULL_FACE = 2884;
+  var UNSIGNED_SHORT = 5123;
+  var FLOAT = 5126;
   var COLOR_BUFFER_BIT = 16384;
   var DEPTH_BUFFER_BIT = 256;
   var STENCIL_BUFFER_BIT = 1024;
+  var ARRAY_BUFFER = 34962;
+  var ELEMENT_ARRAY_BUFFER = 34963;
   var TEXTURE0 = 33984;
   var NO_ERROR = 0;
   var INVALID_ENUM = 1280;
   var INVALID_VALUE = 1281;
+  var INVALID_OPERATION = 1282;
   var MAX_TEXTURE_SIZE = 4096;
   var MAX_VIEWPORT_DIMS = [4096, 4096];
+  var MAX_CUBE_MAP_TEXTURE_SIZE = 1024;
+  var MAX_VERTEX_ATTRIBS = 16;
+  var MAX_TEXTURE_IMAGE_UNITS = 16;
+  var MAX_RENDERBUFFER_SIZE = 4096;
+  var COLOR_CLEAR_VALUE = 2816;
+  var DEPTH_WRITEMASK = 2930;
+  var DEPTH_CLEAR_VALUE = 2931;
+  var DEPTH_FUNC = 2932;
+  var STENCIL_CLEAR_VALUE = 2961;
+  var STENCIL_WRITEMASK = 2968;
+  var VIEWPORT = 2978;
+  var SCISSOR_BOX = 3088;
+  var COLOR_WRITEMASK = 3106;
+  var MAX_TEXTURE_SIZE_PNAME = 3379;
+  var MAX_VIEWPORT_DIMS_PNAME = 3386;
+  var MAX_CUBE_MAP_TEXTURE_SIZE_PNAME = 34076;
+  var MAX_RENDERBUFFER_SIZE_PNAME = 34024;
+  var MAX_VERTEX_ATTRIBS_PNAME = 34921;
+  var MAX_TEXTURE_IMAGE_UNITS_PNAME = 34930;
 
   // src/renderer/state.ts
   var GLState = class {
@@ -59,6 +88,8 @@ var __swgl = (() => {
     blendDstRGB = ZERO;
     blendEquation = FUNC_ADD;
     scissorTest = false;
+    cullFace = false;
+    stencilMask = 255;
     scissorBox;
     viewport;
     activeTexture = TEXTURE0;
@@ -95,6 +126,9 @@ var __swgl = (() => {
         case SCISSOR_TEST:
           this.scissorTest = true;
           return null;
+        case CULL_FACE:
+          this.cullFace = true;
+          return null;
         default:
           return INVALID_ENUM;
       }
@@ -119,9 +153,101 @@ var __swgl = (() => {
         case SCISSOR_TEST:
           this.scissorTest = false;
           return null;
+        case CULL_FACE:
+          this.cullFace = false;
+          return null;
         default:
           return INVALID_ENUM;
       }
+    }
+    /**
+     * Report the current flag for a capability, reporting unknown enums to the caller.
+     *
+     * @param cap Capability code.
+     * @returns Flag or error code.
+     */
+    isEnabled(cap) {
+      switch (cap) {
+        case BLEND:
+          return this.blendEnabled;
+        case DEPTH_TEST:
+          return this.depthTest;
+        case STENCIL_TEST:
+          return this.stencilTest;
+        case SCISSOR_TEST:
+          return this.scissorTest;
+        case CULL_FACE:
+          return this.cullFace;
+        default:
+          return INVALID_ENUM;
+      }
+    }
+    /**
+     * Replace the scissor box; only negative size is rejected.
+     *
+     * @param x Left origin (negative accepted).
+     * @param y Bottom origin (negative accepted).
+     * @param w Width; negative rejected, zero accepted.
+     * @param h Height; negative rejected, zero accepted.
+     * @returns Error code or null on success.
+     */
+    setScissor(x, y, w, h) {
+      if (w < 0 || h < 0) return INVALID_VALUE;
+      this.scissorBox = [x, y, w, h];
+      return null;
+    }
+    /**
+     * Stage depth write mask.
+     *
+     * @param flag Whether depth writes are enabled.
+     * @returns Null always.
+     */
+    setDepthMask(flag) {
+      this.depthMask = flag;
+      return null;
+    }
+    /**
+     * Stage color write mask.
+     *
+     * @param r Whether the red channel is writable.
+     * @param g Whether the green channel is writable.
+     * @param b Whether the blue channel is writable.
+     * @param a Whether the alpha channel is writable.
+     * @returns Null always.
+     */
+    setColorMask(r, g, b, a) {
+      this.colorMask = [r, g, b, a];
+      return null;
+    }
+    /**
+     * Stage stencil write mask.
+     *
+     * @param mask Stencil write mask value.
+     * @returns Null always.
+     */
+    setStencilMask(mask) {
+      this.stencilMask = mask;
+      return null;
+    }
+    /**
+     * Stage clear depth.
+     *
+     * @param v Depth clear value.
+     * @returns Null always.
+     */
+    setClearDepth(v) {
+      this.clearDepth = v;
+      return null;
+    }
+    /**
+     * Stage clear stencil.
+     *
+     * @param v Stencil clear value.
+     * @returns Null always.
+     */
+    setClearStencil(v) {
+      this.clearStencil = v;
+      return null;
     }
     /**
      * Replace the viewport box, reporting negative origin or size to the caller.
@@ -271,32 +397,79 @@ var __swgl = (() => {
      * Masked clear with exact quantization.
      *
      * @param mask Bitwise OR of COLOR/DEPTH/STENCIL bits; zero mask writes nothing, unknown bits ignored.
+     * @param scissor Optional [x, y, w, h] confinement box; omitted clears the full frame, out-of-range edges are clamped, zero-area writes nothing.
      * @returns Nothing; selected planes filled honoring write masks.
      */
-    clear(mask) {
+    clear(mask, scissor) {
       const rb = Math.round(clamp01(this.ccR) * 255);
       const gb = Math.round(clamp01(this.ccG) * 255);
       const bb = Math.round(clamp01(this.ccB) * 255);
       const ab = Math.round(clamp01(this.ccA) * 255);
       const dv = clamp01(this.cd);
       const sv = this.cs & 255;
+      let x0 = 0;
+      let y0 = 0;
+      let x1 = this.width;
+      let y1 = this.height;
+      if (scissor !== void 0) {
+        const sx = Math.floor(scissor[0]);
+        const sy = Math.floor(scissor[1]);
+        const sw = Math.floor(scissor[2]);
+        const sh = Math.floor(scissor[3]);
+        x0 = Math.max(0, sx);
+        y0 = Math.max(0, sy);
+        x1 = Math.min(this.width, sx + sw);
+        y1 = Math.min(this.height, sy + sh);
+        if (x1 <= x0 || y1 <= y0) return;
+      }
+      const full = x0 === 0 && y0 === 0 && x1 === this.width && y1 === this.height;
       if ((mask & COLOR_BUFFER_BIT) !== 0) {
         const c = this.color;
-        for (let i = 0; i < c.length; i += 4) {
-          if (this.cmR) c[i] = rb;
-          if (this.cmG) c[i + 1] = gb;
-          if (this.cmB) c[i + 2] = bb;
-          if (this.cmA) c[i + 3] = ab;
+        if (full) {
+          for (let i = 0; i < c.length; i += 4) {
+            if (this.cmR) c[i] = rb;
+            if (this.cmG) c[i + 1] = gb;
+            if (this.cmB) c[i + 2] = bb;
+            if (this.cmA) c[i + 3] = ab;
+          }
+        } else {
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const i = (y * this.width + x) * 4;
+              if (this.cmR) c[i] = rb;
+              if (this.cmG) c[i + 1] = gb;
+              if (this.cmB) c[i + 2] = bb;
+              if (this.cmA) c[i + 3] = ab;
+            }
+          }
         }
       }
       if ((mask & DEPTH_BUFFER_BIT) !== 0 && this.dm) {
-        this.depth.fill(dv);
+        if (full) {
+          this.depth.fill(dv);
+        } else {
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              this.depth[y * this.width + x] = dv;
+            }
+          }
+        }
       }
       if ((mask & STENCIL_BUFFER_BIT) !== 0) {
         const inv = ~this.sm & 255;
         const s = this.stencil;
-        for (let i = 0; i < s.length; i++) {
-          s[i] = s[i] & inv | sv & this.sm;
+        const val = sv & this.sm;
+        if (full) {
+          for (let i = 0; i < s.length; i++) {
+            s[i] = s[i] & inv | val;
+          }
+        } else {
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const i = y * this.width + x;
+              s[i] = s[i] & inv | val;
+            }
+          }
         }
       }
     }
@@ -378,16 +551,187 @@ var __swgl = (() => {
     }
   };
 
+  // src/renderer/buffer.ts
+  var BufferStore = class {
+    nextHandle = 1;
+    liveHandles = /* @__PURE__ */ new Set();
+    buffers = /* @__PURE__ */ new Map();
+    boundArrayBuffer = 0;
+    boundElementArrayBuffer = 0;
+    attribPointers = [];
+    attribEnabled = [];
+    constructor() {
+      for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+        this.attribPointers.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, snapshot: 0, hasSnapshot: false });
+        this.attribEnabled.push(false);
+      }
+    }
+    /** Issue a fresh never-reused handle. @returns Fresh handle. */
+    createBuffer() {
+      const h = this.nextHandle;
+      this.liveHandles.add(h);
+      this.buffers.set(h, { bytes: new Uint8Array(0), usage: 0 });
+      this.nextHandle += 1;
+      return h;
+    }
+    /**
+     * Bind live buffer or unbind to a target.
+     * @param target Bind target enum. @param buffer Handle, null, or 0.
+     * @returns Error code or null on success.
+     */
+    bindBuffer(target, buffer) {
+      if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER) return INVALID_ENUM;
+      if (buffer === null || buffer === 0) {
+        if (target === ARRAY_BUFFER) this.boundArrayBuffer = 0;
+        else this.boundElementArrayBuffer = 0;
+        return null;
+      }
+      if (!this.liveHandles.has(buffer)) {
+        if (target === ARRAY_BUFFER) this.boundArrayBuffer = 0;
+        else this.boundElementArrayBuffer = 0;
+        return null;
+      }
+      if (target === ARRAY_BUFFER) this.boundArrayBuffer = buffer;
+      else this.boundElementArrayBuffer = buffer;
+      return null;
+    }
+    /**
+     * Copy source view bytes into bound buffer.
+     * @param target Bind target. @param data Source view bytes. @param usage Usage hint.
+     * @returns Error code or null on success.
+     */
+    bufferData(target, data, usage) {
+      if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER) return INVALID_ENUM;
+      const bound = target === ARRAY_BUFFER ? this.boundArrayBuffer : this.boundElementArrayBuffer;
+      if (bound === 0) return INVALID_VALUE;
+      const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      const copy = new Uint8Array(src.length);
+      for (let i = 0; i < src.length; i++) copy[i] = src[i];
+      this.buffers.set(bound, { bytes: copy, usage });
+      return null;
+    }
+    /**
+     * Release handle, clear bindings and snapshots referencing it.
+     * @param buffer Handle to release.
+     */
+    deleteBuffer(buffer) {
+      if (!this.liveHandles.has(buffer)) return;
+      this.liveHandles.delete(buffer);
+      this.buffers.delete(buffer);
+      if (this.boundArrayBuffer === buffer) this.boundArrayBuffer = 0;
+      if (this.boundElementArrayBuffer === buffer) this.boundElementArrayBuffer = 0;
+      for (const slot of this.attribPointers) {
+        if (slot.hasSnapshot && slot.snapshot === buffer) {
+          slot.hasSnapshot = false;
+          slot.snapshot = 0;
+        }
+      }
+    }
+    /**
+     * Record per-attribute fetch description.
+     *
+     * @param index Attribute slot ordinal.
+     * @param size Components per vertex.
+     * @param type Component enum, FLOAT only.
+     * @param normalized Normalization flag.
+     * @param stride Byte stride, zero means tightly packed.
+     * @param offset Byte offset into bound data.
+     * @returns Error code or null on success.
+     */
+    vertexAttribPointer(index, size, type, normalized, stride, offset) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return INVALID_VALUE;
+      if (type !== FLOAT) return INVALID_ENUM;
+      if (!Number.isInteger(size) || size < 1 || size > 4) return INVALID_VALUE;
+      if (!Number.isInteger(stride) || stride < 0) return INVALID_VALUE;
+      if (!Number.isInteger(offset) || offset < 0) return INVALID_VALUE;
+      if (typeof normalized !== "boolean") return INVALID_VALUE;
+      const effectiveStride = stride === 0 ? size * 4 : stride;
+      const slot = this.attribPointers[index];
+      slot.size = size;
+      slot.type = type;
+      slot.normalized = normalized;
+      slot.stride = effectiveStride;
+      slot.offset = offset;
+      slot.snapshot = this.boundArrayBuffer;
+      slot.hasSnapshot = this.boundArrayBuffer !== 0;
+      return null;
+    }
+    /**
+     * Enable attribute array. @param index Attribute index. @returns Error code or null.
+     */
+    enableVertexAttribArray(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return INVALID_VALUE;
+      this.attribEnabled[index] = true;
+      return null;
+    }
+    /**
+     * Disable attribute array. @param index Attribute index. @returns Error code or null.
+     */
+    disableVertexAttribArray(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return INVALID_VALUE;
+      this.attribEnabled[index] = false;
+      return null;
+    }
+    /**
+     * Fetch one decoded vertex through stride/offset math.
+     * @param index Attribute index. @param vertexIndex Vertex ordinal.
+     * @returns Component list or null when unavailable.
+     */
+    decodeAttribute(index, vertexIndex) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return null;
+      const slot = this.attribPointers[index];
+      if (!slot.hasSnapshot || slot.snapshot === 0) return null;
+      if (!Number.isInteger(vertexIndex) || vertexIndex < 0) return null;
+      if (!this.liveHandles.has(slot.snapshot)) return null;
+      const rec = this.buffers.get(slot.snapshot);
+      if (!rec) return null;
+      const laneBase = slot.offset + vertexIndex * slot.stride;
+      if (laneBase < 0) return null;
+      const view = new DataView(rec.bytes.buffer, rec.bytes.byteOffset, rec.bytes.byteLength);
+      const out = [];
+      for (let k = 0; k < slot.size; k++) {
+        const addr = laneBase + k * 4;
+        if (addr + 4 > rec.bytes.length) return null;
+        out.push(view.getFloat32(addr, true));
+      }
+      return out;
+    }
+    /**
+     * Resolve bound handle for target.
+     * @param target Bind target. @returns Bound handle or 0.
+     */
+    getBoundBuffer(target) {
+      if (target === ARRAY_BUFFER) return this.boundArrayBuffer;
+      if (target === ELEMENT_ARRAY_BUFFER) return this.boundElementArrayBuffer;
+      return 0;
+    }
+    /**
+     * Read-only copy of stored bytes for a live handle.
+     * @param handle Buffer handle. @returns Byte copy or null when unavailable.
+     */
+    getBufferBytes(handle) {
+      if (!this.liveHandles.has(handle)) return null;
+      const rec = this.buffers.get(handle);
+      if (!rec) return null;
+      const copy = new Uint8Array(rec.bytes.length);
+      for (let i = 0; i < rec.bytes.length; i++) copy[i] = rec.bytes[i];
+      return copy;
+    }
+    /**
+     * Check handle liveness. @param handle Handle value. @returns True when live.
+     */
+    isLiveHandle(handle) {
+      return this.liveHandles.has(handle);
+    }
+  };
+
   // src/renderer/context.ts
-  var MAX_TEXTURE_SIZE_PNAME = 3379;
-  var VIEWPORT_PNAME = 2978;
-  var CLEAR_COLOR_PNAME = 2816;
-  var DEPTH_FUNC_PNAME = 2932;
   var SoftwareWebGLContext = class {
     state;
     fb;
     queue = [];
     canvas;
+    store;
     /**
      * Build owned state, pixels, and queue sized to canvas extent.
      * @param state Fresh capability store.
@@ -398,23 +742,64 @@ var __swgl = (() => {
       this.state = state;
       this.fb = fb;
       this.canvas = canvas;
+      this.store = new BufferStore();
     }
     /** Stage clear color on framebuffer. */
     clearColor(r, g, b, a) {
       this.state.clearColor = [r, g, b, a];
       this.fb.clearColor(r, g, b, a);
     }
-    /** Stage clear depth on framebuffer (fb-authoritative; GLState holds no depth-clear copy in Sprint 1 minimal scope). */
+    /** Stage clear depth on GLState and framebuffer. */
     clearDepth(v) {
+      this.state.setClearDepth(v);
       this.fb.clearDepth(v);
     }
-    /** Stage clear stencil on framebuffer (fb-authoritative; GLState holds no stencil-clear copy in Sprint 1 minimal scope). */
+    /** Stage clear stencil on GLState and framebuffer. */
     clearStencil(v) {
+      this.state.setClearStencil(v);
       this.fb.clearStencil(v);
     }
-    /** Run masked clear on framebuffer. */
+    /** Stage depth write mask on GLState and framebuffer. */
+    depthMask(flag) {
+      this.state.setDepthMask(flag);
+      this.fb.setDepthMask(flag);
+    }
+    /** Stage color write mask on GLState and framebuffer. */
+    colorMask(r, g, b, a) {
+      this.state.setColorMask(r, g, b, a);
+      this.fb.setColorMask(r, g, b, a);
+    }
+    /** Stage stencil write mask on GLState and framebuffer. */
+    stencilMask(mask) {
+      this.state.setStencilMask(mask);
+      this.fb.setStencilMask(mask);
+    }
+    /**
+     * Replace scissor box; negative size pushes one code with no state change.
+     * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
+     */
+    scissor(x, y, w, h) {
+      const code = this.state.setScissor(x, y, w, h);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /**
+     * Query capability flag; unknown enum returns false without queue change
+     * (the TDD unknown-enum case requires exactly one code total across the
+     * enable+isEnabled pair, with the single push owned by enable).
+     * @param cap Capability code. @returns Flag or false on rejection.
+     */
+    isEnabled(cap) {
+      const result = this.state.isEnabled(cap);
+      if (typeof result !== "boolean") return false;
+      return result;
+    }
+    /** Run masked clear on framebuffer, confined to scissor box when scissor test is enabled. */
     clear(mask) {
-      this.fb.clear(mask);
+      if (this.state.scissorTest) {
+        this.fb.clear(mask, this.state.scissorBox);
+      } else {
+        this.fb.clear(mask);
+      }
     }
     /**
      * Replace viewport box; negative values rejected with one code.
@@ -446,10 +831,29 @@ var __swgl = (() => {
      * @returns Value copy, limit, or null.
      */
     getParameter(pname) {
+      if (pname === BLEND) return this.state.blendEnabled;
+      if (pname === DEPTH_TEST) return this.state.depthTest;
+      if (pname === STENCIL_TEST) return this.state.stencilTest;
+      if (pname === SCISSOR_TEST) return this.state.scissorTest;
+      if (pname === CULL_FACE) return this.state.cullFace;
+      if (pname === COLOR_CLEAR_VALUE) return [...this.state.clearColor];
+      if (pname === DEPTH_CLEAR_VALUE) return this.state.clearDepth;
+      if (pname === STENCIL_CLEAR_VALUE) return this.state.clearStencil;
+      if (pname === COLOR_WRITEMASK) return [...this.state.colorMask];
+      if (pname === DEPTH_WRITEMASK) return this.state.depthMask;
+      if (pname === STENCIL_WRITEMASK) return this.state.stencilMask;
+      if (pname === VIEWPORT) return [...this.state.viewport];
+      if (pname === SCISSOR_BOX) return [...this.state.scissorBox];
+      if (pname === DEPTH_FUNC) return this.state.depthFunc;
+      if (pname === BLEND_SRC_RGB) return this.state.blendSrcRGB;
+      if (pname === BLEND_DST_RGB) return this.state.blendDstRGB;
+      if (pname === BLEND_EQUATION) return this.state.blendEquation;
       if (pname === MAX_TEXTURE_SIZE_PNAME) return MAX_TEXTURE_SIZE;
-      if (pname === VIEWPORT_PNAME) return [...this.state.viewport];
-      if (pname === CLEAR_COLOR_PNAME) return [...this.state.clearColor];
-      if (pname === DEPTH_FUNC_PNAME) return this.state.depthFunc;
+      if (pname === MAX_VIEWPORT_DIMS_PNAME) return [...MAX_VIEWPORT_DIMS];
+      if (pname === MAX_VERTEX_ATTRIBS_PNAME) return MAX_VERTEX_ATTRIBS;
+      if (pname === MAX_TEXTURE_IMAGE_UNITS_PNAME) return MAX_TEXTURE_IMAGE_UNITS;
+      if (pname === MAX_CUBE_MAP_TEXTURE_SIZE_PNAME) return MAX_CUBE_MAP_TEXTURE_SIZE;
+      if (pname === MAX_RENDERBUFFER_SIZE_PNAME) return MAX_RENDERBUFFER_SIZE;
       pushError(this.queue, INVALID_ENUM);
       return null;
     }
@@ -503,6 +907,143 @@ var __swgl = (() => {
         }
       }
     }
+    /** Create a buffer handle via owned store. @returns Fresh handle. */
+    createBuffer() {
+      return this.store.createBuffer();
+    }
+    /** Bind buffer via owned store; pushes one code on rejection. */
+    bindBuffer(target, buffer) {
+      const code = this.store.bindBuffer(target, buffer);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /** Upload bytes via owned store; pushes one code on rejection. */
+    bufferData(target, data, usage) {
+      const code = this.store.bufferData(target, data, usage);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /** Delete buffer via owned store; never pushes. */
+    deleteBuffer(buffer) {
+      this.store.deleteBuffer(buffer);
+    }
+    /** Configure attribute pointer; pushes one code on rejection. */
+    vertexAttribPointer(index, size, type, normalized, stride, offset) {
+      const code = this.store.vertexAttribPointer(index, size, type, normalized, stride, offset);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /** Enable attribute array; pushes one code on rejection. */
+    enableVertexAttribArray(index) {
+      const code = this.store.enableVertexAttribArray(index);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /** Disable attribute array; pushes one code on rejection. */
+    disableVertexAttribArray(index) {
+      const code = this.store.disableVertexAttribArray(index);
+      if (code !== null) pushError(this.queue, code);
+    }
+    /**
+     * Decode attribute vertex; never pushes.
+     * @param index Attribute index. @param vertexIndex Vertex ordinal.
+     * @returns Components or null.
+     */
+    decodeAttribute(index, vertexIndex) {
+      return this.store.decodeAttribute(index, vertexIndex);
+    }
+    /**
+     * Resolve bound handle. @param target Bind target. @returns Handle or 0.
+     */
+    getBoundBuffer(target) {
+      return this.store.getBoundBuffer(target);
+    }
+    /**
+     * Push one draw-failure code; no state or pixel change.
+     * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
+     */
+    reportDrawFailure(code) {
+      pushError(this.queue, code);
+    }
+    /**
+     * Report default-framebuffer completeness; never pushes.
+     * @returns True when width and height are positive.
+     */
+    checkDefaultFramebufferComplete() {
+      return this.fb.width > 0 && this.fb.height > 0;
+    }
+    /**
+     * Validate and execute a non-indexed TRIANGLES draw; placeholder shading on success.
+     * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
+     */
+    drawArrays = (mode, first, count) => {
+      if (mode !== TRIANGLES) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (!Number.isInteger(first) || first < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(count) || count < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (this.state.currentProgram === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (!this.checkDefaultFramebufferComplete()) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (count === 0) return;
+      for (let i = 0; i < count; i++) this.store.decodeAttribute(0, first + i);
+      this.drawTriangle();
+    };
+    /**
+     * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+     * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
+     */
+    drawElements = (mode, count, type, offset) => {
+      if (mode !== TRIANGLES) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (type !== UNSIGNED_SHORT) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (!Number.isInteger(count) || count < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(offset) || offset < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (this.state.currentProgram === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (!this.checkDefaultFramebufferComplete()) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      const elemHandle = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+      if (count > 0 && elemHandle === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (count === 0) return;
+      const bytes = this.store.getBufferBytes(elemHandle);
+      if (!bytes || offset + count * 2 > bytes.length) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      for (let i = 0; i < count; i++) {
+        const idx = view.getUint16(offset + i * 2, true);
+        this.store.decodeAttribute(0, idx);
+      }
+      this.drawTriangle();
+    };
     /** Present via framebuffer; never throws. */
     presentToCanvas() {
       try {

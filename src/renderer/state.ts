@@ -6,6 +6,7 @@
  */
 // CHANGELOG:
 // - Sprint 1: Created GLState capability store with spec-exact defaults and validation.
+// - Sprint 2: Extended GLState for Sprint 2 draw-path state (Task 2).
 import {
   BLEND,
   CULL_FACE,
