@@ -8,7 +8,7 @@
  */
 // CHANGELOG:
 // - Sprint 1: Created numeric GL enum table as dependency-graph leaf (M1 scaffold).
-/** gl-constants: single source of truth numeric GL enum table. Dependency-graph leaf: zero imports, pure const exports. */
+/** gl-constants: single source of truth numeric GL enum table. Dependency-graph leaf: zero imports, pure const exports. Families: draw modes (POINTS..TRIANGLE_FAN), blend factors/equations, depth funcs (NEVER..ALWAYS), stencil ops, capability flags, face/winding, texture targets/filters/wraps, pixel formats/types, framebuffer/renderbuffer attachments and status, buffer/shader targets, texture units, error codes, numeric limits. */
 export const POINTS = 0x0000;
 export const LINES = 0x0001;
 export const LINE_LOOP = 0x0002;

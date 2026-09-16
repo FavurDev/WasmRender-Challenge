@@ -46,12 +46,12 @@ export class SoftwareWebGLContext {
     this.fb.clearColor(r, g, b, a);
   }
 
-  /** Stage clear depth on framebuffer. */
+  /** Stage clear depth on framebuffer (fb-authoritative; GLState holds no depth-clear copy in Sprint 1 minimal scope). */
   clearDepth(v: number): void {
     this.fb.clearDepth(v);
   }
 
-  /** Stage clear stencil on framebuffer. */
+  /** Stage clear stencil on framebuffer (fb-authoritative; GLState holds no stencil-clear copy in Sprint 1 minimal scope). */
   clearStencil(v: number): void {
     this.fb.clearStencil(v);
   }

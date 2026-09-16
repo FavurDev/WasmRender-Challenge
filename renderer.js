@@ -404,11 +404,11 @@ var __swgl = (() => {
       this.state.clearColor = [r, g, b, a];
       this.fb.clearColor(r, g, b, a);
     }
-    /** Stage clear depth on framebuffer. */
+    /** Stage clear depth on framebuffer (fb-authoritative; GLState holds no depth-clear copy in Sprint 1 minimal scope). */
     clearDepth(v) {
       this.fb.clearDepth(v);
     }
-    /** Stage clear stencil on framebuffer. */
+    /** Stage clear stencil on framebuffer (fb-authoritative; GLState holds no stencil-clear copy in Sprint 1 minimal scope). */
     clearStencil(v) {
       this.fb.clearStencil(v);
     }
