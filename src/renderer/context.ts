@@ -1,17 +1,20 @@
 /**
- * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, error queue.
+ * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, error queue.
  */
 // CHANGELOG:
 // - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError } from "./errors";
+import { BufferStore } from "./buffer";
 import { INVALID_ENUM, INVALID_VALUE, MAX_TEXTURE_SIZE, NO_ERROR } from "./gl-constants";
 
 const MAX_TEXTURE_SIZE_PNAME = 0x0d33;
 const VIEWPORT_PNAME = 0x0ba2;
 const CLEAR_COLOR_PNAME = 0x0b00;
 const DEPTH_FUNC_PNAME = 0x0b74;
+const SCISSOR_BOX_PNAME = 0x0c10;
+const STENCIL_WRITEMASK_PNAME = 0x0b98;
 
 interface CanvasLike {
   width?: number;
@@ -20,13 +23,14 @@ interface CanvasLike {
 }
 
 /**
- * Minimal software WebGL context: owns state, pixels, and error queue.
+ * Minimal software WebGL context: owns state, pixels, BufferStore, and error queue.
  */
 export class SoftwareWebGLContext {
   private state: GLState;
   private fb: Framebuffer;
   private queue: number[] = [];
   private canvas: unknown;
+  private store: BufferStore;
 
   /**
    * Build owned state, pixels, and queue sized to canvas extent.
@@ -38,6 +42,7 @@ export class SoftwareWebGLContext {
     this.state = state;
     this.fb = fb;
     this.canvas = canvas;
+    this.store = new BufferStore();
   }
 
   /** Stage clear color on framebuffer. */
@@ -46,14 +51,55 @@ export class SoftwareWebGLContext {
     this.fb.clearColor(r, g, b, a);
   }
 
-  /** Stage clear depth on framebuffer (fb-authoritative; GLState holds no depth-clear copy in Sprint 1 minimal scope). */
+  /** Stage clear depth on GLState and framebuffer. */
   clearDepth(v: number): void {
+    this.state.setClearDepth(v);
     this.fb.clearDepth(v);
   }
 
-  /** Stage clear stencil on framebuffer (fb-authoritative; GLState holds no stencil-clear copy in Sprint 1 minimal scope). */
+  /** Stage clear stencil on GLState and framebuffer. */
   clearStencil(v: number): void {
+    this.state.setClearStencil(v);
     this.fb.clearStencil(v);
+  }
+
+  /** Stage depth write mask on GLState and framebuffer. */
+  depthMask(flag: boolean): void {
+    this.state.setDepthMask(flag);
+    this.fb.setDepthMask(flag);
+  }
+
+  /** Stage color write mask on GLState and framebuffer. */
+  colorMask(r: boolean, g: boolean, b: boolean, a: boolean): void {
+    this.state.setColorMask(r, g, b, a);
+    this.fb.setColorMask(r, g, b, a);
+  }
+
+  /** Stage stencil write mask on GLState and framebuffer. */
+  stencilMask(mask: number): void {
+    this.state.setStencilMask(mask);
+    this.fb.setStencilMask(mask);
+  }
+
+  /**
+   * Replace scissor box; negative size pushes one code with no state change.
+   * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
+   */
+  scissor(x: number, y: number, w: number, h: number): void {
+    const code = this.state.setScissor(x, y, w, h);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /**
+   * Query capability flag; unknown enum returns false without queue change
+   * (the TDD unknown-enum case requires exactly one code total across the
+   * enable+isEnabled pair, with the single push owned by enable).
+   * @param cap Capability code. @returns Flag or false on rejection.
+   */
+  isEnabled(cap: number): boolean {
+    const result = this.state.isEnabled(cap);
+    if (typeof result !== "boolean") return false;
+    return result;
   }
 
   /** Run masked clear on framebuffer. */
@@ -98,6 +144,8 @@ export class SoftwareWebGLContext {
     if (pname === VIEWPORT_PNAME) return [...this.state.viewport];
     if (pname === CLEAR_COLOR_PNAME) return [...this.state.clearColor];
     if (pname === DEPTH_FUNC_PNAME) return this.state.depthFunc;
+    if (pname === SCISSOR_BOX_PNAME) return [...this.state.scissorBox];
+    if (pname === STENCIL_WRITEMASK_PNAME) return this.state.stencilMask;
     // Keep clear-color readback in sync with framebuffer-staged values is not
     // required in minimal scope; state copy is authoritative.
     pushError(this.queue, INVALID_ENUM);
@@ -152,6 +200,62 @@ export class SoftwareWebGLContext {
       }
     }
     void NO_ERROR;
+  }
+
+  /** Create a buffer handle via owned store. @returns Fresh handle. */
+  createBuffer(): number {
+    return this.store.createBuffer();
+  }
+
+  /** Bind buffer via owned store; pushes one code on rejection. */
+  bindBuffer(target: number, buffer: number | null): void {
+    const code = this.store.bindBuffer(target, buffer);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /** Upload bytes via owned store; pushes one code on rejection. */
+  bufferData(target: number, data: ArrayBufferView, usage: number): void {
+    const code = this.store.bufferData(target, data, usage);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /** Delete buffer via owned store; never pushes. */
+  deleteBuffer(buffer: number): void {
+    this.store.deleteBuffer(buffer);
+  }
+
+  /** Configure attribute pointer; pushes one code on rejection. */
+  vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
+    const code = this.store.vertexAttribPointer(index, size, type, normalized, stride, offset);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /** Enable attribute array; pushes one code on rejection. */
+  enableVertexAttribArray(index: number): void {
+    const code = this.store.enableVertexAttribArray(index);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /** Disable attribute array; pushes one code on rejection. */
+  disableVertexAttribArray(index: number): void {
+    const code = this.store.disableVertexAttribArray(index);
+    if (code !== null) pushError(this.queue, code);
+  }
+
+  /**
+   * Decode attribute vertex; never pushes.
+   * @param index Attribute index. @param vertexIndex Vertex ordinal.
+   * @returns Components or null.
+   */
+  decodeAttribute(index: number, vertexIndex: number): number[] | null {
+    return this.store.decodeAttribute(index, vertexIndex);
+  }
+
+  /**
+   * Resolve bound handle. @param target Bind target. @returns Handle or 0.
+   */
+  getBoundBuffer(target: number): number {
+    return this.store.getBoundBuffer(target);
   }
 
   /** Present via framebuffer; never throws. */
