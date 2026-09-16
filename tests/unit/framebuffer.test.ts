@@ -125,3 +125,148 @@ describe('Framebuffer', () => {
     expect(stub.calls[0]?.height).toBe(4);
   });
 });
+
+/** Task 6 readback/presentation red-phase suite (Sprint 4 Task 6). Headless Node, no DOM. */
+import { createSoftwareWebGLContext } from '../../src/renderer/context';
+import {
+  COLOR_BUFFER_BIT as TASK6_COLOR_BIT,
+  FRAGMENT_SHADER as TASK6_FS,
+  INVALID_ENUM as TASK6_INVALID_ENUM,
+  INVALID_VALUE as TASK6_INVALID_VALUE,
+  NO_ERROR as TASK6_NO_ERROR,
+  RGB as TASK6_RGB,
+  RGBA as TASK6_RGBA,
+  TRIANGLES as TASK6_TRIANGLES,
+  UNSIGNED_BYTE as TASK6_UNSIGNED_BYTE,
+  VERTEX_SHADER as TASK6_VS,
+} from '../../src/renderer/gl-constants';
+
+interface Task6Facade {
+  createShader(type: number): number;
+  shaderSource(shader: number, source: string): void;
+  compileShader(shader: number): void;
+  createProgram(): number;
+  attachShader(program: number, shader: number): void;
+  linkProgram(program: number): void;
+  useProgram(program: number | null): void;
+  drawArrays(mode: number, first: number, count: number): void;
+  getError(): number;
+  readPixels(x: number, y: number, w: number, h: number, format: number, type: number): Uint8Array | null;
+  presentToCanvas(target: unknown): void;
+}
+
+interface RecordingCtx2D {
+  calls: { data: Uint8ClampedArray; width: number; height: number }[];
+  putImageData(img: unknown, x: number, y: number): void;
+}
+
+const TASK6_W = 8;
+const TASK6_H = 8;
+
+const TASK6_VERT = [
+  'attribute vec3 position;',
+  'void main() {',
+  '  gl_Position = vec4(position, 1.0);',
+  '}',
+].join('\n');
+
+const TASK6_FRAG = [
+  'precision mediump float;',
+  'void main() {',
+  '  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);',
+  '}',
+].join('\n');
+
+function task6Canvas(rec: RecordingCtx2D): unknown {
+  return {
+    width: TASK6_W,
+    height: TASK6_H,
+    getContext: (_kind: string): RecordingCtx2D => rec,
+  };
+}
+
+function makeRecording(): RecordingCtx2D {
+  return {
+    calls: [],
+    putImageData(img: unknown, _x: number, _y: number): void {
+      const rec = img as { data: Uint8ClampedArray; width: number; height: number };
+      this.calls.push({ data: new Uint8ClampedArray(rec.data), width: rec.width, height: rec.height });
+    },
+  };
+}
+
+function task6LinkedCtx(rec: RecordingCtx2D): Task6Facade {
+  // Arrange helper: fresh context with linked solid-red program selected.
+  const ctx = createSoftwareWebGLContext(task6Canvas(rec) as never) as unknown as Task6Facade;
+  const vs = ctx.createShader(TASK6_VS);
+  ctx.shaderSource(vs, TASK6_VERT);
+  ctx.compileShader(vs);
+  const fs = ctx.createShader(TASK6_FS);
+  ctx.shaderSource(fs, TASK6_FRAG);
+  ctx.compileShader(fs);
+  const prog = ctx.createProgram();
+  ctx.attachShader(prog, vs);
+  ctx.attachShader(prog, fs);
+  ctx.linkProgram(prog);
+  ctx.useProgram(prog);
+  // Drain any setup errors so each case starts clean.
+  while (ctx.getError() !== TASK6_NO_ERROR) { /* drain */ }
+  return ctx;
+}
+
+describe('task6 readback and presentation (TDD red phase)', () => {
+  it('round-trip returns exact written bytes', () => {
+    // Arrange
+    const rec = makeRecording();
+    const ctx = task6LinkedCtx(rec);
+    // Act
+    ctx.drawArrays(TASK6_TRIANGLES, 0, 3);
+    const px = ctx.readPixels(0, 0, TASK6_W, TASK6_H, TASK6_RGBA, TASK6_UNSIGNED_BYTE);
+    // Assert
+    expect(px).not.toBeNull();
+    expect(px!.length).toBe(TASK6_W * TASK6_H * 4);
+    for (let i = 0; i < px!.length; i += 4) {
+      expect([px![i], px![i + 1], px![i + 2], px![i + 3]]).toEqual([255, 0, 0, 255]);
+    }
+  });
+
+  it('out-of-bounds pushes one INVALID_VALUE and returns null', () => {
+    // Arrange
+    const rec = makeRecording();
+    const ctx = task6LinkedCtx(rec);
+    const before = ctx.readPixels(0, 0, TASK6_W, TASK6_H, TASK6_RGBA, TASK6_UNSIGNED_BYTE);
+    // Act
+    const oob = ctx.readPixels(TASK6_W - 2, 0, 4, 4, TASK6_RGBA, TASK6_UNSIGNED_BYTE);
+    const first = ctx.getError();
+    const second = ctx.getError();
+    const after = ctx.readPixels(0, 0, TASK6_W, TASK6_H, TASK6_RGBA, TASK6_UNSIGNED_BYTE);
+    // Assert
+    expect(oob).toBeNull();
+    expect(first).toBe(TASK6_INVALID_VALUE);
+    expect(second).toBe(TASK6_NO_ERROR);
+    expect(Array.from(after!)).toEqual(Array.from(before!));
+    // Act (unsupported format pair rejected before touching the framebuffer)
+    const badFormat = ctx.readPixels(0, 0, 2, 2, TASK6_RGB, TASK6_UNSIGNED_BYTE);
+    const fmtErr = ctx.getError();
+    const fmtDrain = ctx.getError();
+    // Assert
+    expect(badFormat).toBeNull();
+    expect(fmtErr).toBe(TASK6_INVALID_ENUM);
+    expect(fmtDrain).toBe(TASK6_NO_ERROR);
+  });
+
+  it('presentation agrees byte-for-byte with readPixels', () => {
+    // Arrange
+    const rec = makeRecording();
+    const ctx = task6LinkedCtx(rec);
+    // Act (one successful draw presents automatically; no explicit present call)
+    ctx.drawArrays(TASK6_TRIANGLES, 0, 3);
+    const px = ctx.readPixels(0, 0, TASK6_W, TASK6_H, TASK6_RGBA, TASK6_UNSIGNED_BYTE);
+    // Assert
+    expect(rec.calls.length).toBe(1);
+    expect(rec.calls[0]?.width).toBe(TASK6_W);
+    expect(rec.calls[0]?.height).toBe(TASK6_H);
+    expect(Array.from(rec.calls[0]?.data ?? [])).toEqual(Array.from(px ?? []));
+    void TASK6_COLOR_BIT;
+  });
+});

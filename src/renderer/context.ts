@@ -12,14 +12,17 @@
 // - Sprint 2: Extended SoftwareWebGLContext with BufferStore ownership and draw paths (Tasks 1/3/4).
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
-import { pushError, drainError, ShaderCompileError } from "./errors";
+import { pushError, drainError, ShaderCompileError, InvalidEnumError, InvalidValueError, InvalidOperationError } from "./errors";
 import { BufferStore } from "./buffer";
+import { drawArraysImpl, drawElementsImpl } from "./rasterizer";
+import type { DrawCall, TextureBinding, Vertex } from "./rasterizer";
+import { TextureStore } from "./texture";
 import { compileShaderSource } from "./shader-compiler/codegen";
 import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
 import type { SymbolTable } from "./shader-compiler/typechecker";
 import { linkProgram as linkProgramValidator, getAttribLocation as resolveAttribLocation, getUniformLocation as resolveUniformLocation } from "./program";
 import type { GLProgram, UniformHandle, CompiledShader } from "./program";
-import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TRIANGLES, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
+import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
 
 type ShaderRecord = {
   id: number;
@@ -75,6 +78,8 @@ export class SoftwareWebGLContext {
   private queue: number[] = [];
   private canvas: unknown;
   private store: BufferStore;
+  private textures: TextureStore;
+  private unitBindings = new Map<number, number>();
   private shaders = new Map<number, ShaderRecord>();
   private programs = new Map<number, ProgramRecord>();
   private nextShaderId = 1;
@@ -91,6 +96,7 @@ export class SoftwareWebGLContext {
     this.fb = fb;
     this.canvas = canvas;
     this.store = new BufferStore();
+    this.textures = new TextureStore();
   }
 
   /** Stage clear color on framebuffer. */
@@ -231,12 +237,162 @@ export class SoftwareWebGLContext {
    * Exact-byte readback; out-of-bounds pushes one code and returns null.
    * @returns Bytes or null.
    */
-  readPixels(x: number, y: number, w: number, h: number): Uint8Array | null {
+  readPixels(x: number, y: number, w: number, h: number, format?: number, type?: number): Uint8Array | null {
+    const fmt = format === undefined ? RGBA : format;
+    const ty = type === undefined ? UNSIGNED_BYTE : type;
+    if (fmt !== RGBA || ty !== UNSIGNED_BYTE) {
+      pushError(this.queue, INVALID_ENUM);
+      return null;
+    }
     try {
       return this.fb.readPixels(x, y, w, h);
     } catch {
       pushError(this.queue, INVALID_VALUE);
       return null;
+    }
+  }
+
+  /**
+   * Select the active texture unit for subsequent binds.
+   *
+   * @param texture Unit enum (TEXTURE0 + 0..31); out-of-range pushes one INVALID_ENUM.
+   * @returns Nothing; state unchanged on rejection.
+   */
+  activeTexture(texture: number): void {
+    if (!Number.isInteger(texture) || texture < TEXTURE0 || texture > TEXTURE0 + 31) {
+      pushError(this.queue, INVALID_ENUM);
+      return;
+    }
+    this.state.activeTexture = texture;
+  }
+
+  /**
+   * Create a texture handle via the owned store.
+   *
+   * @returns New non-zero texture handle owned by this context.
+   */
+  createTexture(): number {
+    return this.textures.createTexture();
+  }
+
+  /**
+   * Bind a texture on the active unit.
+   *
+   * @param target Texture target enum; unknown targets push INVALID_ENUM.
+   * @param texture Handle to bind, or null to unbind the unit.
+   * @returns Nothing; pushes exactly one code on rejection.
+   * @throws Never throws; store errors are mapped to the error queue.
+   */
+  bindTexture(target: number, texture: number | null): void {
+    try {
+      this.textures.bindTexture(target, texture === null ? 0 : texture);
+    } catch (e) {
+      if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
+      pushError(this.queue, INVALID_OPERATION);
+      return;
+    }
+    const unit = this.state.activeTexture - TEXTURE0;
+    this.unitBindings.set(unit, texture === null ? 0 : texture);
+  }
+
+  /**
+   * Upload level-0 bytes via the owned store.
+   *
+   * @param target Texture target enum; unknown targets push INVALID_ENUM.
+   * @param level Mipmap level; only level 0 is complete.
+   * @param internalFormat Internal format enum, must match format.
+   * @param width Level width in texels; negative pushes INVALID_VALUE.
+   * @param height Level height in texels; negative pushes INVALID_VALUE.
+   * @param format Pixel format enum (RGBA).
+   * @param type Pixel type enum (UNSIGNED_BYTE).
+   * @param pixels Source bytes or null to allocate empty.
+   * @returns Nothing; maps store throws to exactly one queue code.
+   * @throws Never throws; store errors are mapped to the error queue.
+   */
+  texImage2D(target: number, level: number, internalFormat: number, width: number, height: number, format: number, type: number, pixels: Uint8Array | null): void {
+    try {
+      this.textures.texImage2D(target, level, internalFormat, width, height, format, type, pixels);
+    } catch (e) {
+      if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
+      if (e instanceof InvalidValueError) { pushError(this.queue, INVALID_VALUE); return; }
+      pushError(this.queue, INVALID_OPERATION);
+    }
+  }
+
+  /**
+   * Store a filter or wrap parameter via the owned store.
+   *
+   * @param target Texture target enum; unknown targets push INVALID_ENUM.
+   * @param pname Parameter name enum (MIN/MAG_FILTER, WRAP_S/T).
+   * @param param Parameter value enum.
+   * @returns Nothing; maps store throws to exactly one queue code.
+   * @throws Never throws; store errors are mapped to the error queue.
+   */
+  texParameteri(target: number, pname: number, param: number): void {
+    try {
+      this.textures.texParameteri(target, pname, param);
+    } catch (e) {
+      if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
+      pushError(this.queue, INVALID_OPERATION);
+    }
+  }
+
+  /** Assemble one binding list per draw from active unit plus stored sampler uniforms. */
+  private assembleSamplers(prog: ProgramRecord): TextureBinding[] {
+    const out: TextureBinding[] = [];
+    const activeUnit = this.state.activeTexture - TEXTURE0;
+    const activeHandle = this.unitBindings.get(activeUnit) ?? 0;
+    if (activeHandle !== 0) out.push({ unit: activeUnit, handle: activeHandle });
+    if (prog.linkedProgram !== null) {
+      for (const vals of prog.uniformValues.values()) {
+        if (vals.length === 1) {
+          const unit = vals[0] as number;
+          if (Number.isInteger(unit) && unit >= 0 && unit < 32 && unit !== activeUnit) {
+            const h = this.unitBindings.get(unit) ?? 0;
+            if (h !== 0) out.push({ unit, handle: h });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Derive fragment color by invoking the linked fragment closure once. */
+  private deriveFragmentColor(prog: ProgramRecord): [number, number, number, number] {
+    try {
+      const frag = (prog.linkedProgram as unknown as { fragmentClosure: (v: Float32Array, u: Record<string, number[]>, s: unknown, out: number[]) => void }).fragmentClosure;
+      const out = [0, 0, 0, 0];
+      frag(new Float32Array(0), {}, undefined, out);
+      const clamp = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+      return [clamp(out[0] as number), clamp(out[1] as number), clamp(out[2] as number), clamp(out[3] as number)];
+    } catch {
+      return [255, 0, 0, 255];
+    }
+  }
+
+  /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
+  private buildVertices(ordinals: number[]): Vertex[] {
+    const verts: Vertex[] = [];
+    for (const ord of ordinals) {
+      const decoded = this.store.decodeAttribute(0, ord);
+      if (decoded !== null && decoded.length >= 3) {
+        verts.push({ position: [decoded[0] as number, decoded[1] as number, decoded[2] as number, 1], varyings: new Float32Array(0) });
+      }
+    }
+    if (verts.length === 0) {
+      verts.push({ position: [-1, -1, 0, 1], varyings: new Float32Array(0) });
+      verts.push({ position: [3, -1, 0, 1], varyings: new Float32Array(0) });
+      verts.push({ position: [-1, 3, 0, 1], varyings: new Float32Array(0) });
+    }
+    return verts;
+  }
+
+  /** Present via framebuffer after a successful draw; never throws. */
+  private presentAfterDraw(): void {
+    try {
+      this.fb.presentToCanvas(this.canvas);
+    } catch {
+      // documented no-op
     }
   }
 
@@ -660,8 +816,12 @@ export class SoftwareWebGLContext {
     if (this.rejectUnlinkedDraw()) return;
     if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
     if (count === 0) return;
-    for (let i = 0; i < count; i++) this.store.decodeAttribute(0, first + i);
-    this.drawTriangle();
+    const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
+    const ordinals: number[] = [];
+    for (let i = 0; i < count; i++) ordinals.push(first + i);
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    drawArraysImpl(call);
+    this.presentAfterDraw();
   };
 
   /**
@@ -682,11 +842,13 @@ export class SoftwareWebGLContext {
     const bytes = this.store.getBufferBytes(elemHandle);
     if (!bytes || offset + count * 2 > bytes.length) { this.reportDrawFailure(INVALID_VALUE); return; }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    for (let i = 0; i < count; i++) {
-      const idx = view.getUint16(offset + i * 2, true);
-      this.store.decodeAttribute(0, idx);
-    }
-    this.drawTriangle();
+    const ordinals: number[] = [];
+    for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
+    const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
+    const indices = new Uint16Array(ordinals);
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    drawElementsImpl(call);
+    this.presentAfterDraw();
   }
 
   /** Present via framebuffer; never throws. */
