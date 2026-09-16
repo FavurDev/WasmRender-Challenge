@@ -95,9 +95,13 @@ export class SoftwareWebGLContext {
     return result;
   }
 
-  /** Run masked clear on framebuffer. */
+  /** Run masked clear on framebuffer, confined to scissor box when scissor test is enabled. */
   clear(mask: number): void {
-    this.fb.clear(mask);
+    if (this.state.scissorTest) {
+      this.fb.clear(mask, this.state.scissorBox);
+    } else {
+      this.fb.clear(mask);
+    }
   }
 
   /**

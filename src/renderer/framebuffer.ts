@@ -143,32 +143,80 @@ export class Framebuffer {
    * Masked clear with exact quantization.
    *
    * @param mask Bitwise OR of COLOR/DEPTH/STENCIL bits; zero mask writes nothing, unknown bits ignored.
+   * @param scissor Optional [x, y, w, h] confinement box; omitted clears the full frame, out-of-range edges are clamped, zero-area writes nothing.
    * @returns Nothing; selected planes filled honoring write masks.
    */
-  clear(mask: number): void {
+  clear(mask: number, scissor?: readonly [number, number, number, number]): void {
     const rb = Math.round(clamp01(this.ccR) * 255);
     const gb = Math.round(clamp01(this.ccG) * 255);
     const bb = Math.round(clamp01(this.ccB) * 255);
     const ab = Math.round(clamp01(this.ccA) * 255);
     const dv = clamp01(this.cd);
     const sv = this.cs & 0xff;
+    // Compute confined region: full frame by default, clamped scissor intersection otherwise.
+    let x0 = 0;
+    let y0 = 0;
+    let x1 = this.width;
+    let y1 = this.height;
+    if (scissor !== undefined) {
+      const sx = Math.floor(scissor[0]);
+      const sy = Math.floor(scissor[1]);
+      const sw = Math.floor(scissor[2]);
+      const sh = Math.floor(scissor[3]);
+      x0 = Math.max(0, sx);
+      y0 = Math.max(0, sy);
+      x1 = Math.min(this.width, sx + sw);
+      y1 = Math.min(this.height, sy + sh);
+      if (x1 <= x0 || y1 <= y0) return;
+    }
+    const full = x0 === 0 && y0 === 0 && x1 === this.width && y1 === this.height;
     if ((mask & COLOR_BUFFER_BIT) !== 0) {
       const c = this.color;
-      for (let i = 0; i < c.length; i += 4) {
-        if (this.cmR) c[i] = rb;
-        if (this.cmG) c[i + 1] = gb;
-        if (this.cmB) c[i + 2] = bb;
-        if (this.cmA) c[i + 3] = ab;
+      if (full) {
+        for (let i = 0; i < c.length; i += 4) {
+          if (this.cmR) c[i] = rb;
+          if (this.cmG) c[i + 1] = gb;
+          if (this.cmB) c[i + 2] = bb;
+          if (this.cmA) c[i + 3] = ab;
+        }
+      } else {
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const i = (y * this.width + x) * 4;
+            if (this.cmR) c[i] = rb;
+            if (this.cmG) c[i + 1] = gb;
+            if (this.cmB) c[i + 2] = bb;
+            if (this.cmA) c[i + 3] = ab;
+          }
+        }
       }
     }
     if ((mask & DEPTH_BUFFER_BIT) !== 0 && this.dm) {
-      this.depth.fill(dv);
+      if (full) {
+        this.depth.fill(dv);
+      } else {
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            this.depth[y * this.width + x] = dv;
+          }
+        }
+      }
     }
     if ((mask & STENCIL_BUFFER_BIT) !== 0) {
       const inv = (~this.sm) & 0xff;
       const s = this.stencil;
-      for (let i = 0; i < s.length; i++) {
-        s[i] = ((s[i] as number) & inv) | (sv & this.sm);
+      const val = sv & this.sm;
+      if (full) {
+        for (let i = 0; i < s.length; i++) {
+          s[i] = ((s[i] as number) & inv) | val;
+        }
+      } else {
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const i = y * this.width + x;
+            s[i] = ((s[i] as number) & inv) | val;
+          }
+        }
       }
     }
   }
