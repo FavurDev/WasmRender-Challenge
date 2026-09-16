@@ -1,6 +1,8 @@
 /**
  * @fileoverview Program link validation with status-flag channel.
  */
+// CHANGELOG:
+// - Sprint 3: Created program link validation with status-flag channel (Task 6).
 import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
 import type { SymbolTable } from "./shader-compiler/typechecker";
 

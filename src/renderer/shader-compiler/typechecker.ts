@@ -1,6 +1,8 @@
 /**
  * @fileoverview GLSL semantic typechecker (chokepoint 2) with version-gated conversion strictness.
  */
+// CHANGELOG:
+// - Sprint 3: Created GLSL semantic typechecker with version-gated conversion strictness (Task 4).
 import { ShaderCompileError } from "../errors";
 import type { BuiltinOverload } from "./builtins-100";
 

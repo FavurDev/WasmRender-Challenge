@@ -2,6 +2,8 @@
  * @fileoverview Frozen ES 3.00 builtin signature table (68 entries).
  * Dependency-graph leaf: zero imports, pure const exports only.
  */
+// CHANGELOG:
+// - Sprint 3: Created frozen ES 3.00 builtin signature table, 68 entries (Task 3).
 /**
  * One overload descriptor: ordered parameter type names plus return type name.
  */

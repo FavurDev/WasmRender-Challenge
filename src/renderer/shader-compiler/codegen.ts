@@ -1,6 +1,8 @@
 /**
  * @fileoverview AST-to-closure lowering plus compileShaderSource orchestration.
  */
+// CHANGELOG:
+// - Sprint 3: Created AST-to-closure lowering plus compileShaderSource orchestration (Task 5).
 import { tokenize } from "./tokenizer";
 import { parse } from "./parser";
 import type { ASTProgram, Declaration, FunctionDef } from "./parser";

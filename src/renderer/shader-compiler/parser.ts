@@ -1,6 +1,8 @@
 /**
  * @fileoverview GLSL recursive-descent parser with version-gated qualifier legality.
  */
+// CHANGELOG:
+// - Sprint 3: Created GLSL recursive-descent parser with version-gated qualifier legality (Task 2).
 import type { Token, TokenKind } from "./tokenizer";
 import { ShaderCompileError } from "../errors";
 

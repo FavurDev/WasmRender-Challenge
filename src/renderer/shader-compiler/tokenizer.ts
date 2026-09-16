@@ -1,6 +1,8 @@
 /**
  * @fileoverview GLSL lexer producing a flat token stream with 1-based lines.
  */
+// CHANGELOG:
+// - Sprint 3: Created GLSL lexer producing flat token stream with 1-based lines (Task 1).
 import { ShaderCompileError } from "../errors";
 
 /** Lexical category driving parser dispatch. */
