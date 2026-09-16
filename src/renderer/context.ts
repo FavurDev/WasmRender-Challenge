@@ -7,14 +7,7 @@ import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError } from "./errors";
 import { BufferStore } from "./buffer";
-import { ELEMENT_ARRAY_BUFFER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, MAX_TEXTURE_SIZE, NO_ERROR, TRIANGLES, UNSIGNED_SHORT } from "./gl-constants";
-
-const MAX_TEXTURE_SIZE_PNAME = 0x0d33;
-const VIEWPORT_PNAME = 0x0ba2;
-const CLEAR_COLOR_PNAME = 0x0b00;
-const DEPTH_FUNC_PNAME = 0x0b74;
-const SCISSOR_BOX_PNAME = 0x0c10;
-const STENCIL_WRITEMASK_PNAME = 0x0b98;
+import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TRIANGLES, UNSIGNED_SHORT, VIEWPORT } from "./gl-constants";
 
 interface CanvasLike {
   width?: number;
@@ -140,14 +133,29 @@ export class SoftwareWebGLContext {
    * @returns Value copy, limit, or null.
    */
   getParameter(pname: number): unknown {
+    if (pname === BLEND) return this.state.blendEnabled;
+    if (pname === DEPTH_TEST) return this.state.depthTest;
+    if (pname === STENCIL_TEST) return this.state.stencilTest;
+    if (pname === SCISSOR_TEST) return this.state.scissorTest;
+    if (pname === CULL_FACE) return this.state.cullFace;
+    if (pname === COLOR_CLEAR_VALUE) return [...this.state.clearColor];
+    if (pname === DEPTH_CLEAR_VALUE) return this.state.clearDepth;
+    if (pname === STENCIL_CLEAR_VALUE) return this.state.clearStencil;
+    if (pname === COLOR_WRITEMASK) return [...this.state.colorMask];
+    if (pname === DEPTH_WRITEMASK) return this.state.depthMask;
+    if (pname === STENCIL_WRITEMASK) return this.state.stencilMask;
+    if (pname === VIEWPORT) return [...this.state.viewport];
+    if (pname === SCISSOR_BOX) return [...this.state.scissorBox];
+    if (pname === DEPTH_FUNC) return this.state.depthFunc;
+    if (pname === BLEND_SRC_RGB) return this.state.blendSrcRGB;
+    if (pname === BLEND_DST_RGB) return this.state.blendDstRGB;
+    if (pname === BLEND_EQUATION) return this.state.blendEquation;
     if (pname === MAX_TEXTURE_SIZE_PNAME) return MAX_TEXTURE_SIZE;
-    if (pname === VIEWPORT_PNAME) return [...this.state.viewport];
-    if (pname === CLEAR_COLOR_PNAME) return [...this.state.clearColor];
-    if (pname === DEPTH_FUNC_PNAME) return this.state.depthFunc;
-    if (pname === SCISSOR_BOX_PNAME) return [...this.state.scissorBox];
-    if (pname === STENCIL_WRITEMASK_PNAME) return this.state.stencilMask;
-    // Keep clear-color readback in sync with framebuffer-staged values is not
-    // required in minimal scope; state copy is authoritative.
+    if (pname === MAX_VIEWPORT_DIMS_PNAME) return [...MAX_VIEWPORT_DIMS];
+    if (pname === MAX_VERTEX_ATTRIBS_PNAME) return MAX_VERTEX_ATTRIBS;
+    if (pname === MAX_TEXTURE_IMAGE_UNITS_PNAME) return MAX_TEXTURE_IMAGE_UNITS;
+    if (pname === MAX_CUBE_MAP_TEXTURE_SIZE_PNAME) return MAX_CUBE_MAP_TEXTURE_SIZE;
+    if (pname === MAX_RENDERBUFFER_SIZE_PNAME) return MAX_RENDERBUFFER_SIZE;
     pushError(this.queue, INVALID_ENUM);
     return null;
   }
