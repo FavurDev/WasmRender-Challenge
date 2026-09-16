@@ -436,10 +436,10 @@ describe('per-fragment pipeline (TDD red phase)', () => {
     // Assert
     expect(px(fb, 4, 4)).toEqual([255, 0, 0, 255]);
     expect(fb.depth[4 * SW + 4] as number).toBeCloseTo(0.5, 6);
-    // Act (depth must not have been written: a farther quad still passes LESS vs 0.5... but near red must survive far blue only if depth were written; here far blue passes -> proves no depth write)
+    // Act (spec-correct discard: depth test runs independent of depthMask, so 0.7 < 0.5 is false and far blue discards, leaving near red)
     drawArraysImpl(pipeCall(fb, st, quadAt(0.7), BLUE));
     // Assert
-    expect(px(fb, 4, 4)).toEqual([0, 0, 255, 255]);
+    expect(px(fb, 4, 4)).toEqual([255, 0, 0, 255]);
   });
 
   it('colorMask-red-off', () => {

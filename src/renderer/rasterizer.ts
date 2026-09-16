@@ -443,8 +443,8 @@ function fillTriangle(
           incomingDepth = computeFragmentDepth(l0, l1, l2, ndcZ0, ndcZ1, ndcZ2);
         }
         const storedDepth = fb.depth[py * fw + px] as number;
-        // IMPLEMENTATION DECISION: depthMask false bypasses the depth compare. Rationale: depthMask-off test draws red at 0.2 then blue at 0.7 with stored 0.5 and expects blue to win, which requires the second draw to pass despite 0.7 > 0.5 under LESS. Alternatives: honoring the compare (leaves red, fails the test).
-        if (st.depthMask && !evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest)) {
+        // IMPLEMENTATION DECISION: depth test runs independent of depthMask; depthMask gates only the depth store write in writeFragment. Rationale: pseudocode Depth Compare + Mask-Gated Writes sections and SOW-REQ-009 require the compare whenever depthTest is true. Alternatives: gating the compare on depthMask (spec violation, bypasses depth test).
+        if (!evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest)) {
           e0 += a0; e1 += a1; e2 += a2;
           continue;
         }
