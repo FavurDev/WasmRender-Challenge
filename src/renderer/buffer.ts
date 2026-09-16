@@ -154,10 +154,12 @@ export class BufferStore {
     if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return null;
     const slot = this.attribPointers[index]!;
     if (!slot.hasSnapshot || slot.snapshot === 0) return null;
+    if (!Number.isInteger(vertexIndex) || vertexIndex < 0) return null;
     if (!this.liveHandles.has(slot.snapshot)) return null;
     const rec = this.buffers.get(slot.snapshot);
     if (!rec) return null;
     const laneBase = slot.offset + vertexIndex * slot.stride;
+    if (laneBase < 0) return null;
     const view = new DataView(rec.bytes.buffer, rec.bytes.byteOffset, rec.bytes.byteLength);
     const out: number[] = [];
     for (let k = 0; k < slot.size; k++) {
@@ -176,6 +178,19 @@ export class BufferStore {
     if (target === ARRAY_BUFFER) return this.boundArrayBuffer;
     if (target === ELEMENT_ARRAY_BUFFER) return this.boundElementArrayBuffer;
     return 0;
+  }
+
+  /**
+   * Read-only copy of stored bytes for a live handle.
+   * @param handle Buffer handle. @returns Byte copy or null when unavailable.
+   */
+  getBufferBytes(handle: number): Uint8Array | null {
+    if (!this.liveHandles.has(handle)) return null;
+    const rec = this.buffers.get(handle);
+    if (!rec) return null;
+    const copy = new Uint8Array(rec.bytes.length);
+    for (let i = 0; i < rec.bytes.length; i++) copy[i] = rec.bytes[i]!;
+    return copy;
   }
 
   /**

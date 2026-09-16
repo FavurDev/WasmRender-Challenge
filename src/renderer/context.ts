@@ -7,7 +7,7 @@ import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError } from "./errors";
 import { BufferStore } from "./buffer";
-import { INVALID_ENUM, INVALID_VALUE, MAX_TEXTURE_SIZE, NO_ERROR } from "./gl-constants";
+import { ELEMENT_ARRAY_BUFFER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, MAX_TEXTURE_SIZE, NO_ERROR, TRIANGLES, UNSIGNED_SHORT } from "./gl-constants";
 
 const MAX_TEXTURE_SIZE_PNAME = 0x0d33;
 const VIEWPORT_PNAME = 0x0ba2;
@@ -256,6 +256,61 @@ export class SoftwareWebGLContext {
    */
   getBoundBuffer(target: number): number {
     return this.store.getBoundBuffer(target);
+  }
+
+  /**
+   * Push one draw-failure code; no state or pixel change.
+   * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
+   */
+  private reportDrawFailure(code: number): void {
+    pushError(this.queue, code);
+  }
+
+  /**
+   * Report default-framebuffer completeness; never pushes.
+   * @returns True when width and height are positive.
+   */
+  checkDefaultFramebufferComplete(): boolean {
+    return this.fb.width > 0 && this.fb.height > 0;
+  }
+
+  /**
+   * Validate and execute a non-indexed TRIANGLES draw; placeholder shading on success.
+   * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
+   */
+  drawArrays = (mode: number, first: number, count: number): void => {
+    if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (!Number.isInteger(first) || first < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (count === 0) return;
+    for (let i = 0; i < count; i++) this.store.decodeAttribute(0, first + i);
+    this.drawTriangle();
+  };
+
+  /**
+   * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+   * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
+   */
+  drawElements = (mode: number, count: number, type: number, offset: number): void => {
+    if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (type !== UNSIGNED_SHORT) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(offset) || offset < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    const elemHandle = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    if (count > 0 && elemHandle === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (count === 0) return;
+    const bytes = this.store.getBufferBytes(elemHandle);
+    if (!bytes || offset + count * 2 > bytes.length) { this.reportDrawFailure(INVALID_VALUE); return; }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let i = 0; i < count; i++) {
+      const idx = view.getUint16(offset + i * 2, true);
+      this.store.decodeAttribute(0, idx);
+    }
+    this.drawTriangle();
   }
 
   /** Present via framebuffer; never throws. */
