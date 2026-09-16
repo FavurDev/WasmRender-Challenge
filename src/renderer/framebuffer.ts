@@ -7,21 +7,9 @@
  * needs no conversion.
  */
 import { COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
+import { OutOfMemoryError } from './errors';
 
-/**
- * Interim out-of-memory signal raised when dimensions exceed the 4096 guard.
- *
- * Interim local definition until sibling errors.ts lands, at which point this
- * becomes a re-export; structural name/shape match is intentional.
- *
- * @throws Never throws on construction; raised by guard on invalid sizes.
- */
-export class OutOfMemoryError extends Error {
-  constructor(message = 'Out of memory') {
-    super(message);
-    this.name = 'OutOfMemoryError';
-  }
-}
+export { OutOfMemoryError } from './errors';
 
 function clamp01(v: number): number {
   if (v < 0) return 0;
