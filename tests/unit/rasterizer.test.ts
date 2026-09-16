@@ -346,7 +346,7 @@ describe('rasterizer Task 7 suite', () => {
 
   it('R-10 pipeline order: scissor-fail leaves depth unchanged', () => {
     // Arrange
-    const fb = pipeFrame(0.7);
+    const fb = pipeFrame(0.9);
     const st = pipeState(LESS);
     st.scissorTest = true;
     st.scissorBox = [0, 0, 0, 0];
@@ -354,6 +354,6 @@ describe('rasterizer Task 7 suite', () => {
     drawArraysImpl(pipeCall(fb, st, coverTri(0.2), RED));
     // Assert
     expect(px(fb, 4, 4)).toEqual([0, 0, 0, 0]);
-    expect(fb.depth[4 * SW + 4] as number).toBeCloseTo(0.7, 6);
+    expect(fb.depth[4 * SW + 4] as number).toBeCloseTo(0.9, 6);
   });
 });

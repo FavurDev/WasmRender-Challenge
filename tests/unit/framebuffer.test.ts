@@ -48,24 +48,39 @@ describe('framebuffer (F-1..F-8)', () => {
     expect(fb.color.length).toBe(W * H * 4);
   });
 
-  it('F-2 clearDepth plus depth-test interaction', () => {
+  it('F-2 clearDepth plus depth-test interaction: 0.25 writes, 0.75 discards vs 0.5', () => {
     // Arrange
-    const fb = new Framebuffer(W, H);
-    fb.clearDepth(0.9);
-    fb.clear(DEPTH_BUFFER_BIT);
-    const st = new GLState(W, H);
-    st.depthTest = true;
-    st.depthFunc = LESS;
-    const near: DrawCall = {
-      program: null, framebuffer: fb, state: st,
-      vertices: [cv(-1, -1, 0.1, 1), cv(3, -1, 0.1, 1), cv(-1, 3, 0.1, 1)],
-      indices: null, instanceCount: 1, samplers: [], fragmentColor: [0, 255, 0, 255],
+    const mkCtx = (): { fb: Framebuffer; st: GLState } => {
+      const fb = new Framebuffer(W, H);
+      fb.clearDepth(0.5);
+      fb.clear(DEPTH_BUFFER_BIT);
+      const st = new GLState(W, H);
+      st.viewport = [0, 0, W, H];
+      st.depthTest = true;
+      st.depthFunc = LESS;
+      st.depthMask = true;
+      return { fb, st };
     };
-    // Act
-    drawArraysImpl(near);
+    const tri = (d: number): Vertex[] => {
+      const z = 2 * d - 1;
+      return [cv(-1, -1, z, 1), cv(3, -1, z, 1), cv(-1, 3, z, 1)];
+    };
+    const mkCall = (fb: Framebuffer, st: GLState, d: number): DrawCall => ({
+      program: null, framebuffer: fb, state: st,
+      vertices: tri(d), indices: null, instanceCount: 1, samplers: [], fragmentColor: [0, 255, 0, 255],
+    });
+    // Act (near 0.25 passes)
+    const n = mkCtx();
+    drawArraysImpl(mkCall(n.fb, n.st, 0.25));
     // Assert
-    expect(px(fb, 1, 1)).toEqual([0, 255, 0, 255]);
-    expect(fb.depth[1 * W + 1] as number).toBeLessThan(0.9);
+    expect(px(n.fb, 1, 1)).toEqual([0, 255, 0, 255]);
+    expect(n.fb.depth[1 * W + 1] as number).toBeCloseTo(0.25, 5);
+    // Act (far 0.75 discards in isolation)
+    const f = mkCtx();
+    drawArraysImpl(mkCall(f.fb, f.st, 0.75));
+    // Assert
+    expect(px(f.fb, 1, 1)).toEqual([0, 0, 0, 0]);
+    expect(f.fb.depth[1 * W + 1] as number).toBeCloseTo(0.5, 5);
   });
 
   it('F-3 masked clears honor colorMask and depthMask', () => {
@@ -154,11 +169,15 @@ describe('framebuffer (F-1..F-8)', () => {
     const bytes = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]);
     store.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, RGBA, UNSIGNED_BYTE, bytes);
     // Act
-    const tl = store.sample2D(h, 0.25, 0.25);
-    const br = store.sample2D(h, 0.75, 0.75);
+    const c00 = store.sample2D(h, 0.25, 0.25);
+    const c10 = store.sample2D(h, 0.75, 0.25);
+    const c01 = store.sample2D(h, 0.25, 0.75);
+    const c11 = store.sample2D(h, 0.75, 0.75);
     // Assert
-    expect(Array.from(tl)).toEqual([1, 0, 0, 1]);
-    expect(Array.from(br)).toEqual([1, 1, 1, 1]);
+    expect(Array.from(c00)).toEqual([1, 0, 0, 1]);
+    expect(Array.from(c10)).toEqual([0, 1, 0, 1]);
+    expect(Array.from(c01)).toEqual([0, 0, 1, 1]);
+    expect(Array.from(c11)).toEqual([1, 1, 1, 1]);
   });
 
   it('F-8 wrap modes diverge at u=1.5 and putImageData agrees with readPixels', () => {
