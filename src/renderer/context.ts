@@ -1,5 +1,5 @@
 /**
- * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, RenderbufferStore, error queue.
+ * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, RenderbufferStore, VAO records plus mirror, error queue.
  *
  * Sprint 3 Task 7 wires the Task 6 compiler chain plus program linker into this
  * facade. Compile/link failures travel the status-flag channel (COMPILE_STATUS /
