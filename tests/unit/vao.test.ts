@@ -17,6 +17,7 @@ type VaoCtx = SoftwareWebGLContext & {
   createVertexArray(): number;
   bindVertexArray(array: number | null): void;
   deleteVertexArray(array: number | null): void;
+  vertexAttribDivisor(index: number, divisor: number): void;
 };
 
 function freshCtx(w = 64, h = 64): VaoCtx {
@@ -32,6 +33,7 @@ function drain(ctx: SoftwareWebGLContext): void {
 
 const GEOM_A = new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0, 0.5, 0]);
 const GEOM_B = new Float32Array([-0.9, -0.9, 0, 0.9, -0.9, 0, 0, 0.9, 0]);
+const OFFSETS = new Float32Array([-0.1, 0, 0.5, 0]);
 
 const VS = 'attribute vec3 p; void main(){ gl_Position = vec4(p, 1.0); }';
 const FS = 'void main(){ gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }';
@@ -62,6 +64,20 @@ function clearAndDraw(ctx: VaoCtx): void {
   ctx.clearColor(0, 0, 0, 1);
   ctx.clear(COLOR_BUFFER_BIT);
   ctx.drawArrays(TRIANGLES, 0, 3);
+}
+
+function configSlot1(ctx: VaoCtx, data: Float32Array): void {
+  const buf = ctx.createBuffer();
+  ctx.bindBuffer(ARRAY_BUFFER, buf);
+  ctx.bufferData(ARRAY_BUFFER, data, STATIC_DRAW);
+  ctx.vertexAttribPointer(1, 2, FLOAT, false, 0, 0);
+  ctx.enableVertexAttribArray(1);
+}
+
+function clearAndDrawInstanced(ctx: VaoCtx, instances: number): void {
+  ctx.clearColor(0, 0, 0, 1);
+  ctx.clear(COLOR_BUFFER_BIT);
+  (ctx as unknown as { drawArraysInstanced(m: number, f: number, c: number, n: number): void }).drawArraysInstanced(TRIANGLES, 0, 3, instances);
 }
 
 function snapshot(ctx: SoftwareWebGLContext, w = 64, h = 64): Uint8Array {
@@ -166,23 +182,45 @@ describe('vao lifecycle red phase', () => {
     expect(err).toBe(NO_ERROR);
   });
 
-  it('create after rebind captures live A state not stale mirror', () => {
+  it('divisor isolation restores on rebind plus create after rebind captures live A state', () => {
     // Arrange
     const ctx = freshCtx();
+    drain(ctx);
+    useTriangleProgram(ctx);
     drain(ctx);
     const a = ctx.createVertexArray();
     const b = ctx.createVertexArray();
     ctx.bindVertexArray(a);
     configGeom(ctx, GEOM_A);
+    configSlot1(ctx, OFFSETS);
+    ctx.vertexAttribDivisor(1, 0);
     ctx.bindVertexArray(b);
     configGeom(ctx, GEOM_B);
-    // Act
+    configSlot1(ctx, OFFSETS);
+    ctx.vertexAttribDivisor(1, 1);
+    // Act — rebind A and draw 2 instances; divisor 0 must be restored
     ctx.bindVertexArray(a);
+    clearAndDrawInstanced(ctx, 2);
+    const pixelsARestored = snapshot(ctx);
     const c = ctx.createVertexArray();
     ctx.bindVertexArray(c);
     const decoded = ctx.decodeAttribute(0, 0);
-    // Assert
+    // Assert — create captured live A state, not a stale mirror
     expect(decoded).toEqual([GEOM_A[0], GEOM_A[1], GEOM_A[2]]);
+    // Assert — divisor-0 instanced pixels match a fresh divisor-0 reference
+    const ref = freshCtx();
+    useTriangleProgram(ref);
+    configGeom(ref as VaoCtx, GEOM_A);
+    configSlot1(ref as VaoCtx, OFFSETS);
+    (ref as unknown as { vertexAttribDivisor(i: number, d: number): void }).vertexAttribDivisor(1, 0);
+    clearAndDrawInstanced(ref as VaoCtx, 2);
+    const pixelsRef0 = snapshot(ref);
+    expect(Array.from(pixelsARestored)).toEqual(Array.from(pixelsRef0));
+    // Assert — divisor 1 diverges observably from restored divisor 0
+    ctx.bindVertexArray(b);
+    clearAndDrawInstanced(ctx, 2);
+    const pixelsB = snapshot(ctx);
+    expect(Array.from(pixelsB)).not.toEqual(Array.from(pixelsARestored));
     expect(ctx.getError()).toBe(NO_ERROR);
   });
 
