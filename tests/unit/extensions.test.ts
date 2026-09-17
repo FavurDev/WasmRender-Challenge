@@ -42,12 +42,16 @@ describe('extensions 3-stub contract + lose-restore (red phase)', () => {
     const a1 = ctx.getExtension('WEBGL_draw_buffers');
     const a2 = ctx.getExtension('WEBGL_draw_buffers');
     const b = ctx.getExtension('OES_texture_float');
+    const b2 = ctx.getExtension('OES_texture_float');
     const c = ctx.getExtension('WEBGL_lose_context');
+    const c2 = ctx.getExtension('WEBGL_lose_context');
     // Assert
     expect(a1).not.toBeNull();
     expect(b).not.toBeNull();
     expect(c).not.toBeNull();
     expect(a2).toBe(a1);
+    expect(b2).toBe(b);
+    expect(c2).toBe(c);
   });
 
   it('T3 unknown empty wrong-case names return null with NO_ERROR', () => {
@@ -75,10 +79,16 @@ describe('extensions 3-stub contract + lose-restore (red phase)', () => {
     ctx.drawArrays(TRIANGLES, 0, 3);
     const first = ctx.getError();
     const second = ctx.getError();
+    // Invalid args while lost must still push exactly one CONTEXT_LOST_WEBGL.
+    ctx.drawArrays(0x9999, -1, -5);
+    const invalidLost = ctx.getError();
+    const invalidLostSecond = ctx.getError();
     const after = snapshot(ctx);
     // Assert
     expect(first).toBe(CONTEXT_LOST_WEBGL);
     expect(second).toBe(NO_ERROR);
+    expect(invalidLost).toBe(CONTEXT_LOST_WEBGL);
+    expect(invalidLostSecond).toBe(NO_ERROR);
     expect(after).toEqual(before);
   });
 
@@ -107,9 +117,12 @@ describe('extensions 3-stub contract + lose-restore (red phase)', () => {
     // Act
     const px = ctx.readPixels(0, 0, 64, 64);
     const code = ctx.getError();
+    const fresh = freshCtx();
+    const baseline = Array.from(fresh.readPixels(0, 0, 64, 64)!);
     // Assert
     expect(code).toBe(CONTEXT_LOST_WEBGL);
     expect(px).not.toBeNull();
+    expect(Array.from(px!)).toEqual(baseline);
   });
 
   it('T7 restore returns to working order with pixel writes and NO_ERROR', () => {
