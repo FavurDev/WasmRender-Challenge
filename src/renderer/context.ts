@@ -29,7 +29,7 @@ import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
 import type { SymbolTable } from "./shader-compiler/typechecker";
 import { linkProgram as linkProgramValidator, getAttribLocation as resolveAttribLocation, getUniformLocation as resolveUniformLocation } from "./program";
 import type { GLProgram, UniformHandle, CompiledShader } from "./program";
-import { ARRAY_BUFFER, BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CONTEXT_LOST_WEBGL, CULL_FACE, DEPTH24_STENCIL8, DEPTH_CLEAR_VALUE, DEPTH_COMPONENT16, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FLOAT, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, OUT_OF_MEMORY, RENDERBUFFER, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
+import { ARRAY_BUFFER, BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_ATTACHMENT0, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CONTEXT_LOST_WEBGL, CULL_FACE, DEPTH24_STENCIL8, DEPTH_CLEAR_VALUE, DEPTH_COMPONENT16, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FLOAT, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_COLOR_ATTACHMENTS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, OUT_OF_MEMORY, RENDERBUFFER, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
 type ShaderRecord = {
   id: number;
   type: number;
@@ -1121,6 +1121,28 @@ export class SoftwareWebGLContext {
    */
   writeDepthForTest(handle: number, x: number, y: number, depth: number): void {
     this.renderbuffers.writeDepthForTest(handle, x, y, depth);
+  }
+  /**
+   * Set draw buffers; validates enum-then-value-then-operation, pushes exactly one code on rejection.
+   * @param buffers Caller-supplied attachment enum list; empty list is a valid no-target config.
+   */
+  drawBuffers(buffers: number[]): void {
+    if (this.guardIfLost()) return;
+    if (!Array.isArray(buffers)) { pushError(this.queue, INVALID_VALUE); return; }
+    for (const e of buffers) {
+      if (typeof e !== "number" || !Number.isInteger(e)) { pushError(this.queue, INVALID_ENUM); return; }
+    }
+    if (buffers.length > MAX_COLOR_ATTACHMENTS) { pushError(this.queue, INVALID_OPERATION); return; }
+    for (const e of buffers) {
+      if (e < COLOR_ATTACHMENT0 || e > COLOR_ATTACHMENT0 + MAX_COLOR_ATTACHMENTS - 1) {
+        pushError(this.queue, INVALID_OPERATION); return;
+      }
+    }
+    try {
+      this.fb.configureDrawBuffers(buffers);
+    } catch {
+      pushError(this.queue, INVALID_OPERATION);
+    }
   }
   /** Present via framebuffer; never throws. */
   presentToCanvas(): void {

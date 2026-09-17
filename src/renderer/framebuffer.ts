@@ -1,5 +1,5 @@
 /**
- * @fileoverview Framebuffer triple: sole pixel-memory owner (color + depth + stencil).
+ * @fileoverview Framebuffer store: sole pixel-memory owner (four color attachments + depth + stencil).
  *
  * Single-writer pixel store backing the default framebuffer. Depends only on
  * gl-constants limits and bit masks; single-threaded with no allocation in
@@ -10,8 +10,8 @@
 // - Sprint 1: Created framebuffer triple with masked clear, readPixels, and putImageData presentation.
 // - Sprint 2: Added scissor confinement param to clear (Task 5).
 // - Sprint 4: Verified exact readPixels readback supporting sampler/readback wiring.
-import { COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
-import { OutOfMemoryError } from './errors';
+import { COLOR_ATTACHMENT0, COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_COLOR_ATTACHMENTS, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
+import { InvalidOperationError, InvalidValueError, OutOfMemoryError } from './errors';
 
 export { OutOfMemoryError } from './errors';
 
@@ -48,11 +48,12 @@ interface Ctx2D {
 }
 
 /**
- * Sole owner of color, depth, and stencil pixel memory.
+ * Sole owner of color-attachment, depth, and stencil pixel memory.
  *
- * Invariants: color length is width*height*4 in RGBA order, depth and stencil
+ * Invariants: each of the four color attachments has length width*height*4 in
+ * RGBA order with index 0 aliasing the default color target, depth and stencil
  * lengths are width*height; width/height stay within the 4096 guard. Public
- * triple fields are intentionally writable so the rasterizer can write pixels
+ * pixel fields are intentionally writable so the rasterizer can write pixels
  * directly under the single-writer rule.
  */
 export class Framebuffer {
@@ -73,14 +74,116 @@ export class Framebuffer {
   private cmA = true;
   private dm = true;
   private sm = 0xff;
+  private attachments: Uint8ClampedArray[] = [];
+  private drawConfig: number[] = [COLOR_ATTACHMENT0];
 
   constructor(w: number, h: number) {
     checkDims(w, h);
     this.width = w;
     this.height = h;
     this.color = new Uint8ClampedArray(w * h * 4);
+    this.attachments = [this.color];
+    for (let i = 1; i < MAX_COLOR_ATTACHMENTS; i++) {
+      this.attachments.push(new Uint8ClampedArray(w * h * 4));
+    }
     this.depth = new Float32Array(w * h).fill(1.0);
     this.stencil = new Uint8Array(w * h);
+  }
+
+  /**
+   * Live attachment total, at most MAX_COLOR_ATTACHMENTS.
+   * @returns Always MAX_COLOR_ATTACHMENTS (4).
+   */
+  attachmentCount(): number {
+    return this.attachments.length;
+  }
+
+  /**
+   * Per-attachment pixel bytes; index 0 is the existing default target.
+   * @param index Attachment slot 0..3.
+   * @returns Live byte store for the slot.
+   * @throws InvalidValueError-shaped Error when index is out of range.
+   */
+  attachmentBuffer(index: number): Uint8ClampedArray {
+    const buf = this.attachments[index];
+    if (buf === undefined) throw invalidValue(`attachmentBuffer out of range ${String(index)}`);
+    return buf;
+  }
+
+  /**
+   * Validate-then-swap draw-buffer list; guard-then-swap preservation.
+   * @param list Candidate attachment enum list.
+   * @throws InvalidOperationError on over-length, out-of-range, or duplicate entry with stored config untouched.
+   */
+  configureDrawBuffers(list: number[]): void {
+    if (list.length > MAX_COLOR_ATTACHMENTS) {
+      throw new InvalidOperationError('drawBuffers: over-length list');
+    }
+    const seen = new Set<number>();
+    for (const e of list) {
+      if (!Number.isInteger(e) || e < COLOR_ATTACHMENT0 || e > COLOR_ATTACHMENT0 + MAX_COLOR_ATTACHMENTS - 1) {
+        throw new InvalidOperationError(`drawBuffers: out-of-range entry ${String(e)}`);
+      }
+      if (seen.has(e)) throw new InvalidOperationError(`drawBuffers: duplicate entry ${String(e)}`);
+      seen.add(e);
+    }
+    this.drawConfig = [...list];
+  }
+
+  /**
+   * Fresh copy of the stored draw-buffer configuration.
+   * @returns Copy of the active draw-buffer enum list.
+   */
+  activeDrawBuffers(): number[] {
+    return [...this.drawConfig];
+  }
+
+  /**
+   * Write one fragment position across all configured attachments honoring the shared color mask.
+   * @param x Column inside live extent. @param y Row inside live extent.
+   * @param colors One RGBA tuple per configured attachment, in stored order.
+   */
+  writeFragmentToAttachments(x: number, y: number, colors: Array<[number, number, number, number]>): void {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+    const n = this.drawConfig.length;
+    for (let k = 0; k < n; k++) {
+      const slot = (this.drawConfig[k] as number) - COLOR_ATTACHMENT0;
+      const buf = this.attachments[slot];
+      const c = colors[k];
+      if (buf === undefined || c === undefined) continue;
+      const i = (y * this.width + x) * 4;
+      if (this.cmR) buf[i] = c[0] as number;
+      if (this.cmG) buf[i + 1] = c[1] as number;
+      if (this.cmB) buf[i + 2] = c[2] as number;
+      if (this.cmA) buf[i + 3] = c[3] as number;
+    }
+  }
+
+  /**
+   * Exact-byte readback from a single attachment region.
+   * @param x Left edge. @param y Top edge. @param w Width. @param h Height. @param index Attachment slot 0..3.
+   * @returns Fresh byte store of length w*h*4 in RGBA order.
+   * @throws InvalidValueError-shaped Error when rectangle or index is out of bounds.
+   */
+  readAttachment(x: number, y: number, w: number, h: number, index: number): Uint8Array {
+    const buf = this.attachments[index];
+    if (buf === undefined) throw new InvalidValueError(`readAttachment bad index ${String(index)}`);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(w) || !Number.isInteger(h) ||
+        x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > this.width || y + h > this.height) {
+      throw invalidValue('readAttachment out of bounds');
+    }
+    const out = new Uint8Array(w * h * 4);
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const src = ((y + row) * this.width + (x + col)) * 4;
+        const dst = (row * w + col) * 4;
+        out[dst] = buf[src] as number;
+        out[dst + 1] = buf[src + 1] as number;
+        out[dst + 2] = buf[src + 2] as number;
+        out[dst + 3] = buf[src + 3] as number;
+      }
+    }
+    return out;
   }
 
   /**
@@ -262,12 +365,17 @@ export class Framebuffer {
    */
   resize(w: number, h: number): void {
     checkDims(w, h);
-    const nc = new Uint8ClampedArray(w * h * 4);
+    // IMPLEMENTATION DECISION: allocate-then-swap all 4 attachments first. Rationale: failed realloc keeps every prior buffer. Alternatives: in-place resize (risks partial state).
+    const fresh: Uint8ClampedArray[] = [];
+    for (let i = 0; i < MAX_COLOR_ATTACHMENTS; i++) {
+      fresh.push(new Uint8ClampedArray(w * h * 4));
+    }
     const nd = new Float32Array(w * h).fill(1.0);
     const ns = new Uint8Array(w * h);
     this.width = w;
     this.height = h;
-    this.color = nc;
+    this.color = fresh[0] as Uint8ClampedArray;
+    this.attachments = fresh;
     this.depth = nd;
     this.stencil = ns;
   }
