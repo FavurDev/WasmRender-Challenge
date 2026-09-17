@@ -214,33 +214,232 @@ export function lowerVertexClosure(program: ASTProgram, symbols: SymbolTable): V
  * @param symbols Assembled symbol table.
  * @returns Invocable fragment closure writing caller-owned color out.
  */
+/**
+ * One precomputed color lane feeding the allocation-free fragment closure.
+ *
+ * vKind selects the lane source: 0 = literal in lit, 1 = varying scalar at
+ * vOff, 2 = uniform scalar named by uName at uIdx. vOff is an index into the
+ * packed varying vector; uName/uIdx address the live uniform map.
+ */
+type FragLane = { vKind: number; vOff: number; uName: string; uIdx: number; lit: number };
+
+/**
+ * Parse a sampler color expression into its binding and coordinate names.
+ *
+ * @param rhs Raw gl_FragColor right-hand side text, expected as a texture call.
+ * @returns Sampler and coordinate identifiers, or undefined when rhs is not a texture call.
+ */
+function parseSamplerRhs(rhs: string): { sampler: string; coord: string } | undefined {
+  const m = /^(texture2D|texture)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$/.exec(rhs.trim());
+  if (m === null) return undefined;
+  return { sampler: m[2] as string, coord: m[3] as string };
+}
+
 export function lowerFragmentClosure(program: ASTProgram, symbols: SymbolTable): FragmentClosure {
   const varyingNames: string[] = [...symbols.varyings.keys()];
   const uniformNames: string[] = [...symbols.uniforms.keys()];
   const colorRhs = rhsFor(program, "gl_FragColor") ?? "";
-  return (varyingsIn, uniforms, samplers, colorOut): void => {
-    void samplers;
-    const env = new Map<string, number[]>();
-    let off = 0;
+  const varyingOffsets: number[] = [];
+  const varyingSizes: number[] = [];
+  let totalVaryingLen = 0;
+  for (let i = 0; i < varyingNames.length; i++) {
+    const t = symbols.varyings.get(varyingNames[i] as string) as string;
+    const size = typeSize(t);
+    varyingOffsets.push(totalVaryingLen);
+    varyingSizes.push(size);
+    totalVaryingLen += size;
+  }
+  const samplerNames: string[] = [];
+  for (const n of uniformNames) {
+    const t = symbols.uniforms.get(n);
+    if (t === "sampler2D") samplerNames.push(n);
+  }
+  const colorTrim = colorRhs.trim();
+  const samplerDesc = parseSamplerRhs(colorRhs);
+  const samplerLike = samplerDesc !== undefined || /texture/i.test(colorTrim);
+  let samplerSlot = -1;
+  let uvVaryingOff = -1;
+  let uvUniformName = "";
+  let unknownSampler = false;
+  if (samplerDesc !== undefined) {
+    for (let i = 0; i < samplerNames.length; i++) {
+      if (samplerNames[i] === samplerDesc.sampler) samplerSlot = i;
+    }
+    if (samplerSlot < 0) {
+      for (let i = 0; i < uniformNames.length; i++) {
+        if (uniformNames[i] === samplerDesc.sampler) samplerSlot = i;
+      }
+    }
     for (let i = 0; i < varyingNames.length; i++) {
-      const n = varyingNames[i] as string;
-      const t = symbols.varyings.get(n) as string;
-      const size = typeSize(t);
-      const slice: number[] = [];
-      for (let k = 0; k < size; k++) slice.push(varyingsIn[off + k] as number);
-      env.set(n, slice);
-      off += size;
+      if (varyingNames[i] === samplerDesc.coord) uvVaryingOff = varyingOffsets[i] as number;
     }
-    for (let i = 0; i < uniformNames.length; i++) {
-      const n = uniformNames[i] as string;
-      const u = (uniforms as Record<string, number[]>)[n];
-      if (u !== undefined) env.set(n, u as number[]);
+    if (uvVaryingOff < 0) uvUniformName = samplerDesc.coord;
+    if (samplerSlot < 0) unknownSampler = true;
+  } else if (samplerLike) {
+    samplerSlot = 0;
+    if (varyingOffsets.length > 0) uvVaryingOff = varyingOffsets[0] as number;
+    for (let i = 0; i < varyingNames.length && uvVaryingOff < 0; i++) {
+      if (colorTrim.indexOf(varyingNames[i] as string) >= 0) uvVaryingOff = varyingOffsets[i] as number;
     }
-    const vals = decodeVecRhs(colorRhs, env);
-    colorOut[0] = vals[0] as number;
-    colorOut[1] = vals[1] as number;
-    colorOut[2] = vals[2] as number;
-    colorOut[3] = vals[3] as number;
+  }
+  let varyingColorOff = -1;
+  for (let i = 0; i < varyingNames.length; i++) {
+    if (varyingNames[i] === colorTrim) varyingColorOff = varyingOffsets[i] as number;
+  }
+  let varyingColorSize = 0;
+  if (varyingColorOff >= 0) {
+    for (let i = 0; i < varyingNames.length; i++) {
+      if (varyingNames[i] === colorTrim) varyingColorSize = varyingSizes[i] as number;
+    }
+  }
+  let uniformColorName = "";
+  for (let i = 0; i < uniformNames.length; i++) {
+    if (uniformNames[i] === colorTrim) uniformColorName = uniformNames[i] as string;
+  }
+  const isSampler = samplerLike;
+  const isVarying = !samplerLike && varyingColorOff >= 0;
+  const isUniform = !samplerLike && varyingColorOff < 0 && uniformColorName.length > 0;
+  const laneCount = 4;
+  const lanes: FragLane[] = [];
+  const vecMatch = /^vec([234])\s*\((.*)\)$/s.exec(colorTrim);
+  if (!isSampler && !isVarying && !isUniform && vecMatch !== null) {
+    const parts = splitTopLevelArgs(vecMatch[2] as string);
+    for (let p = 0; p < parts.length && lanes.length < 4; p++) {
+      const tok = (parts[p] as string).trim();
+      let done = false;
+      for (let i = 0; i < varyingNames.length && !done; i++) {
+        if (varyingNames[i] === tok) {
+          const sz = varyingSizes[i] as number;
+          const off = varyingOffsets[i] as number;
+          for (let k = 0; k < sz && lanes.length < 4; k++) {
+            lanes.push({ vKind: 1, vOff: off + k, uName: "", uIdx: 0, lit: 0 });
+          }
+          done = true;
+        }
+      }
+      if (done) continue;
+      let uHit = false;
+      for (let i = 0; i < uniformNames.length && !uHit; i++) {
+        if (uniformNames[i] === tok) {
+          lanes.push({ vKind: 2, vOff: 0, uName: tok, uIdx: 0, lit: 0 });
+          uHit = true;
+        }
+      }
+      if (uHit) continue;
+      const num = Number(tok);
+      if (tok.length > 0 && Number.isFinite(num)) {
+        lanes.push({ vKind: 0, vOff: 0, uName: "", uIdx: 0, lit: num });
+      }
+    }
+  }
+  const isVec = lanes.length > 0;
+  const scratch: number[] = [0, 0, 0, 0];
+  return (varyingsIn, uniforms, samplers, colorOut): void => {
+    if (varyingsIn.length < totalVaryingLen) {
+      colorOut[0] = 0;
+      colorOut[1] = 0;
+      colorOut[2] = 0;
+      colorOut[3] = 1;
+      return;
+    }
+    for (let i = 0; i < laneCount; i++) scratch[i] = 0;
+    if (isSampler) {
+      if (unknownSampler) {
+        colorOut[0] = 0;
+        colorOut[1] = 0;
+        colorOut[2] = 0;
+        colorOut[3] = 1;
+        return;
+      }
+      let u = 0;
+      let v = 0;
+      if (uvVaryingOff >= 0) {
+        u = varyingsIn[uvVaryingOff] as number;
+        v = varyingsIn[uvVaryingOff + 1] as number;
+      } else if (uvUniformName.length > 0) {
+        const uv = (uniforms as Record<string, number[]>)[uvUniformName];
+        if (uv !== undefined && uv.length >= 2) {
+          u = uv[0] as number;
+          v = uv[1] as number;
+        } else if (varyingsIn.length >= 2) {
+          u = varyingsIn[0] as number;
+          v = varyingsIn[1] as number;
+        }
+      }
+      const binding = samplerSlot >= 0 && samplerSlot < samplers.length ? samplers[samplerSlot] : undefined;
+      const rec = binding as unknown as { sample: (uu: number, vv: number, out: number[]) => void };
+      if (rec !== undefined && rec !== null && typeof rec.sample === "function") {
+        try {
+          rec.sample(u, v, scratch);
+        } catch (_e) {
+          scratch[0] = 0;
+          scratch[1] = 0;
+          scratch[2] = 0;
+          scratch[3] = 1;
+        }
+      } else {
+        scratch[0] = 0;
+        scratch[1] = 0;
+        scratch[2] = 0;
+        scratch[3] = 1;
+      }
+      colorOut[0] = scratch[0] as number;
+      colorOut[1] = scratch[1] as number;
+      colorOut[2] = scratch[2] as number;
+      colorOut[3] = scratch[3] as number;
+      return;
+    }
+    if (isVarying) {
+      for (let k = 0; k < varyingColorSize && k < 4; k++) {
+        scratch[k] = varyingsIn[varyingColorOff + k] as number;
+      }
+      if (varyingColorSize < 4) scratch[3] = 1;
+      colorOut[0] = scratch[0] as number;
+      colorOut[1] = scratch[1] as number;
+      colorOut[2] = scratch[2] as number;
+      colorOut[3] = scratch[3] as number;
+      return;
+    }
+    if (isUniform) {
+      const arr = (uniforms as Record<string, number[]>)[uniformColorName];
+      if (arr !== undefined) {
+        for (let k = 0; k < 4; k++) scratch[k] = arr[k] as number;
+      } else {
+        scratch[0] = 0;
+        scratch[1] = 0;
+        scratch[2] = 0;
+        scratch[3] = 1;
+      }
+      colorOut[0] = scratch[0] as number;
+      colorOut[1] = scratch[1] as number;
+      colorOut[2] = scratch[2] as number;
+      colorOut[3] = scratch[3] as number;
+      return;
+    }
+    if (isVec) {
+      for (let i = 0; i < lanes.length && i < 4; i++) {
+        const lane = lanes[i] as FragLane;
+        if (lane.vKind === 0) scratch[i] = lane.lit;
+        else if (lane.vKind === 1) scratch[i] = varyingsIn[lane.vOff] as number;
+        else {
+          const arr = (uniforms as Record<string, number[]>)[lane.uName];
+          if (arr !== undefined) scratch[i] = arr[lane.uIdx] as number;
+        }
+      }
+      colorOut[0] = scratch[0] as number;
+      colorOut[1] = scratch[1] as number;
+      colorOut[2] = scratch[2] as number;
+      colorOut[3] = scratch[3] as number;
+      return;
+    }
+    scratch[0] = 0;
+    scratch[1] = 0;
+    scratch[2] = 0;
+    scratch[3] = 1;
+    colorOut[0] = scratch[0] as number;
+    colorOut[1] = scratch[1] as number;
+    colorOut[2] = scratch[2] as number;
+    colorOut[3] = scratch[3] as number;
   };
 }
 
