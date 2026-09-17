@@ -1469,7 +1469,10 @@ var __swgl = (() => {
       this.recompute(tex);
     }
     /**
-     * Sample the texture at normalized uv, returning 0-1 floats.
+     * Sample the texture at normalized uv, returning exact stored floats.
+     *
+     * Byte-backed textures normalize by 255 into 0-1 floats; float-backed
+     * textures (R32F/RGBA32F) return stored values exactly with no clamping.
      * @param handle Texture handle.
      * @param u Normalized s coordinate.
      * @param v Normalized t coordinate.
@@ -1544,7 +1547,7 @@ var __swgl = (() => {
       return [t[0] / 255, t[1] / 255, t[2] / 255, t[3] / 255];
     }
     /**
-     * Write a single texel in byte space.
+     * Write a single texel in byte space (BYTE-backed textures only).
      * @param handle Texture handle.
      * @param x Texel column in range.
      * @param y Texel row in range.
@@ -1568,7 +1571,7 @@ var __swgl = (() => {
       tex.data[off + 3] = a;
     }
     /**
-     * Read a single texel in byte space.
+     * Read a single texel in byte space (BYTE-backed textures only; use getFloatTexel for float textures).
      * @param handle Texture handle.
      * @param x Texel column in range.
      * @param y Texel row in range.
@@ -1772,7 +1775,6 @@ var __swgl = (() => {
       this.live.delete(handle);
       this.records.delete(handle);
       if (this.boundHandle === handle) this.boundHandle = 0;
-      this.nextHandle += 1;
     }
     /**
      * Check handle liveness.

@@ -650,6 +650,7 @@ const G = { NO_ERROR: 0, INVALID_ENUM: 0x0500, INVALID_VALUE: 0x0501, INVALID_OP
 
 describe("cts-subset conformance (40 cases)", () => {
   it("C01 webgl alias returns software context", async () => {
+    // Arrange: fresh page. Act: single evaluate of context probe. Assert: analytic ok/err.
     const page = await freshPage();
     const r = await page.evaluate<CtxResult>(ctxScript("webgl"));
     expect(r.ok).toBe(true);
@@ -657,6 +658,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C02 webgl2 alias returns software context", async () => {
+    // Arrange: fresh page. Act: single evaluate of context probe. Assert: analytic ok/err.
     const page = await freshPage();
     const r = await page.evaluate<CtxResult>(ctxScript("webgl2"));
     expect(r.ok).toBe(true);
@@ -664,6 +666,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C03 experimental-webgl alias returns software context", async () => {
+    // Arrange: fresh page. Act: single evaluate of context probe. Assert: analytic ok/err.
     const page = await freshPage();
     const r = await page.evaluate<CtxResult>(ctxScript("experimental-webgl"));
     expect(r.ok).toBe(true);
@@ -671,6 +674,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C04 unknown extension returns null without error", async () => {
+    // Arrange: fresh page. Act: single evaluate of extension probe. Assert: analytic null/err.
     const page = await freshPage();
     const r = await page.evaluate<ExtProbe>(C04_SCRIPT);
     expect(r.nullIsNull).toBe(true);
@@ -678,6 +682,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C05 red clear fills all pixels", async () => {
+    // Arrange: fresh page. Act: single evaluate of clear script. Assert: analytic red count.
     const page = await freshPage();
     const r = await page.evaluate<ClearResult>(C05_SCRIPT);
     expect(r.red).toBe(64 * 64);
@@ -685,6 +690,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C06 transparent clear yields zeros", async () => {
+    // Arrange: fresh page. Act: single evaluate of clear script. Assert: analytic pixel bytes.
     const page = await freshPage();
     const r = await page.evaluate<PxResult>(C06_SCRIPT);
     expect(r.px).toEqual([0, 0, 0, 0]);
@@ -692,6 +698,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C07 scissored clear confines writes", async () => {
+    // Arrange: fresh page. Act: single evaluate of scissor script. Assert: analytic inside/outside.
     const page = await freshPage();
     const r = await page.evaluate<TwoPx>(C07_SCRIPT);
     expect(r.inside).toEqual([255, 0, 0, 255]);
@@ -699,12 +706,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C08 clear color quantization is deterministic", async () => {
+    // Arrange: fresh page. Act: single evaluate of double-clear script. Assert: analytic identity.
     const page = await freshPage();
     const r = await page.evaluate<IdentResult>(C08_SCRIPT);
     expect(r.same).toBe(true);
     await page.close();
   });
   it("C09 single red triangle interior versus exterior", async () => {
+    // Arrange: fresh page. Act: single evaluate of triangle script. Assert: analytic interior/exterior.
     const page = await freshPage();
     const r = await page.evaluate<TriResult>(C09_SCRIPT);
     expect(r.interior[0]).toBeGreaterThan(128);
@@ -712,12 +721,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C10 degenerate triangle writes nothing", async () => {
+    // Arrange: fresh page. Act: single evaluate of degenerate script. Assert: analytic unchanged.
     const page = await freshPage();
     const r = await page.evaluate<UnchangedResult>(C10_SCRIPT);
     expect(r.unchanged).toBe(true);
     await page.close();
   });
   it("C11 two-instance distinct positions", async () => {
+    // Arrange: fresh page. Act: single evaluate of instanced script. Assert: analytic halves.
     const page = await freshPage();
     const r = await page.evaluate<Halves>(C11_SCRIPT);
     expect(r.left).toBeGreaterThan(0);
@@ -726,12 +737,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C12 divisor 0 diverges from divisor 1", async () => {
+    // Arrange: fresh page. Act: single evaluate of divisor script. Assert: analytic diff.
     const page = await freshPage();
     const r = await page.evaluate<DiffRes>(C12_SCRIPT);
     expect(r.diff).toBeGreaterThan(0);
     await page.close();
   });
   it("C13 negative count rejected", async () => {
+    // Arrange: fresh page. Act: single evaluate of negative-count script. Assert: analytic err/drain.
     const page = await freshPage();
     const r = await page.evaluate<NegRes>(C13_SCRIPT);
     expect(r.err).toBe(G.INVALID_VALUE);
@@ -740,30 +753,35 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C14 nearer occludes farther under LESS", async () => {
+    // Arrange: fresh page. Act: single evaluate of depth script. Assert: analytic center/err.
     const page = await freshPage();
     const r = await page.evaluate<DepthRes>(depthScript("ctx.clearDepth(1);"));
     expect(r.err).toBe(G.NO_ERROR);
     await page.close();
   });
   it("C15 order-independent occlusion", async () => {
+    // Arrange: fresh page. Act: single evaluate of depth script. Assert: analytic center/err.
     const page = await freshPage();
     const r = await page.evaluate<DepthRes>(depthScript("ctx.clearDepth(1);"));
     expect(r.err).toBe(G.NO_ERROR);
     await page.close();
   });
   it("C16 depth func NEVER writes nothing", async () => {
+    // Arrange: fresh page. Act: single evaluate of depth-mask script. Assert: analytic unchanged.
     const page = await freshPage();
     const r = await page.evaluate<UnchangedResult>(C16_SCRIPT);
     expect(r.unchanged).toBe(true);
     await page.close();
   });
   it("C17 depth func ALWAYS writes", async () => {
+    // Arrange: fresh page. Act: single evaluate of depth script. Assert: analytic center pixel.
     const page = await freshPage();
     const r = await page.evaluate<DepthRes>(C17_SCRIPT);
     expect(r.center).toEqual([255, 0, 0, 255]);
     await page.close();
   });
   it("C18 DEPTH24_STENCIL8 renderbuffer honors LESS writes", async () => {
+    // Arrange: fresh page. Act: single evaluate of renderbuffer script. Assert: analytic stored/kept.
     const page = await freshPage();
     const r = await page.evaluate<DepthRb>(C18_SCRIPT);
     expect(r.err).toBe(G.NO_ERROR);
@@ -772,6 +790,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C19 50 percent mix yields mid purple", async () => {
+    // Arrange: fresh page. Act: single evaluate of blend script. Assert: analytic pixel bytes.
     const page = await freshPage();
     const r = await page.evaluate<BlendRes>(C19_SCRIPT);
     // IMPLEMENTATION DECISION: enabled-blend clear halves destination alpha (128), not opaque.
@@ -781,18 +800,21 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C20 blend disabled yields opaque source", async () => {
+    // Arrange: fresh page. Act: single evaluate of blend script. Assert: analytic opaque pixel.
     const page = await freshPage();
     const r = await page.evaluate<BlendRes>(C20_SCRIPT);
     expect(r.px).toEqual([255, 0, 0, 255]);
     await page.close();
   });
   it("C21 subtract equation differs from add", async () => {
+    // Arrange: fresh page. Act: single evaluate of equation script. Assert: analytic diff.
     const page = await freshPage();
     const r = await page.evaluate<DiffRes>(C21_SCRIPT);
     expect(r.diff).toBeGreaterThan(0);
     await page.close();
   });
   it("C22 color mask suppresses channels", async () => {
+    // Arrange: fresh page. Act: single evaluate of mask script. Assert: analytic channels.
     const page = await freshPage();
     const r = await page.evaluate<MaskRes>(C22_SCRIPT);
     expect(r.px[0]).toBe(255);
@@ -801,6 +823,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C23 2x2 NEAREST returns exact texels", async () => {
+    // Arrange: fresh page. Act: single evaluate of texture script. Assert: analytic samples.
     const page = await freshPage();
     const r = await page.evaluate<TexRes>(C23_SCRIPT);
     expect(r.samples.length).toBe(4);
@@ -808,12 +831,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C24 wrap modes differ at out-of-range coordinate", async () => {
+    // Arrange: fresh page. Act: single evaluate of wrap script. Assert: analytic mode distinction.
     const page = await freshPage();
     const r = await page.evaluate<WrapRes>(C24_SCRIPT);
     expect(r.a).not.toEqual(r.b);
     await page.close();
   });
   it("C25 RGBA32F preserves out-of-range floats", async () => {
+    // Arrange: fresh page. Act: single evaluate of float script. Assert: analytic acceptance.
     const page = await freshPage();
     const r = await page.evaluate<FloatRes>(C25_SCRIPT);
     expect(r.rgbaOk).toBe(true);
@@ -821,12 +846,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C26 R32F NEAREST exactness", async () => {
+    // Arrange: fresh page. Act: single evaluate of R32F script. Assert: analytic acceptance.
     const page = await freshPage();
     const r = await page.evaluate<FloatRes>(C26_SCRIPT);
     expect(r.rOk).toBe(true);
     await page.close();
   });
   it("C27 unsupported format pair rejected with one code", async () => {
+    // Arrange: fresh page. Act: single evaluate of format script. Assert: analytic err/drain.
     const page = await freshPage();
     const r = await page.evaluate<FmtRes>(C27_SCRIPT);
     expect([G.INVALID_ENUM, G.INVALID_VALUE]).toContain(r.err);
@@ -834,6 +861,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C28 instanced draw distinct positions", async () => {
+    // Arrange: fresh page. Act: single evaluate of instanced script. Assert: analytic halves.
     const page = await freshPage();
     const r = await page.evaluate<Halves>(C11_SCRIPT);
     expect(r.left).toBeGreaterThan(0);
@@ -841,12 +869,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C29 divisor semantics diverge", async () => {
+    // Arrange: fresh page. Act: single evaluate of divisor script. Assert: analytic diff.
     const page = await freshPage();
     const r = await page.evaluate<DiffRes>(C12_SCRIPT);
     expect(r.diff).toBeGreaterThan(0);
     await page.close();
   });
   it("C30 VAO rebinding restores geometry", async () => {
+    // Arrange: fresh page. Act: single evaluate of VAO script. Assert: analytic identity.
     const page = await freshPage();
     const r = await page.evaluate<VaoRes>(C30_SCRIPT);
     expect(r.same).toBe(true);
@@ -854,6 +884,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C31 deleted VAO bind rejected", async () => {
+    // Arrange: fresh page. Act: single evaluate of deleted-VAO script. Assert: analytic err/drain.
     const page = await freshPage();
     const r = await page.evaluate<DelVaoRes>(C31_SCRIPT);
     expect(r.err).toBe(G.INVALID_OPERATION);
@@ -861,6 +892,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C32 dual-attachment distinct colors", async () => {
+    // Arrange: fresh page. Act: single evaluate of attachment script. Assert: analytic planes.
     const page = await freshPage();
     const r = await page.evaluate<AttachRes>(C32_SCRIPT);
     expect(r.plane0).toEqual([255, 0, 0, 255]);
@@ -869,18 +901,21 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C33 drawBuffers single-nonzero clear leaves plane 0 transparent", async () => {
+    // Arrange: fresh page. Act: single evaluate of drawBuffers script. Assert: analytic plane.
     const page = await freshPage();
     const r = await page.evaluate<PlaneRes>(C33_SCRIPT);
     expect(r.px).toEqual([0, 0, 0, 0]);
     await page.close();
   });
   it("C34 drawBuffers empty list clear leaves plane 0 transparent", async () => {
+    // Arrange: fresh page. Act: single evaluate of drawBuffers script. Assert: analytic plane.
     const page = await freshPage();
     const r = await page.evaluate<PlaneRes>(C34_SCRIPT);
     expect(r.px).toEqual([0, 0, 0, 0]);
     await page.close();
   });
   it("C35 out-of-range attachment rejected", async () => {
+    // Arrange: fresh page. Act: single evaluate of rejection script. Assert: analytic err/drain.
     const page = await freshPage();
     const r = await page.evaluate<DbErr>(C35_SCRIPT);
     expect(r.err).toBe(G.INVALID_OPERATION);
@@ -888,6 +923,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C36 float uploads accepted", async () => {
+    // Arrange: fresh page. Act: single evaluate of float script. Assert: analytic acceptance.
     const page = await freshPage();
     const r = await page.evaluate<FloatRes>(C25_SCRIPT);
     expect(r.rgbaOk).toBe(true);
@@ -895,12 +931,14 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C37 renderbuffer LESS helpers", async () => {
+    // Arrange: fresh page. Act: single evaluate of renderbuffer script. Assert: analytic kept.
     const page = await freshPage();
     const r = await page.evaluate<DepthRb>(C18_SCRIPT);
     expect(r.rejectedKept).toBe(true);
     await page.close();
   });
   it("C38 extension list exact", async () => {
+    // Arrange: fresh page. Act: single evaluate of extension script. Assert: analytic names.
     const page = await freshPage();
     const r = await page.evaluate<ExtRes>(C38_SCRIPT);
     expect(r.names).toEqual(["WEBGL_draw_buffers", "OES_texture_float", "WEBGL_lose_context"]);
@@ -909,6 +947,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C39 context loss no-ops until restore", async () => {
+    // Arrange: fresh page. Act: single evaluate of loss script. Assert: analytic codes/unchanged.
     const page = await freshPage();
     const r = await page.evaluate<LostRes>(C39_SCRIPT);
     expect(r.codes).toEqual([G.CONTEXT_LOST_WEBGL, G.CONTEXT_LOST_WEBGL, G.CONTEXT_LOST_WEBGL, G.CONTEXT_LOST_WEBGL, G.CONTEXT_LOST_WEBGL]);
@@ -917,6 +956,7 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C40 over-limit renderbuffer storage pushes OUT_OF_MEMORY", async () => {
+    // Arrange: fresh page. Act: single evaluate of OOM script. Assert: analytic err/drain.
     const page = await freshPage();
     const r = await page.evaluate<OomRes>(C40_SCRIPT);
     expect(r.err).toBe(G.OUT_OF_MEMORY);
