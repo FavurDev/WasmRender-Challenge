@@ -13,7 +13,7 @@
 // - Sprint 4: Created coverage core with top-left rule, perspective-correct varyings, pipeline, and blending.
 import type { Framebuffer } from './framebuffer';
 import type { GLState } from './state';
-import { ALWAYS, CONSTANT_ALPHA, CONSTANT_COLOR, DST_ALPHA, DST_COLOR, EQUAL, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, ZERO } from './gl-constants';
+import { ALWAYS, COLOR_ATTACHMENT0, CONSTANT_ALPHA, CONSTANT_COLOR, DST_ALPHA, DST_COLOR, EQUAL, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, ZERO } from './gl-constants';
 
 /** One post-transform vertex consumed by coverage math. */
 export interface Vertex {
@@ -37,6 +37,8 @@ export interface DrawCall {
   instanceCount: number;
   samplers: TextureBinding[];
   fragmentColor: [number, number, number, number];
+  fragmentColors?: Array<[number, number, number, number]>;
+  fragScratch?: Array<[number, number, number, number]>;
 }
 
 /**
@@ -255,37 +257,32 @@ function blendFactor(factorEnum: number, srcC: number, srcA: number, dstC: numbe
 }
 
 /**
- * Applies depthMask and per-channel colorMask writes after all tests pass.
- *
- * @param px Integer pixel x.
- * @param py Integer pixel y.
- * @param incomingDepth Incoming fragment depth.
- * @param frag Constant source color.
- * @param fb Write target owning the color and depth stores.
- * @param st State snapshot supplying depthMask, colorMask, blend flag.
- * @returns Nothing; mutates framebuffer stores.
+ * In-place blend variant writing into a caller-owned slot; zero allocation.
+ * @param out Slot receiving the blended RGBA tuple.
  */
-function writeFragment(px: number, py: number, incomingDepth: number, frag: readonly [number, number, number, number], fb: Framebuffer, st: GLState): void {
-  const fw = fb.width;
-  if (st.depthMask) fb.depth[py * fw + px] = incomingDepth;
-  const color = fb.color;
-  const off = (py * fw + px) * 4;
-  const cm = st.colorMask;
-  const fr = frag[0] as number;
-  const fg = frag[1] as number;
-  const fb2 = frag[2] as number;
-  const fa = frag[3] as number;
-  if (!st.blendEnabled) {
-    if (cm[0] as boolean) color[off] = fr;
-    if (cm[1] as boolean) color[off + 1] = fg;
-    if (cm[2] as boolean) color[off + 2] = fb2;
-    if (cm[3] as boolean) color[off + 3] = fa;
-    return;
-  }
-  const dr = color[off] as number;
-  const dg = color[off + 1] as number;
-  const db = color[off + 2] as number;
-  const da = color[off + 3] as number;
+function blendInto(out: [number, number, number, number], fr: number, fg: number, fb2: number, fa: number, dr: number, dg: number, db: number, da: number, st: GLState): void {
+  const b = blendOne(fr, fg, fb2, fa, dr, dg, db, da, st);
+  out[0] = b[0]; out[1] = b[1]; out[2] = b[2]; out[3] = b[3];
+}
+/**
+ * Blends one source tuple against one destination tuple per the blend state.
+ *
+ * Pure helper: reads no framebuffer memory, writes nothing. Returns the
+ * blended RGBA tuple; the caller replicates it per configured attachment.
+ *
+ * @param fr Source red channel (0-255).
+ * @param fg Source green channel (0-255).
+ * @param fb2 Source blue channel (0-255).
+ * @param fa Source alpha channel (0-255).
+ * @param dr Destination red channel (0-255).
+ * @param dg Destination green channel (0-255).
+ * @param db Destination blue channel (0-255).
+ * @param da Destination alpha channel (0-255).
+ * @param st State snapshot supplying blend flag, factors, and equation.
+ * @returns Blended RGBA tuple honoring the blend equation.
+ */
+function blendOne(fr: number, fg: number, fb2: number, fa: number, dr: number, dg: number, db: number, da: number, st: GLState): [number, number, number, number] {
+  if (!st.blendEnabled) return [fr, fg, fb2, fa];
   const srcR = fr / 255;
   const srcG = fg / 255;
   const srcB = fb2 / 255;
@@ -311,23 +308,58 @@ function writeFragment(px: number, py: number, incomingDepth: number, frag: read
   const sdB = db * dfB;
   const sdA = da * 1;
   const eq = st.blendEquation;
-  let r: number;
-  let g: number;
-  let b: number;
-  let a: number;
-  if (eq === FUNC_SUBTRACT) {
-    r = ssR - sdR; g = ssG - sdG; b = ssB - sdB; a = ssA - sdA;
-  } else if (eq === FUNC_REVERSE_SUBTRACT) {
-    r = sdR - ssR; g = sdG - ssG; b = sdB - ssB; a = sdA - ssA;
-  } else {
-    r = ssR + sdR; g = ssG + sdG; b = ssB + sdB; a = ssA + sdA;
-  }
   void CONSTANT_COLOR; void CONSTANT_ALPHA; void ONE_MINUS_CONSTANT_COLOR; void ONE_MINUS_CONSTANT_ALPHA;
   void FUNC_ADD; void FUNC_REVERSE_SUBTRACT; void FUNC_SUBTRACT;
-  if (cm[0] as boolean) color[off] = r;
-  if (cm[1] as boolean) color[off + 1] = g;
-  if (cm[2] as boolean) color[off + 2] = b;
-  if (cm[3] as boolean) color[off + 3] = a;
+  if (eq === FUNC_SUBTRACT) return [ssR - sdR, ssG - sdG, ssB - sdB, ssA - sdA];
+  if (eq === FUNC_REVERSE_SUBTRACT) return [sdR - ssR, sdG - ssG, sdB - ssB, sdA - ssA];
+  return [ssR + sdR, ssG + sdG, ssB + sdB, ssA + sdA];
+}
+/**
+ * Writes one fragment to every configured color attachment via framebuffer-owned helpers.
+ *
+ * Applies depthMask to the depth store, blends the source tuple against each
+ * active plane's destination texel, then delegates masked writes to
+ * writeFragmentToAttachments. Empty draw config writes nothing.
+ *
+ * @param px Integer pixel x.
+ * @param py Integer pixel y.
+ * @param incomingDepth Incoming fragment depth.
+ * @param frag Constant source color replicated per plane.
+ * @param fb Write target owning the color and depth stores.
+ * @param st State snapshot supplying depthMask, colorMask, blend flag.
+ * @returns Nothing; mutates framebuffer stores.
+ */
+function writeFragment(px: number, py: number, incomingDepth: number, frag: readonly [number, number, number, number], fb: Framebuffer, st: GLState, frags?: Array<[number, number, number, number]>, scratch?: Array<[number, number, number, number]>): void {
+  const fw = fb.width;
+  if (st.depthMask) fb.depth[py * fw + px] = incomingDepth;
+  const off = (py * fw + px) * 4;
+  const n = fb.drawPlaneCount();
+  if (n === 0) return;
+  // IMPLEMENTATION DECISION: distinct per-plane source when frags aligns with planes; else replicate single frag. Rationale: Gap-B distinct path with fallback. Alternatives: always replicate (review CRITICAL failure).
+  const distinct = frags !== undefined && frags.length === n;
+  // IMPLEMENTATION DECISION: caller-owned scratch reused per fragment; no per-fragment allocation. Rationale: MEDIUM allocation fix. Alternatives: fresh colors array per fragment (rejected).
+  let out = scratch;
+  if (out === undefined) { out = []; }
+  for (let k = 0; k < n; k++) {
+    const src = distinct ? (frags as Array<[number, number, number, number]>)[k] as [number, number, number, number] : frag;
+    const fr = src[0] as number;
+    const fg = src[1] as number;
+    const fb2 = src[2] as number;
+    const fa = src[3] as number;
+    const buf = fb.attachmentBuffer(fb.drawPlaneAt(k) - COLOR_ATTACHMENT0);
+    const dr = buf[off] as number;
+    const dg = buf[off + 1] as number;
+    const db = buf[off + 2] as number;
+    const da = buf[off + 3] as number;
+    let slot = out[k];
+    if (slot === undefined) { slot = [0, 0, 0, 0]; out[k] = slot; }
+    if (!st.blendEnabled) {
+      slot[0] = fr; slot[1] = fg; slot[2] = fb2; slot[3] = fa;
+    } else {
+      blendInto(slot, fr, fg, fb2, fa, dr, dg, db, da, st);
+    }
+  }
+  fb.writeFragmentToAttachments(px, py, out);
 }
 
 /**
@@ -364,6 +396,8 @@ function fillTriangle(
   outVaryings?: Float32Array,
   varyingCount?: number,
   prog?: FragmentProgram | null,
+  frags?: Array<[number, number, number, number]>,
+  fragScratch?: Array<[number, number, number, number]>,
 ): void {
   const area = edge(s0[0], s0[1], s1[0], s1[1], s2[0], s2[1]);
   if (area === 0) return;
@@ -465,7 +499,7 @@ function fillTriangle(
         } else if (prog !== undefined && prog !== null && outVaryings !== undefined) {
           prog.fragment(outVaryings);
         }
-        writeFragment(px, py, incomingDepth, frag, fb, st);
+        writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
       }
       e0 += a0;
       e1 += a1;
@@ -503,7 +537,7 @@ export function drawArraysImpl(call: DrawCall): void {
       const s2 = project(v2, call.state.viewport);
       if (s0 === null || s1 === null || s2 === null) continue;
       if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
     }
   }
 }
@@ -539,7 +573,7 @@ export function drawElementsImpl(call: DrawCall): void {
       const s2 = project(v2, call.state.viewport);
       if (s0 === null || s1 === null || s2 === null) continue;
       if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
     }
   }
 }

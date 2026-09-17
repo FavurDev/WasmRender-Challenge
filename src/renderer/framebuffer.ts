@@ -137,6 +137,21 @@ export class Framebuffer {
   activeDrawBuffers(): number[] {
     return [...this.drawConfig];
   }
+  /**
+   * Count of configured draw planes without allocating a copy.
+   * @returns Number of active draw-buffer entries.
+   */
+  drawPlaneCount(): number {
+    return this.drawConfig.length;
+  }
+  /**
+   * Draw-buffer enum at position k without allocating a copy.
+   * @param k Position inside the stored configuration.
+   * @returns Attachment enum at that position.
+   */
+  drawPlaneAt(k: number): number {
+    return this.drawConfig[k] as number;
+  }
 
   /**
    * Write one fragment position across all configured attachments honoring the shared color mask.
@@ -276,22 +291,26 @@ export class Framebuffer {
     }
     const full = x0 === 0 && y0 === 0 && x1 === this.width && y1 === this.height;
     if ((mask & COLOR_BUFFER_BIT) !== 0) {
-      const c = this.color;
-      if (full) {
-        for (let i = 0; i < c.length; i += 4) {
-          if (this.cmR) c[i] = rb;
-          if (this.cmG) c[i + 1] = gb;
-          if (this.cmB) c[i + 2] = bb;
-          if (this.cmA) c[i + 3] = ab;
-        }
-      } else {
-        for (let y = y0; y < y1; y++) {
-          for (let x = x0; x < x1; x++) {
-            const i = (y * this.width + x) * 4;
+      for (const e of this.drawConfig) {
+        const slot = e - COLOR_ATTACHMENT0;
+        const c = this.attachments[slot];
+        if (c === undefined) continue;
+        if (full) {
+          for (let i = 0; i < c.length; i += 4) {
             if (this.cmR) c[i] = rb;
             if (this.cmG) c[i + 1] = gb;
             if (this.cmB) c[i + 2] = bb;
             if (this.cmA) c[i + 3] = ab;
+          }
+        } else {
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const i = (y * this.width + x) * 4;
+              if (this.cmR) c[i] = rb;
+              if (this.cmG) c[i + 1] = gb;
+              if (this.cmB) c[i + 2] = bb;
+              if (this.cmA) c[i + 3] = ab;
+            }
           }
         }
       }

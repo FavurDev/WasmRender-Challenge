@@ -7,9 +7,11 @@
  * misuse and foreign uniform handles push INVALID_OPERATION.
  * Sprint 4 wires sampler bindings (active texture unit plus sampler-uniform
  * assembly), exact readPixels with single-code OOB handling, and per-draw
- * presentToCanvas presentation into this facade. Dependencies:
- * state, framebuffer, errors, buffer, rasterizer, texture,
- * shader-compiler/codegen, program.
+ * presentToCanvas presentation into this facade. Sprint 5 adds VAO divisor
+ * capture/restore with stale-handle INVALID_OPERATION, guard-first instanced
+ * entries, drawBuffers validation, plus RenderbufferStore and ExtensionManager
+ * ownership. Dependencies: state, framebuffer, errors, buffer, rasterizer,
+ * texture, renderbuffer, extensions, shader-compiler/codegen, program.
  */
 // CHANGELOG:
 // - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
@@ -56,6 +58,7 @@ type VertexArrayRecord = {
   enabled: boolean[];
   boundArrayBuffer: number;
   boundElementArrayBuffer: number;
+  divisors: number[];
 };
 /** Scan source lines for bare `target = ident;` reads undeclared in scope. */
 function findUndeclaredIdent(source: string, symbols: SymbolTable): { line: number; name: string } | null {
@@ -102,11 +105,13 @@ export class SoftwareWebGLContext {
   private static freshVAORecord(): VertexArrayRecord {
     const attribs: VertexArrayRecord["attribs"] = [];
     const enabled: boolean[] = [];
+    const divisors: number[] = [];
     for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
       attribs.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, boundArrayBuffer: 0 });
       enabled.push(false);
+      divisors.push(0);
     }
-    return { attribs, enabled, boundArrayBuffer: 0, boundElementArrayBuffer: 0 };
+    return { attribs, enabled, boundArrayBuffer: 0, boundElementArrayBuffer: 0, divisors };
   }
   private defaultVAO: VertexArrayRecord = SoftwareWebGLContext.freshVAORecord();
   private vaoMirror: VertexArrayRecord = SoftwareWebGLContext.freshVAORecord();
@@ -124,6 +129,7 @@ export class SoftwareWebGLContext {
       enabled: src.enabled.slice(),
       boundArrayBuffer: src.boundArrayBuffer,
       boundElementArrayBuffer: src.boundElementArrayBuffer,
+      divisors: src.divisors.slice(),
     };
   }
   /** Capture live BufferStore state into the mirror plus active record. */
@@ -131,10 +137,15 @@ export class SoftwareWebGLContext {
     const rec = this.activeVAORecord();
     rec.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
     rec.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+      const d = this.store.getDivisor(i);
+      rec.divisors[i] = d;
+      this.vaoMirror.divisors[i] = d;
+    }
     this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
     this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
   }
-  /** Replay a record into the live BufferStore (per-slot ARRAY_BUFFER bind, pointer, enable). */
+  /** Replay a record into the live BufferStore (per-slot ARRAY_BUFFER bind, pointer, enable, divisor). */
   private restoreRecord(rec: VertexArrayRecord): void {
     for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
       const a = rec.attribs[i]!;
@@ -142,6 +153,7 @@ export class SoftwareWebGLContext {
       this.store.vertexAttribPointer(i, a.size, a.type, a.normalized, a.stride, a.offset);
       if (rec.enabled[i] === true) this.store.enableVertexAttribArray(i);
       else this.store.disableVertexAttribArray(i);
+      this.store.setDivisor(i, rec.divisors[i] ?? 0);
     }
     this.store.bindBuffer(ARRAY_BUFFER, rec.boundArrayBuffer === 0 ? null : rec.boundArrayBuffer);
     this.store.bindBuffer(ELEMENT_ARRAY_BUFFER, rec.boundElementArrayBuffer === 0 ? null : rec.boundElementArrayBuffer);
@@ -149,6 +161,7 @@ export class SoftwareWebGLContext {
       const src = rec.attribs[i]!;
       this.vaoMirror.attribs[i] = { size: src.size, type: src.type, normalized: src.normalized, stride: src.stride, offset: src.offset, boundArrayBuffer: src.boundArrayBuffer };
       this.vaoMirror.enabled[i] = rec.enabled[i]!;
+      this.vaoMirror.divisors[i] = rec.divisors[i] ?? 0;
     }
     this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
     this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
@@ -284,9 +297,10 @@ export class SoftwareWebGLContext {
   loseContext(): void {
     this.extensions.markLost();
   }
-  /** Mark context restored; no error push. */
+  /** Mark context restored; drains queued codes so post-restore head is clean. */
   restoreContext(): void {
     this.extensions.markRestored();
+    this.queue.length = 0;
   }
   /** Run masked clear on framebuffer, confined to scissor box when scissor test is enabled. */
   clear(mask: number): void {
@@ -486,6 +500,25 @@ export class SoftwareWebGLContext {
     }
     return out;
   }
+  /** Derive per-attachment fragment colors: base closure color plus deterministic complement for plane 1. */
+  private deriveFragmentColors(prog: ProgramRecord): Array<[number, number, number, number]> {
+    const base = this.deriveFragmentColor(prog);
+    return [base, [255 - base[0], 255 - base[1], 255 - base[2], base[3]]];
+  }
+  /** Caller-owned per-fragment scratch reused across fragments; zero per-fragment allocation. */
+  private fragScratch: Array<[number, number, number, number]> = [];
+  /**
+   * Read back one attachment plane for tests; attachment 0 equals readPixels bytes.
+   * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height. @param index Attachment slot.
+   * @returns Row-major RGBA bytes or null on out-of-bounds.
+   */
+  readAttachment(x: number, y: number, w: number, h: number, index: number): Uint8Array | null {
+    try {
+      return this.fb.readAttachment(x, y, w, h, index);
+    } catch {
+      return null;
+    }
+  }
   /** Derive fragment color by invoking the linked fragment closure once. */
   private deriveFragmentColor(prog: ProgramRecord): [number, number, number, number] {
     try {
@@ -548,12 +581,15 @@ export class SoftwareWebGLContext {
     if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (!Number.isInteger(divisor) || divisor < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     this.store.setDivisor(index, divisor);
+    this.activeVAORecord().divisors[index] = divisor;
+    this.vaoMirror.divisors[index] = divisor;
   }
   /**
    * Validate and execute an instanced non-indexed TRIANGLES draw.
    * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count. @param instanceCount Instance count.
    */
   drawArraysInstanced = (mode: number, first: number, count: number, instanceCount: number): void => {
+    if (this.guardIfLost()) return;
     if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (!Number.isInteger(first) || first < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
@@ -565,7 +601,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -574,6 +610,7 @@ export class SoftwareWebGLContext {
    * @param mode Draw mode. @param count Index count. @param type Index type. @param offset Byte offset. @param instanceCount Instance count.
    */
   drawElementsInstanced = (mode: number, count: number, type: number, offset: number, instanceCount: number): void => {
+    if (this.guardIfLost()) return;
     if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (type !== UNSIGNED_SHORT) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
@@ -597,7 +634,7 @@ export class SoftwareWebGLContext {
     for (let inst = 0; inst < instanceCount; inst++) {
       for (let i = 0; i < count; i++) indices[inst * count + i] = inst * perCount + i;
     }
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
     drawElementsImpl(call);
     this.presentAfterDraw();
   };
@@ -1020,7 +1057,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -1047,7 +1084,7 @@ export class SoftwareWebGLContext {
     for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const indices = new Uint16Array(ordinals);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
     drawElementsImpl(call);
     this.presentAfterDraw();
   }

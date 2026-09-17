@@ -75,13 +75,20 @@ var __swgl = (() => {
   var CLAMP_TO_EDGE = 33071;
   var REPEAT = 10497;
   var MIRRORED_REPEAT = 33648;
+  var RED = 6403;
   var RGBA = 6408;
   var UNSIGNED_BYTE = 5121;
   var UNSIGNED_SHORT = 5123;
   var FLOAT = 5126;
+  var RENDERBUFFER = 36161;
+  var COLOR_ATTACHMENT0 = 36064;
   var COLOR_BUFFER_BIT = 16384;
   var DEPTH_BUFFER_BIT = 256;
   var STENCIL_BUFFER_BIT = 1024;
+  var R32F = 33326;
+  var RGBA32F = 34836;
+  var DEPTH_COMPONENT16 = 33189;
+  var DEPTH24_STENCIL8 = 35056;
   var ARRAY_BUFFER = 34962;
   var ELEMENT_ARRAY_BUFFER = 34963;
   var VERTEX_SHADER = 35633;
@@ -93,8 +100,11 @@ var __swgl = (() => {
   var INVALID_ENUM = 1280;
   var INVALID_VALUE = 1281;
   var INVALID_OPERATION = 1282;
+  var OUT_OF_MEMORY = 1285;
+  var CONTEXT_LOST_WEBGL = 37442;
   var MAX_TEXTURE_SIZE = 4096;
   var MAX_VIEWPORT_DIMS = [4096, 4096];
+  var MAX_COLOR_ATTACHMENTS = 4;
   var MAX_CUBE_MAP_TEXTURE_SIZE = 1024;
   var MAX_VERTEX_ATTRIBS = 16;
   var MAX_TEXTURE_IMAGE_UNITS = 16;
@@ -387,13 +397,123 @@ var __swgl = (() => {
     cmA = true;
     dm = true;
     sm = 255;
+    attachments = [];
+    drawConfig = [COLOR_ATTACHMENT0];
     constructor(w, h) {
       checkDims(w, h);
       this.width = w;
       this.height = h;
       this.color = new Uint8ClampedArray(w * h * 4);
+      this.attachments = [this.color];
+      for (let i = 1; i < MAX_COLOR_ATTACHMENTS; i++) {
+        this.attachments.push(new Uint8ClampedArray(w * h * 4));
+      }
       this.depth = new Float32Array(w * h).fill(1);
       this.stencil = new Uint8Array(w * h);
+    }
+    /**
+     * Live attachment total, at most MAX_COLOR_ATTACHMENTS.
+     * @returns Always MAX_COLOR_ATTACHMENTS (4).
+     */
+    attachmentCount() {
+      return this.attachments.length;
+    }
+    /**
+     * Per-attachment pixel bytes; index 0 is the existing default target.
+     * @param index Attachment slot 0..3.
+     * @returns Live byte store for the slot.
+     * @throws InvalidValueError-shaped Error when index is out of range.
+     */
+    attachmentBuffer(index) {
+      const buf = this.attachments[index];
+      if (buf === void 0) throw invalidValue(`attachmentBuffer out of range ${String(index)}`);
+      return buf;
+    }
+    /**
+     * Validate-then-swap draw-buffer list; guard-then-swap preservation.
+     * @param list Candidate attachment enum list.
+     * @throws InvalidOperationError on over-length, out-of-range, or duplicate entry with stored config untouched.
+     */
+    configureDrawBuffers(list) {
+      if (list.length > MAX_COLOR_ATTACHMENTS) {
+        throw new InvalidOperationError("drawBuffers: over-length list");
+      }
+      const seen = /* @__PURE__ */ new Set();
+      for (const e of list) {
+        if (!Number.isInteger(e) || e < COLOR_ATTACHMENT0 || e > COLOR_ATTACHMENT0 + MAX_COLOR_ATTACHMENTS - 1) {
+          throw new InvalidOperationError(`drawBuffers: out-of-range entry ${String(e)}`);
+        }
+        if (seen.has(e)) throw new InvalidOperationError(`drawBuffers: duplicate entry ${String(e)}`);
+        seen.add(e);
+      }
+      this.drawConfig = [...list];
+    }
+    /**
+     * Fresh copy of the stored draw-buffer configuration.
+     * @returns Copy of the active draw-buffer enum list.
+     */
+    activeDrawBuffers() {
+      return [...this.drawConfig];
+    }
+    /**
+     * Count of configured draw planes without allocating a copy.
+     * @returns Number of active draw-buffer entries.
+     */
+    drawPlaneCount() {
+      return this.drawConfig.length;
+    }
+    /**
+     * Draw-buffer enum at position k without allocating a copy.
+     * @param k Position inside the stored configuration.
+     * @returns Attachment enum at that position.
+     */
+    drawPlaneAt(k) {
+      return this.drawConfig[k];
+    }
+    /**
+     * Write one fragment position across all configured attachments honoring the shared color mask.
+     * @param x Column inside live extent. @param y Row inside live extent.
+     * @param colors One RGBA tuple per configured attachment, in stored order.
+     */
+    writeFragmentToAttachments(x, y, colors) {
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+      const n = this.drawConfig.length;
+      for (let k = 0; k < n; k++) {
+        const slot = this.drawConfig[k] - COLOR_ATTACHMENT0;
+        const buf = this.attachments[slot];
+        const c = colors[k];
+        if (buf === void 0 || c === void 0) continue;
+        const i = (y * this.width + x) * 4;
+        if (this.cmR) buf[i] = c[0];
+        if (this.cmG) buf[i + 1] = c[1];
+        if (this.cmB) buf[i + 2] = c[2];
+        if (this.cmA) buf[i + 3] = c[3];
+      }
+    }
+    /**
+     * Exact-byte readback from a single attachment region.
+     * @param x Left edge. @param y Top edge. @param w Width. @param h Height. @param index Attachment slot 0..3.
+     * @returns Fresh byte store of length w*h*4 in RGBA order.
+     * @throws InvalidValueError-shaped Error when rectangle or index is out of bounds.
+     */
+    readAttachment(x, y, w, h, index) {
+      const buf = this.attachments[index];
+      if (buf === void 0) throw new InvalidValueError(`readAttachment bad index ${String(index)}`);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(w) || !Number.isInteger(h) || x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > this.width || y + h > this.height) {
+        throw invalidValue("readAttachment out of bounds");
+      }
+      const out = new Uint8Array(w * h * 4);
+      for (let row = 0; row < h; row++) {
+        for (let col = 0; col < w; col++) {
+          const src = ((y + row) * this.width + (x + col)) * 4;
+          const dst = (row * w + col) * 4;
+          out[dst] = buf[src];
+          out[dst + 1] = buf[src + 1];
+          out[dst + 2] = buf[src + 2];
+          out[dst + 3] = buf[src + 3];
+        }
+      }
+      return out;
     }
     /**
      * Store clear color floats as given.
@@ -492,22 +612,26 @@ var __swgl = (() => {
       }
       const full = x0 === 0 && y0 === 0 && x1 === this.width && y1 === this.height;
       if ((mask & COLOR_BUFFER_BIT) !== 0) {
-        const c = this.color;
-        if (full) {
-          for (let i = 0; i < c.length; i += 4) {
-            if (this.cmR) c[i] = rb;
-            if (this.cmG) c[i + 1] = gb;
-            if (this.cmB) c[i + 2] = bb;
-            if (this.cmA) c[i + 3] = ab;
-          }
-        } else {
-          for (let y = y0; y < y1; y++) {
-            for (let x = x0; x < x1; x++) {
-              const i = (y * this.width + x) * 4;
+        for (const e of this.drawConfig) {
+          const slot = e - COLOR_ATTACHMENT0;
+          const c = this.attachments[slot];
+          if (c === void 0) continue;
+          if (full) {
+            for (let i = 0; i < c.length; i += 4) {
               if (this.cmR) c[i] = rb;
               if (this.cmG) c[i + 1] = gb;
               if (this.cmB) c[i + 2] = bb;
               if (this.cmA) c[i + 3] = ab;
+            }
+          } else {
+            for (let y = y0; y < y1; y++) {
+              for (let x = x0; x < x1; x++) {
+                const i = (y * this.width + x) * 4;
+                if (this.cmR) c[i] = rb;
+                if (this.cmG) c[i + 1] = gb;
+                if (this.cmB) c[i + 2] = bb;
+                if (this.cmA) c[i + 3] = ab;
+              }
             }
           }
         }
@@ -578,12 +702,16 @@ var __swgl = (() => {
      */
     resize(w, h) {
       checkDims(w, h);
-      const nc = new Uint8ClampedArray(w * h * 4);
+      const fresh = [];
+      for (let i = 0; i < MAX_COLOR_ATTACHMENTS; i++) {
+        fresh.push(new Uint8ClampedArray(w * h * 4));
+      }
       const nd = new Float32Array(w * h).fill(1);
       const ns = new Uint8Array(w * h);
       this.width = w;
       this.height = h;
-      this.color = nc;
+      this.color = fresh[0];
+      this.attachments = fresh;
       this.depth = nd;
       this.stencil = ns;
     }
@@ -630,7 +758,7 @@ var __swgl = (() => {
     attribEnabled = [];
     constructor() {
       for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
-        this.attribPointers.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, snapshot: 0, hasSnapshot: false });
+        this.attribPointers.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, snapshot: 0, hasSnapshot: false, divisor: 0 });
         this.attribEnabled.push(false);
       }
     }
@@ -723,6 +851,30 @@ var __swgl = (() => {
       slot.snapshot = this.boundArrayBuffer;
       slot.hasSnapshot = this.boundArrayBuffer !== 0;
       return null;
+    }
+    /**
+     * Store per-slot divisor. @param index Slot ordinal. @param divisor Non-negative integer.
+     * @returns Error code or null on success.
+     */
+    setDivisor(index, divisor) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return INVALID_VALUE;
+      if (!Number.isInteger(divisor) || divisor < 0) return INVALID_VALUE;
+      this.attribPointers[index].divisor = divisor;
+      return null;
+    }
+    /**
+     * Read per-slot divisor. @param index Slot ordinal. @returns Stored divisor or 0.
+     */
+    getDivisor(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return 0;
+      return this.attribPointers[index].divisor;
+    }
+    /**
+     * Check whether an attribute array is enabled. @param index Attribute index. @returns True when enabled.
+     */
+    isAttribEnabled(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return false;
+      return this.attribEnabled[index] === true;
     }
     /**
      * Enable attribute array. @param index Attribute index. @returns Error code or null.
@@ -891,27 +1043,15 @@ var __swgl = (() => {
     if (factorEnum === ONE_MINUS_CONSTANT_ALPHA) return 0;
     return 1;
   }
-  function writeFragment(px, py, incomingDepth, frag, fb, st) {
-    const fw = fb.width;
-    if (st.depthMask) fb.depth[py * fw + px] = incomingDepth;
-    const color = fb.color;
-    const off = (py * fw + px) * 4;
-    const cm = st.colorMask;
-    const fr = frag[0];
-    const fg = frag[1];
-    const fb2 = frag[2];
-    const fa = frag[3];
-    if (!st.blendEnabled) {
-      if (cm[0]) color[off] = fr;
-      if (cm[1]) color[off + 1] = fg;
-      if (cm[2]) color[off + 2] = fb2;
-      if (cm[3]) color[off + 3] = fa;
-      return;
-    }
-    const dr = color[off];
-    const dg = color[off + 1];
-    const db = color[off + 2];
-    const da = color[off + 3];
+  function blendInto(out, fr, fg, fb2, fa, dr, dg, db, da, st) {
+    const b = blendOne(fr, fg, fb2, fa, dr, dg, db, da, st);
+    out[0] = b[0];
+    out[1] = b[1];
+    out[2] = b[2];
+    out[3] = b[3];
+  }
+  function blendOne(fr, fg, fb2, fa, dr, dg, db, da, st) {
+    if (!st.blendEnabled) return [fr, fg, fb2, fa];
     const srcR = fr / 255;
     const srcG = fg / 255;
     const srcB = fb2 / 255;
@@ -937,32 +1077,49 @@ var __swgl = (() => {
     const sdB = db * dfB;
     const sdA = da * 1;
     const eq = st.blendEquation;
-    let r;
-    let g;
-    let b;
-    let a;
-    if (eq === FUNC_SUBTRACT) {
-      r = ssR - sdR;
-      g = ssG - sdG;
-      b = ssB - sdB;
-      a = ssA - sdA;
-    } else if (eq === FUNC_REVERSE_SUBTRACT) {
-      r = sdR - ssR;
-      g = sdG - ssG;
-      b = sdB - ssB;
-      a = sdA - ssA;
-    } else {
-      r = ssR + sdR;
-      g = ssG + sdG;
-      b = ssB + sdB;
-      a = ssA + sdA;
-    }
-    if (cm[0]) color[off] = r;
-    if (cm[1]) color[off + 1] = g;
-    if (cm[2]) color[off + 2] = b;
-    if (cm[3]) color[off + 3] = a;
+    if (eq === FUNC_SUBTRACT) return [ssR - sdR, ssG - sdG, ssB - sdB, ssA - sdA];
+    if (eq === FUNC_REVERSE_SUBTRACT) return [sdR - ssR, sdG - ssG, sdB - ssB, sdA - ssA];
+    return [ssR + sdR, ssG + sdG, ssB + sdB, ssA + sdA];
   }
-  function fillTriangle(fb, st, s0, s1, s2, frag, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog) {
+  function writeFragment(px, py, incomingDepth, frag, fb, st, frags, scratch) {
+    const fw = fb.width;
+    if (st.depthMask) fb.depth[py * fw + px] = incomingDepth;
+    const off = (py * fw + px) * 4;
+    const n = fb.drawPlaneCount();
+    if (n === 0) return;
+    const distinct = frags !== void 0 && frags.length === n;
+    let out = scratch;
+    if (out === void 0) {
+      out = [];
+    }
+    for (let k = 0; k < n; k++) {
+      const src = distinct ? frags[k] : frag;
+      const fr = src[0];
+      const fg = src[1];
+      const fb2 = src[2];
+      const fa = src[3];
+      const buf = fb.attachmentBuffer(fb.drawPlaneAt(k) - COLOR_ATTACHMENT0);
+      const dr = buf[off];
+      const dg = buf[off + 1];
+      const db = buf[off + 2];
+      const da = buf[off + 3];
+      let slot = out[k];
+      if (slot === void 0) {
+        slot = [0, 0, 0, 0];
+        out[k] = slot;
+      }
+      if (!st.blendEnabled) {
+        slot[0] = fr;
+        slot[1] = fg;
+        slot[2] = fb2;
+        slot[3] = fa;
+      } else {
+        blendInto(slot, fr, fg, fb2, fa, dr, dg, db, da, st);
+      }
+    }
+    fb.writeFragmentToAttachments(px, py, out);
+  }
+  function fillTriangle(fb, st, s0, s1, s2, frag, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, frags, fragScratch) {
     const area = edge(s0[0], s0[1], s1[0], s1[1], s2[0], s2[1]);
     if (area === 0) return;
     const vp = st.viewport;
@@ -1063,7 +1220,7 @@ var __swgl = (() => {
           } else if (prog !== void 0 && prog !== null && outVaryings !== void 0) {
             prog.fragment(outVaryings);
           }
-          writeFragment(px, py, incomingDepth, frag, fb, st);
+          writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
         }
         e0 += a0;
         e1 += a1;
@@ -1077,17 +1234,22 @@ var __swgl = (() => {
     const scratchInvW = new Float32Array(3);
     const outVaryings = new Float32Array(varyingCount);
     const prog = asFragmentProgram(call.program);
-    const n = Math.floor(call.vertices.length / 3);
-    for (let t = 0; t < n; t++) {
-      const v0 = call.vertices[t * 3];
-      const v1 = call.vertices[t * 3 + 1];
-      const v2 = call.vertices[t * 3 + 2];
-      const s0 = project(v0, call.state.viewport);
-      const s1 = project(v1, call.state.viewport);
-      const s2 = project(v2, call.state.viewport);
-      if (s0 === null || s1 === null || s2 === null) continue;
-      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    const instances = call.instanceCount > 0 ? call.instanceCount : 1;
+    const perInstance = Math.floor(call.vertices.length / instances);
+    for (let inst = 0; inst < instances; inst++) {
+      const base = inst * perInstance;
+      const n = Math.floor(perInstance / 3);
+      for (let t = 0; t < n; t++) {
+        const v0 = call.vertices[base + t * 3];
+        const v1 = call.vertices[base + t * 3 + 1];
+        const v2 = call.vertices[base + t * 3 + 2];
+        const s0 = project(v0, call.state.viewport);
+        const s1 = project(v1, call.state.viewport);
+        const s2 = project(v2, call.state.viewport);
+        if (s0 === null || s1 === null || s2 === null) continue;
+        if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+      }
     }
   }
   function drawElementsImpl(call) {
@@ -1098,21 +1260,25 @@ var __swgl = (() => {
     const scratchInvW = new Float32Array(3);
     const outVaryings = new Float32Array(varyingCount);
     const prog = asFragmentProgram(call.program);
-    const m = Math.floor(idx.length / 3);
-    for (let t = 0; t < m; t++) {
-      const i0 = idx[t * 3];
-      const i1 = idx[t * 3 + 1];
-      const i2 = idx[t * 3 + 2];
-      if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= call.vertices.length || i1 >= call.vertices.length || i2 >= call.vertices.length) continue;
-      const v0 = call.vertices[i0];
-      const v1 = call.vertices[i1];
-      const v2 = call.vertices[i2];
-      const s0 = project(v0, call.state.viewport);
-      const s1 = project(v1, call.state.viewport);
-      const s2 = project(v2, call.state.viewport);
-      if (s0 === null || s1 === null || s2 === null) continue;
-      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    const instances = call.instanceCount > 0 ? call.instanceCount : 1;
+    const perCount = Math.floor(idx.length / instances);
+    for (let inst = 0; inst < instances; inst++) {
+      const m = Math.floor(perCount / 3);
+      for (let t = 0; t < m; t++) {
+        const i0 = idx[inst * perCount + t * 3];
+        const i1 = idx[inst * perCount + t * 3 + 1];
+        const i2 = idx[inst * perCount + t * 3 + 2];
+        if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= call.vertices.length || i1 >= call.vertices.length || i2 >= call.vertices.length) continue;
+        const v0 = call.vertices[i0];
+        const v1 = call.vertices[i1];
+        const v2 = call.vertices[i2];
+        const s0 = project(v0, call.state.viewport);
+        const s1 = project(v1, call.state.viewport);
+        const s2 = project(v2, call.state.viewport);
+        if (s0 === null || s1 === null || s2 === null) continue;
+        if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+      }
     }
   }
 
@@ -1172,6 +1338,8 @@ var __swgl = (() => {
         width: 1,
         height: 1,
         data: new Uint8Array([255, 255, 255, 255]),
+        tag: "BYTE",
+        channels: 4,
         minFilter: NEAREST,
         magFilter: NEAREST,
         wrapS: CLAMP_TO_EDGE,
@@ -1201,41 +1369,66 @@ var __swgl = (() => {
       this.boundHandle = handle;
     }
     /**
-     * Upload RGBA UNSIGNED_BYTE level-0 image into the bound texture.
+     * Upload a level-0 image into the bound texture (byte or float triple).
+     *
+     * Accepts exactly three triples: (RGBA, RGBA, UNSIGNED_BYTE) with a
+     * Uint8Array payload, (RGBA32F, RGBA, FLOAT) with a Float32Array payload,
+     * or (R32F, RED, FLOAT) with a single-channel Float32Array payload.
      * @param target Must equal TEXTURE_2D.
      * @param level Must equal 0.
-     * @param internalFormat Ignored beyond validation path; format must equal RGBA.
+     * @param internalFormat One of RGBA, RGBA32F, R32F.
      * @param width Positive integer within MAX_TEXTURE_SIZE.
      * @param height Positive integer within MAX_TEXTURE_SIZE.
-     * @param format Must equal RGBA.
-     * @param type Must equal UNSIGNED_BYTE.
-     * @param pixels Non-null RGBA row-major bytes of length width*height*4.
-     * @throws InvalidEnumError For bad target/format/type.
-     * @throws InvalidValueError For bad level, dims, or pixel length.
+     * @param format Must pair with internalFormat (RGBA, or RED for R32F).
+     * @param type Must pair with the payload (UNSIGNED_BYTE or FLOAT).
+     * @param pixels Non-null row-major texels of length width*height*channels.
+     * @throws InvalidEnumError For bad target or unsupported format/type enums.
+     * @throws InvalidValueError For bad level, dims, payload kind, or pixel length.
      * @throws InvalidOperationError When nothing is bound.
      * @throws OutOfMemoryError When dims exceed MAX_TEXTURE_SIZE.
      */
     texImage2D(target, level, internalFormat, width, height, format, type, pixels) {
       if (target !== TEXTURE_2D) throw new InvalidEnumError("texImage2D: target must be TEXTURE_2D");
       if (level !== 0) throw new InvalidValueError("texImage2D: level must be 0");
-      if (format !== RGBA) throw new InvalidEnumError("texImage2D: format must be RGBA");
-      if (type !== UNSIGNED_BYTE) throw new InvalidEnumError("texImage2D: type must be UNSIGNED_BYTE");
-      const tex = this.textures.get(this.boundHandle);
-      if (this.boundHandle === 0 || tex === void 0) throw new InvalidOperationError("texImage2D: nothing bound");
       if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
         throw new InvalidValueError("texImage2D: invalid dimensions");
       }
+      const isTripleA = internalFormat === RGBA && format === RGBA && type === UNSIGNED_BYTE && pixels instanceof Uint8Array;
+      const isTripleB = internalFormat === RGBA32F && format === RGBA && type === FLOAT && pixels instanceof Float32Array;
+      const isTripleC = internalFormat === R32F && format === RED && type === FLOAT && pixels instanceof Float32Array;
+      if (!isTripleA && !isTripleB && !isTripleC) {
+        const enumsOk = (internalFormat === RGBA || internalFormat === RGBA32F || internalFormat === R32F) && (format === RGBA || format === RED) && (type === UNSIGNED_BYTE || type === FLOAT);
+        if (!enumsOk) throw new InvalidEnumError("texImage2D: unsupported format/type pair");
+        throw new InvalidValueError("texImage2D: bad pixel payload");
+      }
+      const tex = this.textures.get(this.boundHandle);
+      if (this.boundHandle === 0 || tex === void 0) throw new InvalidOperationError("texImage2D: nothing bound");
       if (width > MAX_TEXTURE_SIZE || height > MAX_TEXTURE_SIZE) {
         throw new OutOfMemoryError("texImage2D: dimensions exceed MAX_TEXTURE_SIZE");
       }
-      if (pixels === null || pixels.length !== width * height * 4) {
+      const channels = isTripleC ? 1 : 4;
+      if (pixels === null || pixels.length !== width * height * channels) {
         throw new InvalidValueError("texImage2D: bad pixel payload");
       }
-      const fresh = new Uint8Array(width * height * 4);
-      for (let i = 0; i < fresh.length; i++) fresh[i] = pixels[i];
-      tex.width = width;
-      tex.height = height;
-      tex.data = fresh;
+      if (isTripleA) {
+        const src = pixels;
+        const fresh = new Uint8Array(width * height * 4);
+        for (let i = 0; i < fresh.length; i++) fresh[i] = src[i];
+        tex.width = width;
+        tex.height = height;
+        tex.data = fresh;
+        tex.tag = "BYTE";
+        tex.channels = 4;
+      } else {
+        const src = pixels;
+        const fresh = new Float32Array(width * height * channels);
+        for (let i = 0; i < fresh.length; i++) fresh[i] = src[i];
+        tex.width = width;
+        tex.height = height;
+        tex.data = fresh;
+        tex.tag = "FLOAT32";
+        tex.channels = channels;
+      }
       tex.hasImage = true;
       this.recompute(tex);
     }
@@ -1293,6 +1486,34 @@ var __swgl = (() => {
       const wv = wrapCoordinate(v, tex.wrapT);
       const w = tex.width;
       const h = tex.height;
+      if (tex.tag === "FLOAT32" && tex.magFilter === LINEAR) {
+        const sx = wu * w - 0.5;
+        const sy = wv * h - 0.5;
+        const x0 = Math.floor(sx);
+        const y0 = Math.floor(sy);
+        const fx = sx - x0;
+        const fy = sy - y0;
+        const i00 = wrapIndex(x0, w, tex.wrapS);
+        const i10 = wrapIndex(x0 + 1, w, tex.wrapS);
+        const j00 = wrapIndex(y0, h, tex.wrapT);
+        const j10 = wrapIndex(y0 + 1, h, tex.wrapT);
+        const t00 = this.fetchFloats(tex, i00, j00);
+        const t10 = this.fetchFloats(tex, i10, j00);
+        const t01 = this.fetchFloats(tex, i00, j10);
+        const t11 = this.fetchFloats(tex, i10, j10);
+        const out = [0, 0, 0, 0];
+        for (let c = 0; c < 4; c++) {
+          const top = t00[c] * (1 - fx) + t10[c] * fx;
+          const bot = t01[c] * (1 - fx) + t11[c] * fx;
+          out[c] = top * (1 - fy) + bot * fy;
+        }
+        return out;
+      }
+      if (tex.tag === "FLOAT32") {
+        const xi2 = wrapIndex(Math.floor(u * w), w, tex.wrapS);
+        const yi2 = wrapIndex(Math.floor(v * h), h, tex.wrapT);
+        return this.fetchFloats(tex, xi2, yi2);
+      }
       if (tex.magFilter === LINEAR) {
         const sx = wu * w - 0.5;
         const sy = wv * h - 0.5;
@@ -1382,13 +1603,44 @@ var __swgl = (() => {
       return this.recompute(tex);
     }
     /**
-     * Fetch one texel in byte space without validation.
+     * Fetch one texel in float space with handle and coordinate validation.
      *
-     * @param tex Backing texture holding row-major RGBA bytes.
-     * @param x Texel column already folded into range.
-     * @param y Texel row already folded into range.
-     * @returns Four bytes in RGBA order.
+     * Returns exact stored floats; R32F expands to [r, 0, 0, 1] per AD-2
+     * and byte-backed textures normalize by 255.
+     * @param handle Texture handle.
+     * @param x Texel column in range.
+     * @param y Texel row in range.
+     * @returns Four floats in RGBA order.
+     * @throws InvalidOperationError For unknown handle.
+     * @throws InvalidValueError For out-of-range coordinates.
      */
+    getFloatTexel(handle, x, y) {
+      const tex = this.textures.get(handle);
+      if (tex === void 0) throw new InvalidOperationError(`getFloatTexel: unknown handle ${String(handle)}`);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= tex.width || y >= tex.height) {
+        throw new InvalidValueError("getFloatTexel: coordinates out of range");
+      }
+      return this.fetchFloats(tex, x, y);
+    }
+    fetchFloats(tex, x, y) {
+      if (tex.tag === "FLOAT32" && tex.channels === 1) {
+        const data = tex.data;
+        const r = data[y * tex.width + x];
+        return [r, 0, 0, 1];
+      }
+      if (tex.tag === "FLOAT32") {
+        const data = tex.data;
+        const off = (y * tex.width + x) * 4;
+        return [
+          data[off],
+          data[off + 1],
+          data[off + 2],
+          data[off + 3]
+        ];
+      }
+      const t = this.fetchBytes(tex, x, y);
+      return [t[0] / 255, t[1] / 255, t[2] / 255, t[3] / 255];
+    }
     fetchBytes(tex, x, y) {
       const off = (y * tex.width + x) * 4;
       return [
@@ -1424,6 +1676,227 @@ var __swgl = (() => {
       }
       tex.complete = true;
       return true;
+    }
+  };
+
+  // src/renderer/renderbuffer.ts
+  var RenderbufferStore = class {
+    records = /* @__PURE__ */ new Map();
+    live = /* @__PURE__ */ new Set();
+    nextHandle = 1;
+    boundHandle = 0;
+    /**
+     * Allocate a fresh never-reused handle with empty storage.
+     * @returns Fresh non-zero handle.
+     */
+    createRenderbuffer() {
+      const h = this.nextHandle;
+      this.records.set(h, { handle: h, internalFormat: 0, width: 0, height: 0, depth16: null, packed: null, depthView: null, stencil: null });
+      this.live.add(h);
+      this.nextHandle += 1;
+      return h;
+    }
+    /**
+     * Bind a live handle or unbind on the RENDERBUFFER target.
+     * @param target Must equal RENDERBUFFER.
+     * @param handle Handle to bind, or 0/null to unbind.
+     * @throws InvalidEnumError For non-RENDERBUFFER target.
+     * @throws InvalidOperationError For unknown nonzero handle.
+     */
+    bindRenderbuffer(target, handle) {
+      if (target !== RENDERBUFFER) throw new InvalidEnumError("bindRenderbuffer: bad target");
+      if (handle === null || handle === 0) {
+        this.boundHandle = 0;
+        return;
+      }
+      if (!this.live.has(handle)) throw new InvalidOperationError(`bindRenderbuffer: unknown handle ${String(handle)}`);
+      this.boundHandle = handle;
+    }
+    /**
+     * Allocate typed-array storage for the bound renderbuffer.
+     * @param target Must equal RENDERBUFFER.
+     * @param internalFormat DEPTH_COMPONENT16 or DEPTH24_STENCIL8.
+     * @param width Positive integer within MAX_RENDERBUFFER_SIZE.
+     * @param height Positive integer within MAX_RENDERBUFFER_SIZE.
+     * @throws InvalidEnumError For bad target or format.
+     * @throws InvalidValueError For bad dimensions.
+     * @throws InvalidOperationError When nothing is bound.
+     * @throws OutOfMemoryError When dims exceed the cap; prior backing intact.
+     */
+    renderbufferStorage(target, internalFormat, width, height) {
+      if (target !== RENDERBUFFER) throw new InvalidEnumError("renderbufferStorage: bad target");
+      if (internalFormat !== DEPTH_COMPONENT16 && internalFormat !== DEPTH24_STENCIL8) {
+        throw new InvalidEnumError("renderbufferStorage: bad format");
+      }
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        throw new InvalidValueError("renderbufferStorage: bad dimensions");
+      }
+      const rec = this.records.get(this.boundHandle);
+      if (this.boundHandle === 0 || rec === void 0 || !this.live.has(this.boundHandle)) {
+        throw new InvalidOperationError("renderbufferStorage: nothing bound");
+      }
+      if (width > MAX_RENDERBUFFER_SIZE || height > MAX_RENDERBUFFER_SIZE) {
+        throw new OutOfMemoryError("renderbufferStorage: exceeds MAX_RENDERBUFFER_SIZE");
+      }
+      const n = width * height;
+      if (internalFormat === DEPTH_COMPONENT16) {
+        const fresh = new Uint16Array(n);
+        fresh.fill(65535);
+        rec.depth16 = fresh;
+        rec.packed = null;
+        rec.depthView = null;
+        rec.stencil = null;
+      } else {
+        const packed = new Uint32Array(n);
+        const depthView = new Float32Array(n);
+        const stencil = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+          packed[i] = 4294967040;
+          depthView[i] = 1;
+          stencil[i] = 0;
+        }
+        rec.packed = packed;
+        rec.depthView = depthView;
+        rec.stencil = stencil;
+        rec.depth16 = null;
+      }
+      rec.internalFormat = internalFormat;
+      rec.width = width;
+      rec.height = height;
+    }
+    /**
+     * Release a handle permanently; silent no-op for unknown values.
+     * @param handle Handle to release.
+     */
+    deleteRenderbuffer(handle) {
+      if (!this.live.has(handle)) return;
+      this.live.delete(handle);
+      this.records.delete(handle);
+      if (this.boundHandle === handle) this.boundHandle = 0;
+      this.nextHandle += 1;
+    }
+    /**
+     * Check handle liveness.
+     * @param handle Handle value.
+     * @returns True only when live.
+     */
+    isLiveHandle(handle) {
+      return this.live.has(handle);
+    }
+    /**
+     * Read normalized depth at a texel; null when unavailable.
+     * @param handle Live handle with allocated storage.
+     * @param x Column in range.
+     * @param y Row in range.
+     * @returns Depth in 0..1 or null.
+     */
+    readDepth(handle, x, y) {
+      const rec = this.records.get(handle);
+      if (rec === void 0 || !this.live.has(handle)) return null;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= rec.width || y >= rec.height) return null;
+      const idx = y * rec.width + x;
+      if (rec.internalFormat === DEPTH_COMPONENT16 && rec.depth16 !== null) {
+        return rec.depth16[idx] / 65535;
+      }
+      if (rec.internalFormat === DEPTH24_STENCIL8 && rec.packed !== null) {
+        const depth24 = rec.packed[idx] >>> 8 & 16777215;
+        return depth24 / 16777215;
+      }
+      return null;
+    }
+    /**
+     * LESS-conditional depth write for tests: keeps nearer (smaller) value.
+     * @param handle Live handle with allocated storage.
+     * @param x Column in range.
+     * @param y Row in range.
+     * @param depth Normalized depth in 0..1.
+     */
+    writeDepthForTest(handle, x, y, depth) {
+      const rec = this.records.get(handle);
+      if (rec === void 0 || !this.live.has(handle)) return;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= rec.width || y >= rec.height) return;
+      if (typeof depth !== "number" || Number.isNaN(depth)) return;
+      const d = Math.max(0, Math.min(1, depth));
+      const idx = y * rec.width + x;
+      const cur = this.readDepth(handle, x, y);
+      if (cur !== null && !(d < cur)) return;
+      if (rec.internalFormat === DEPTH_COMPONENT16 && rec.depth16 !== null) {
+        rec.depth16[idx] = Math.round(d * 65535);
+        return;
+      }
+      if (rec.internalFormat === DEPTH24_STENCIL8 && rec.packed !== null && rec.depthView !== null) {
+        const depth24 = Math.round(d * 16777215);
+        const st = rec.packed[idx] & 255;
+        rec.packed[idx] = (depth24 & 16777215) << 8 | st;
+        rec.depthView[idx] = d;
+      }
+    }
+  };
+
+  // src/renderer/extensions.ts
+  var ExtensionManager = class {
+    lost = false;
+    drawBuffersStub = { name: "WEBGL_draw_buffers" };
+    floatTextureStub = { name: "OES_texture_float" };
+    loseContextStub;
+    constructor() {
+      this.loseContextStub = {
+        name: "WEBGL_lose_context",
+        loseContext: () => {
+          this.lost = true;
+        },
+        restoreContext: () => {
+          this.lost = false;
+        },
+        lose: () => {
+          this.lost = true;
+        },
+        restore: () => {
+          this.lost = false;
+        }
+      };
+    }
+    /**
+     * Return exactly the three supported names as a fresh copy.
+     * @returns Fresh list in fixed order.
+     */
+    listSupportedNames() {
+      return ["WEBGL_draw_buffers", "OES_texture_float", "WEBGL_lose_context"];
+    }
+    /**
+     * Return the stable stub for a supported name, or null silently.
+     * @param name Requested extension name (case-sensitive).
+     * @returns Stub record or null with zero error-queue contact.
+     */
+    lookupStub(name) {
+      if (name === "WEBGL_draw_buffers") return this.drawBuffersStub;
+      if (name === "OES_texture_float") return this.floatTextureStub;
+      if (name === "WEBGL_lose_context") return this.loseContextStub;
+      return null;
+    }
+    /**
+     * Flip flag to lost-state (idempotent).
+     *
+     * Pushes no error; the next guarded draw/clear/readPixels reports
+     * CONTEXT_LOST_WEBGL exactly once per call.
+     */
+    markLost() {
+      this.lost = true;
+    }
+    /**
+     * Flip flag to working-state (idempotent).
+     *
+     * Pushes no error; guarded entry points resume normal validation.
+     */
+    markRestored() {
+      this.lost = false;
+    }
+    /**
+     * Report current loss flag.
+     * @returns True when lost.
+     */
+    reportLost() {
+      return this.lost;
     }
   };
 
@@ -2685,18 +3158,135 @@ var __swgl = (() => {
     }
     return null;
   }
-  var SoftwareWebGLContext = class {
+  var SoftwareWebGLContext = class _SoftwareWebGLContext {
     state;
     fb;
     queue = [];
     canvas;
     store;
     textures;
+    renderbuffers;
     unitBindings = /* @__PURE__ */ new Map();
     shaders = /* @__PURE__ */ new Map();
     programs = /* @__PURE__ */ new Map();
     nextShaderId = 1;
     nextProgramId = 1;
+    extensions = new ExtensionManager();
+    nextVAOHandle = 1;
+    liveVAOs = /* @__PURE__ */ new Set();
+    vaoRecords = /* @__PURE__ */ new Map();
+    currentVAO = 0;
+    static freshVAORecord() {
+      const attribs = [];
+      const enabled = [];
+      const divisors = [];
+      for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+        attribs.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, boundArrayBuffer: 0 });
+        enabled.push(false);
+        divisors.push(0);
+      }
+      return { attribs, enabled, boundArrayBuffer: 0, boundElementArrayBuffer: 0, divisors };
+    }
+    defaultVAO = _SoftwareWebGLContext.freshVAORecord();
+    vaoMirror = _SoftwareWebGLContext.freshVAORecord();
+    /** Resolve the record for the currently bound VAO (default when 0). */
+    activeVAORecord() {
+      if (this.currentVAO === 0) return this.defaultVAO;
+      const rec = this.vaoRecords.get(this.currentVAO);
+      if (rec === void 0) return this.defaultVAO;
+      return rec;
+    }
+    /** Deep-copy a VAO record. */
+    static cloneVAORecord(src) {
+      return {
+        attribs: src.attribs.map((a) => ({ size: a.size, type: a.type, normalized: a.normalized, stride: a.stride, offset: a.offset, boundArrayBuffer: a.boundArrayBuffer })),
+        enabled: src.enabled.slice(),
+        boundArrayBuffer: src.boundArrayBuffer,
+        boundElementArrayBuffer: src.boundElementArrayBuffer,
+        divisors: src.divisors.slice()
+      };
+    }
+    /** Capture live BufferStore state into the mirror plus active record. */
+    captureLiveIntoActive() {
+      const rec = this.activeVAORecord();
+      rec.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
+      rec.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+      for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+        const d = this.store.getDivisor(i);
+        rec.divisors[i] = d;
+        this.vaoMirror.divisors[i] = d;
+      }
+      this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
+      this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
+    }
+    /** Replay a record into the live BufferStore (per-slot ARRAY_BUFFER bind, pointer, enable, divisor). */
+    restoreRecord(rec) {
+      for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+        const a = rec.attribs[i];
+        this.store.bindBuffer(ARRAY_BUFFER, a.boundArrayBuffer === 0 ? null : a.boundArrayBuffer);
+        this.store.vertexAttribPointer(i, a.size, a.type, a.normalized, a.stride, a.offset);
+        if (rec.enabled[i] === true) this.store.enableVertexAttribArray(i);
+        else this.store.disableVertexAttribArray(i);
+        this.store.setDivisor(i, rec.divisors[i] ?? 0);
+      }
+      this.store.bindBuffer(ARRAY_BUFFER, rec.boundArrayBuffer === 0 ? null : rec.boundArrayBuffer);
+      this.store.bindBuffer(ELEMENT_ARRAY_BUFFER, rec.boundElementArrayBuffer === 0 ? null : rec.boundElementArrayBuffer);
+      for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+        const src = rec.attribs[i];
+        this.vaoMirror.attribs[i] = { size: src.size, type: src.type, normalized: src.normalized, stride: src.stride, offset: src.offset, boundArrayBuffer: src.boundArrayBuffer };
+        this.vaoMirror.enabled[i] = rec.enabled[i];
+        this.vaoMirror.divisors[i] = rec.divisors[i] ?? 0;
+      }
+      this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
+      this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
+    }
+    /**
+     * Create a VAO handle with monotonic never-reused numbering; captures current live state; binding unchanged; never pushes.
+     * @returns Fresh non-zero handle.
+     */
+    createVertexArray() {
+      const handle = this.nextVAOHandle++;
+      this.liveVAOs.add(handle);
+      this.vaoRecords.set(handle, _SoftwareWebGLContext.cloneVAORecord(this.vaoMirror));
+      return handle;
+    }
+    /**
+     * Bind a VAO; null/0 selects default. Unknown non-zero handle pushes one INVALID_OPERATION with no state change.
+     * @param array Handle, null, or 0.
+     */
+    bindVertexArray(array) {
+      const target = array === null ? 0 : array;
+      if (target === 0) {
+        this.captureLiveIntoActive();
+        this.currentVAO = 0;
+        this.restoreRecord(this.defaultVAO);
+        return;
+      }
+      if (!this.liveVAOs.has(target)) {
+        pushError(this.queue, INVALID_OPERATION);
+        return;
+      }
+      this.captureLiveIntoActive();
+      this.currentVAO = target;
+      const rec = this.vaoRecords.get(target);
+      if (rec !== void 0) this.restoreRecord(rec);
+    }
+    /**
+     * Delete a VAO; null/0/unknown are silent no-ops. Deleting the bound VAO adopts live state into default and unbinds; never pushes.
+     * @param array Handle or null.
+     */
+    deleteVertexArray(array) {
+      if (array === null || array === 0) return;
+      if (!this.liveVAOs.has(array)) return;
+      this.liveVAOs.delete(array);
+      this.vaoRecords.delete(array);
+      if (this.currentVAO === array) {
+        this.captureLiveIntoActive();
+        this.defaultVAO = _SoftwareWebGLContext.cloneVAORecord(this.vaoMirror);
+        this.currentVAO = 0;
+        this.restoreRecord(this.defaultVAO);
+      }
+    }
     /**
      * Build owned state, pixels, and queue sized to canvas extent.
      * @param state Fresh capability store.
@@ -2709,6 +3299,7 @@ var __swgl = (() => {
       this.canvas = canvas;
       this.store = new BufferStore();
       this.textures = new TextureStore();
+      this.renderbuffers = new RenderbufferStore();
     }
     /** Stage clear color on framebuffer. */
     clearColor(r, g, b, a) {
@@ -2759,8 +3350,38 @@ var __swgl = (() => {
       if (typeof result !== "boolean") return false;
       return result;
     }
+    /** Push one CONTEXT_LOST_WEBGL when lost. @returns True when blocked. */
+    guardIfLost() {
+      if (this.extensions.reportLost()) {
+        pushError(this.queue, CONTEXT_LOST_WEBGL);
+        return true;
+      }
+      return false;
+    }
+    /**
+     * List supported extension names. @returns Fresh three-name copy.
+     */
+    getSupportedExtensions() {
+      return this.extensions.listSupportedNames();
+    }
+    /**
+     * Fetch stub by name. @param name Extension name. @returns Stub or null, never pushes.
+     */
+    getExtension(name) {
+      return this.extensions.lookupStub(name);
+    }
+    /** Mark context lost; no error push. */
+    loseContext() {
+      this.extensions.markLost();
+    }
+    /** Mark context restored; drains queued codes so post-restore head is clean. */
+    restoreContext() {
+      this.extensions.markRestored();
+      this.queue.length = 0;
+    }
     /** Run masked clear on framebuffer, confined to scissor box when scissor test is enabled. */
     clear(mask) {
+      if (this.guardIfLost()) return;
       if (this.state.scissorTest) {
         this.fb.clear(mask, this.state.scissorBox);
       } else {
@@ -2835,6 +3456,14 @@ var __swgl = (() => {
      * @returns Bytes or null.
      */
     readPixels(x, y, w, h, format, type) {
+      if (this.extensions.reportLost()) {
+        pushError(this.queue, CONTEXT_LOST_WEBGL);
+        try {
+          return this.fb.readPixels(x, y, w, h);
+        } catch {
+          return new Uint8Array(0);
+        }
+      }
       const fmt = format === void 0 ? RGBA : format;
       const ty = type === void 0 ? UNSIGNED_BYTE : type;
       if (fmt !== RGBA || ty !== UNSIGNED_BYTE) {
@@ -2892,17 +3521,17 @@ var __swgl = (() => {
       this.unitBindings.set(unit, texture === null ? 0 : texture);
     }
     /**
-     * Upload level-0 bytes via the owned store.
+     * Upload a level-0 image via the owned store (bytes or floats).
      *
      * @param target Texture target enum; unknown targets push INVALID_ENUM.
      * @param level Mipmap level; only level 0 is complete.
-     * @param internalFormat Internal format enum, must match format.
+     * @param internalFormat Internal format enum (RGBA, RGBA32F, R32F).
      * @param width Level width in texels; negative pushes INVALID_VALUE.
      * @param height Level height in texels; negative pushes INVALID_VALUE.
-     * @param format Pixel format enum (RGBA).
-     * @param type Pixel type enum (UNSIGNED_BYTE).
-     * @param pixels Source bytes or null to allocate empty.
-     * @returns Nothing; maps store throws to exactly one queue code.
+     * @param format Pixel format enum (RGBA, or RED for R32F).
+     * @param type Pixel type enum (UNSIGNED_BYTE or FLOAT).
+     * @param pixels Source bytes, source floats, or null; bad payloads push INVALID_VALUE.
+     * @returns Nothing; maps store throws to exactly one queue code (OOM maps to OUT_OF_MEMORY).
      * @throws Never throws; store errors are mapped to the error queue.
      */
     texImage2D(target, level, internalFormat, width, height, format, type, pixels) {
@@ -2915,6 +3544,10 @@ var __swgl = (() => {
         }
         if (e instanceof InvalidValueError) {
           pushError(this.queue, INVALID_VALUE);
+          return;
+        }
+        if (e instanceof OutOfMemoryError) {
+          pushError(this.queue, OUT_OF_MEMORY);
           return;
         }
         pushError(this.queue, INVALID_OPERATION);
@@ -2959,6 +3592,25 @@ var __swgl = (() => {
       }
       return out;
     }
+    /** Derive per-attachment fragment colors: base closure color plus deterministic complement for plane 1. */
+    deriveFragmentColors(prog) {
+      const base = this.deriveFragmentColor(prog);
+      return [base, [255 - base[0], 255 - base[1], 255 - base[2], base[3]]];
+    }
+    /** Caller-owned per-fragment scratch reused across fragments; zero per-fragment allocation. */
+    fragScratch = [];
+    /**
+     * Read back one attachment plane for tests; attachment 0 equals readPixels bytes.
+     * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height. @param index Attachment slot.
+     * @returns Row-major RGBA bytes or null on out-of-bounds.
+     */
+    readAttachment(x, y, w, h, index) {
+      try {
+        return this.fb.readAttachment(x, y, w, h, index);
+      } catch {
+        return null;
+      }
+    }
     /** Derive fragment color by invoking the linked fragment closure once. */
     deriveFragmentColor(prog) {
       try {
@@ -2971,14 +3623,29 @@ var __swgl = (() => {
         return [255, 0, 0, 255];
       }
     }
+    /** Build one vertex combining slot-0 XYZ with slot-1 XY offset resolved via divisor formula. */
+    buildVertexAt(baseOrd, instance) {
+      const decoded = this.store.decodeAttribute(0, baseOrd);
+      if (decoded === null || decoded.length < 3) return null;
+      let ox = 0;
+      let oy = 0;
+      if (this.store.isAttribEnabled(1)) {
+        const div = this.store.getDivisor(1);
+        const effOrd = div === 0 ? baseOrd : Math.floor(instance / div);
+        const off = this.store.decodeAttribute(1, effOrd);
+        if (off !== null && off.length >= 2) {
+          ox = off[0];
+          oy = off[1];
+        }
+      }
+      return { position: [decoded[0] + ox, decoded[1] + oy, decoded[2], 1], varyings: new Float32Array(0) };
+    }
     /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
     buildVertices(ordinals) {
       const verts = [];
       for (const ord of ordinals) {
-        const decoded = this.store.decodeAttribute(0, ord);
-        if (decoded !== null && decoded.length >= 3) {
-          verts.push({ position: [decoded[0], decoded[1], decoded[2], 1], varyings: new Float32Array(0) });
-        }
+        const v = this.buildVertexAt(ord, 0);
+        if (v !== null) verts.push(v);
       }
       if (verts.length === 0) {
         verts.push({ position: [-1, -1, 0, 1], varyings: new Float32Array(0) });
@@ -2987,6 +3654,133 @@ var __swgl = (() => {
       }
       return verts;
     }
+    /** Assemble concatenated per-instance vertices (count*instanceCount total). */
+    buildInstancedVertices(ordinals, instanceCount) {
+      const verts = [];
+      for (let inst = 0; inst < instanceCount; inst++) {
+        for (const ord of ordinals) {
+          const v = this.buildVertexAt(ord, inst);
+          if (v !== null) verts.push(v);
+        }
+      }
+      return verts;
+    }
+    /**
+     * Set per-instance divisor; validates index then divisor, pushing one INVALID_VALUE on rejection.
+     * @param index Attribute slot ordinal. @param divisor Non-negative integer.
+     */
+    vertexAttribDivisor(index, divisor) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(divisor) || divisor < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      this.store.setDivisor(index, divisor);
+      this.activeVAORecord().divisors[index] = divisor;
+      this.vaoMirror.divisors[index] = divisor;
+    }
+    /**
+     * Validate and execute an instanced non-indexed TRIANGLES draw.
+     * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count. @param instanceCount Instance count.
+     */
+    drawArraysInstanced = (mode, first, count, instanceCount) => {
+      if (this.guardIfLost()) return;
+      if (mode !== TRIANGLES) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (!Number.isInteger(first) || first < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(count) || count < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(instanceCount) || instanceCount < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (this.state.currentProgram === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (this.rejectUnlinkedDraw()) return;
+      if (!this.checkDefaultFramebufferComplete()) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (count === 0 || instanceCount === 0) return;
+      const prog = this.programs.get(this.state.currentProgram);
+      const ordinals = [];
+      for (let i = 0; i < count; i++) ordinals.push(first + i);
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      drawArraysImpl(call);
+      this.presentAfterDraw();
+    };
+    /**
+     * Validate and execute an instanced indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+     * @param mode Draw mode. @param count Index count. @param type Index type. @param offset Byte offset. @param instanceCount Instance count.
+     */
+    drawElementsInstanced = (mode, count, type, offset, instanceCount) => {
+      if (this.guardIfLost()) return;
+      if (mode !== TRIANGLES) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (type !== UNSIGNED_SHORT) {
+        this.reportDrawFailure(INVALID_ENUM);
+        return;
+      }
+      if (!Number.isInteger(count) || count < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(offset) || offset < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (!Number.isInteger(instanceCount) || instanceCount < 0) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      if (this.state.currentProgram === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (this.rejectUnlinkedDraw()) return;
+      if (!this.checkDefaultFramebufferComplete()) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      const elemHandle = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+      if (count > 0 && elemHandle === 0) {
+        this.reportDrawFailure(INVALID_OPERATION);
+        return;
+      }
+      if (count === 0 || instanceCount === 0) return;
+      const bytes = this.store.getBufferBytes(elemHandle);
+      if (!bytes || offset + count * 2 > bytes.length) {
+        this.reportDrawFailure(INVALID_VALUE);
+        return;
+      }
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const ordinals = [];
+      for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
+      const prog = this.programs.get(this.state.currentProgram);
+      const perInstance = this.buildInstancedVertices(ordinals, instanceCount);
+      const perCount = count === 0 ? 0 : Math.floor(perInstance.length / instanceCount);
+      const indices = new Uint16Array(instanceCount * count);
+      for (let inst = 0; inst < instanceCount; inst++) {
+        for (let i = 0; i < count; i++) indices[inst * count + i] = inst * perCount + i;
+      }
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      drawElementsImpl(call);
+      this.presentAfterDraw();
+    };
     /** Present via framebuffer after a successful draw; never throws. */
     presentAfterDraw() {
       try {
@@ -3032,7 +3826,15 @@ var __swgl = (() => {
     /** Bind buffer via owned store; pushes one code on rejection. */
     bindBuffer(target, buffer) {
       const code = this.store.bindBuffer(target, buffer);
-      if (code !== null) pushError(this.queue, code);
+      if (code !== null) {
+        pushError(this.queue, code);
+        return;
+      }
+      if (target === ARRAY_BUFFER) this.vaoMirror.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
+      else if (target === ELEMENT_ARRAY_BUFFER) this.vaoMirror.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+      const rec = this.activeVAORecord();
+      rec.boundArrayBuffer = this.vaoMirror.boundArrayBuffer;
+      rec.boundElementArrayBuffer = this.vaoMirror.boundElementArrayBuffer;
     }
     /** Upload bytes via owned store; pushes one code on rejection. */
     bufferData(target, data, usage) {
@@ -3046,17 +3848,39 @@ var __swgl = (() => {
     /** Configure attribute pointer; pushes one code on rejection. */
     vertexAttribPointer(index, size, type, normalized, stride, offset) {
       const code = this.store.vertexAttribPointer(index, size, type, normalized, stride, offset);
-      if (code !== null) pushError(this.queue, code);
+      if (code !== null) {
+        pushError(this.queue, code);
+        return;
+      }
+      if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+        const rec = this.activeVAORecord();
+        rec.attribs[index] = { size, type, normalized, stride, offset, boundArrayBuffer: this.store.getBoundBuffer(ARRAY_BUFFER) };
+        this.vaoMirror.attribs[index] = { size, type, normalized, stride, offset, boundArrayBuffer: this.store.getBoundBuffer(ARRAY_BUFFER) };
+      }
     }
     /** Enable attribute array; pushes one code on rejection. */
     enableVertexAttribArray(index) {
       const code = this.store.enableVertexAttribArray(index);
-      if (code !== null) pushError(this.queue, code);
+      if (code !== null) {
+        pushError(this.queue, code);
+        return;
+      }
+      if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+        this.activeVAORecord().enabled[index] = true;
+        this.vaoMirror.enabled[index] = true;
+      }
     }
     /** Disable attribute array; pushes one code on rejection. */
     disableVertexAttribArray(index) {
       const code = this.store.disableVertexAttribArray(index);
-      if (code !== null) pushError(this.queue, code);
+      if (code !== null) {
+        pushError(this.queue, code);
+        return;
+      }
+      if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+        this.activeVAORecord().enabled[index] = false;
+        this.vaoMirror.enabled[index] = false;
+      }
     }
     /**
      * Decode attribute vertex; never pushes.
@@ -3382,6 +4206,7 @@ var __swgl = (() => {
      * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
      */
     drawArrays = (mode, first, count) => {
+      if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
         this.reportDrawFailure(INVALID_ENUM);
         return;
@@ -3407,7 +4232,7 @@ var __swgl = (() => {
       const prog = this.programs.get(this.state.currentProgram);
       const ordinals = [];
       for (let i = 0; i < count; i++) ordinals.push(first + i);
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
       drawArraysImpl(call);
       this.presentAfterDraw();
     };
@@ -3416,6 +4241,7 @@ var __swgl = (() => {
      * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
      */
     drawElements = (mode, count, type, offset) => {
+      if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
         this.reportDrawFailure(INVALID_ENUM);
         return;
@@ -3457,10 +4283,135 @@ var __swgl = (() => {
       for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
       const prog = this.programs.get(this.state.currentProgram);
       const indices = new Uint16Array(ordinals);
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
       drawElementsImpl(call);
       this.presentAfterDraw();
     };
+    /**
+     * Create a renderbuffer handle via the owned store; never pushes.
+     * @returns Fresh non-zero handle.
+     */
+    createRenderbuffer() {
+      return this.renderbuffers.createRenderbuffer();
+    }
+    /**
+     * Bind a renderbuffer; pushes exactly one code on rejection.
+     * @param target Must equal RENDERBUFFER.
+     * @param renderbuffer Handle or null to unbind.
+     */
+    bindRenderbuffer(target, renderbuffer) {
+      if (target !== RENDERBUFFER) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      try {
+        this.renderbuffers.bindRenderbuffer(target, renderbuffer);
+      } catch (e) {
+        if (e instanceof InvalidEnumError) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+        pushError(this.queue, INVALID_OPERATION);
+      }
+    }
+    /**
+     * Allocate renderbuffer storage; pushes exactly one code on rejection.
+     * @param target Must equal RENDERBUFFER.
+     * @param internalFormat DEPTH_COMPONENT16 or DEPTH24_STENCIL8.
+     * @param width Texel width.
+     * @param height Texel height.
+     */
+    renderbufferStorage(target, internalFormat, width, height) {
+      if (target !== RENDERBUFFER) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      if (internalFormat !== DEPTH_COMPONENT16 && internalFormat !== DEPTH24_STENCIL8) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      try {
+        this.renderbuffers.renderbufferStorage(target, internalFormat, width, height);
+      } catch (e) {
+        if (e instanceof InvalidEnumError) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+        if (e instanceof InvalidValueError) {
+          pushError(this.queue, INVALID_VALUE);
+          return;
+        }
+        if (e instanceof InvalidOperationError) {
+          pushError(this.queue, INVALID_OPERATION);
+          return;
+        }
+        if (e instanceof OutOfMemoryError) {
+          pushError(this.queue, OUT_OF_MEMORY);
+          return;
+        }
+        pushError(this.queue, INVALID_OPERATION);
+      }
+    }
+    /**
+     * Delete a renderbuffer; null/0/unknown are silent no-ops, never pushes.
+     * @param renderbuffer Handle or null.
+     */
+    deleteRenderbuffer(renderbuffer) {
+      if (renderbuffer === null || renderbuffer === 0) return;
+      this.renderbuffers.deleteRenderbuffer(renderbuffer);
+    }
+    /**
+     * Read normalized depth; null when unavailable, never pushes.
+     * @param handle Renderbuffer handle.
+     * @param x Column.
+     * @param y Row.
+     * @returns Depth in 0..1 or null.
+     */
+    readDepth(handle, x, y) {
+      return this.renderbuffers.readDepth(handle, x, y);
+    }
+    /**
+     * LESS-conditional depth write for tests; never pushes.
+     * @param handle Renderbuffer handle.
+     * @param x Column.
+     * @param y Row.
+     * @param depth Normalized depth.
+     */
+    writeDepthForTest(handle, x, y, depth) {
+      this.renderbuffers.writeDepthForTest(handle, x, y, depth);
+    }
+    /**
+     * Set draw buffers; validates enum-then-value-then-operation, pushes exactly one code on rejection.
+     * @param buffers Caller-supplied attachment enum list; empty list is a valid no-target config.
+     */
+    drawBuffers(buffers) {
+      if (this.guardIfLost()) return;
+      if (!Array.isArray(buffers)) {
+        pushError(this.queue, INVALID_VALUE);
+        return;
+      }
+      for (const e of buffers) {
+        if (typeof e !== "number" || !Number.isInteger(e)) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+      }
+      if (buffers.length > MAX_COLOR_ATTACHMENTS) {
+        pushError(this.queue, INVALID_OPERATION);
+        return;
+      }
+      for (const e of buffers) {
+        if (e < COLOR_ATTACHMENT0 || e > COLOR_ATTACHMENT0 + MAX_COLOR_ATTACHMENTS - 1) {
+          pushError(this.queue, INVALID_OPERATION);
+          return;
+        }
+      }
+      try {
+        this.fb.configureDrawBuffers(buffers);
+      } catch {
+        pushError(this.queue, INVALID_OPERATION);
+      }
+    }
     /** Present via framebuffer; never throws. */
     presentToCanvas() {
       try {
