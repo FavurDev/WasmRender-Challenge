@@ -1,5 +1,5 @@
 /**
- * @fileoverview Sprint 4 Task 7 rasterizer suite — exactly 10 cases R-1..R-10.
+ * @fileoverview Sprint 4 Task 7 rasterizer suite — exactly 12 cases R-1..R-12.
  *
  * Headless Node, fresh Framebuffer+GLState per case, Arrange-Act-Assert.
  */
@@ -355,5 +355,47 @@ describe('rasterizer Task 7 suite', () => {
     // Assert
     expect(px(fb, 4, 4)).toEqual([0, 0, 0, 0]);
     expect(fb.depth[4 * SW + 4] as number).toBeCloseTo(0.9, 6);
+  });
+
+  it('R-11 centroid gradient: nearest captured within 0.01 of analytic and off corners by >1 byte level', () => {
+    // Arrange
+    const fb = makeFrame();
+    const st = makeState();
+    const captured: number[] = [];
+    const program = { fragment: (varyings: Float32Array): void => { captured.push(varyings[0] as number); } };
+    const call = drawCall(fb, st, perspTriangle());
+    (call as unknown as { program: unknown }).program = program;
+    // Act
+    drawArraysImpl(call);
+    const expected = analyticPerspectiveU();
+    // Assert
+    expect(captured.length).toBeGreaterThan(0);
+    const nearest = nearestCaptured(captured, expected);
+    expect(Math.abs(nearest - expected)).toBeLessThanOrEqual(0.01);
+    for (const corner of [0, 1, 2]) {
+      expect(Math.abs(nearest - corner)).toBeGreaterThan(1 / 255);
+    }
+  });
+
+  it('R-12 uniform influence: identical draws differing only in fragmentColor produce different bytes', () => {
+    // Arrange
+    const fbA = makeFrame();
+    const fbB = makeFrame();
+    const stA = makeState();
+    const stB = makeState();
+    const shared = refTriangle();
+    const colorA: [number, number, number, number] = [255, 0, 0, 255];
+    const colorB: [number, number, number, number] = [0, 255, 0, 255];
+    // Act
+    drawArraysImpl(drawCall(fbA, stA, shared, colorA));
+    drawArraysImpl(drawCall(fbB, stB, shared, colorB));
+    const bytesA = Array.from(fbA.color);
+    const bytesB = Array.from(fbB.color);
+    const coveredA = bytesA.some((v) => v !== 0);
+    const coveredB = bytesB.some((v) => v !== 0);
+    // Assert
+    expect(coveredA).toBe(true);
+    expect(coveredB).toBe(true);
+    expect(bytesA).not.toEqual(bytesB);
   });
 });
