@@ -10,6 +10,7 @@
 // - Sprint 1: Created framebuffer triple with masked clear, readPixels, and putImageData presentation.
 // - Sprint 2: Added scissor confinement param to clear (Task 5).
 // - Sprint 4: Verified exact readPixels readback supporting sampler/readback wiring.
+// - Sprint 5: Added 4-attachment drawBuffers config with masked per-attachment writes and draw-plane helpers.
 import { COLOR_ATTACHMENT0, COLOR_BUFFER_BIT, DEPTH_BUFFER_BIT, MAX_COLOR_ATTACHMENTS, MAX_VIEWPORT_DIMS, STENCIL_BUFFER_BIT } from './gl-constants';
 import { InvalidOperationError, InvalidValueError, OutOfMemoryError } from './errors';
 

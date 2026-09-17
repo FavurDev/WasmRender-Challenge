@@ -3,6 +3,7 @@
  */
 // CHANGELOG:
 // - Sprint 4: Created TextureStore with upload, parameters, completeness, and sampling math.
+// - Sprint 5: Added R32F/RGBA32F Float32Array formats with exact float sampling.
 import {
   CLAMP_TO_EDGE,
   FLOAT,
