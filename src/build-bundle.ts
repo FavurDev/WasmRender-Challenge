@@ -27,9 +27,11 @@ execFileSync(
     `--metafile=${META}`,
     "--log-level=error",
   ],
+  // Build-time only: shell:true with pinned constant args; never ships to renderer.js runtime.
   { stdio: "inherit", shell: true },
 );
 
+/** Reports a gate failure, removes stale artifacts, and exits non-zero; never returns. */
 function fail(msg: string): never {
   try {
     rmSync(OUT, { force: true });
