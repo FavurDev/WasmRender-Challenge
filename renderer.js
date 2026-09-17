@@ -1000,8 +1000,7 @@ var __swgl = (() => {
   }
   function evaluateStencil(px, py, st, stencil, width) {
     if (!st.stencilTest) return true;
-    void stencil[py * width + px];
-    return true;
+    return stencil[py * width + px] !== 0;
   }
   function computeFragmentDepth(w0, w1, w2, ndcZ0, ndcZ1, ndcZ2) {
     let weighted;

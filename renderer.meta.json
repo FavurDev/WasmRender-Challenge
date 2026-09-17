@@ -60,7 +60,7 @@
       "format": "esm"
     },
     "src/renderer/rasterizer.ts": {
-      "bytes": 26480,
+      "bytes": 26521,
       "imports": [
         {
           "path": "src/renderer/gl-constants.ts",
@@ -273,7 +273,7 @@
           "bytesInOutput": 7980
         },
         "src/renderer/rasterizer.ts": {
-          "bytesInOutput": 13415
+          "bytesInOutput": 13406
         },
         "src/renderer/texture.ts": {
           "bytesInOutput": 15925
@@ -306,7 +306,7 @@
           "bytesInOutput": 1945
         }
       },
-      "bytes": 175210
+      "bytes": 175201
     }
   }
 }
