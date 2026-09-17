@@ -4,12 +4,17 @@
  * Sprint 3 Task 7 wires the Task 6 compiler chain plus program linker into this
  * facade. Compile/link failures travel the status-flag channel (COMPILE_STATUS /
  * LINK_STATUS plus info logs) and never touch the error queue; only draw-time
- * misuse and foreign uniform handles push INVALID_OPERATION. Dependencies:
- * state, framebuffer, errors, buffer, shader-compiler/codegen, program.
+ * misuse and foreign uniform handles push INVALID_OPERATION.
+ * Sprint 4 wires sampler bindings (active texture unit plus sampler-uniform
+ * assembly), exact readPixels with single-code OOB handling, and per-draw
+ * presentToCanvas presentation into this facade. Dependencies:
+ * state, framebuffer, errors, buffer, rasterizer, texture,
+ * shader-compiler/codegen, program.
  */
 // CHANGELOG:
 // - Sprint 1: Created minimal SoftwareWebGLContext composition root with clear/viewport/triangle path.
 // - Sprint 2: Extended SoftwareWebGLContext with BufferStore ownership and draw paths (Tasks 1/3/4).
+// - Sprint 4: Wired sampler bindings, exact readPixels, and per-draw presentToCanvas.
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError, ShaderCompileError, InvalidEnumError, InvalidValueError, InvalidOperationError } from "./errors";

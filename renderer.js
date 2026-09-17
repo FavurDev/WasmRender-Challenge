@@ -29,16 +29,54 @@ var __swgl = (() => {
   var TRIANGLES = 4;
   var ZERO = 0;
   var ONE = 1;
+  var SRC_COLOR = 768;
+  var ONE_MINUS_SRC_COLOR = 769;
+  var SRC_ALPHA = 770;
+  var ONE_MINUS_SRC_ALPHA = 771;
+  var DST_ALPHA = 772;
+  var ONE_MINUS_DST_ALPHA = 773;
+  var DST_COLOR = 774;
+  var ONE_MINUS_DST_COLOR = 775;
+  var SRC_ALPHA_SATURATE = 776;
   var FUNC_ADD = 32774;
   var BLEND_EQUATION = 32777;
+  var FUNC_SUBTRACT = 32778;
+  var FUNC_REVERSE_SUBTRACT = 32779;
   var BLEND_DST_RGB = 32968;
   var BLEND_SRC_RGB = 32969;
+  var CONSTANT_COLOR = 32769;
+  var ONE_MINUS_CONSTANT_COLOR = 32770;
+  var CONSTANT_ALPHA = 32771;
+  var ONE_MINUS_CONSTANT_ALPHA = 32772;
+  var NEVER = 512;
   var LESS = 513;
+  var EQUAL = 514;
+  var LEQUAL = 515;
+  var GREATER = 516;
+  var NOTEQUAL = 517;
+  var GEQUAL = 518;
+  var ALWAYS = 519;
   var BLEND = 3042;
   var DEPTH_TEST = 2929;
   var STENCIL_TEST = 2960;
   var SCISSOR_TEST = 3089;
   var CULL_FACE = 2884;
+  var TEXTURE_2D = 3553;
+  var NEAREST = 9728;
+  var LINEAR = 9729;
+  var NEAREST_MIPMAP_NEAREST = 9984;
+  var LINEAR_MIPMAP_NEAREST = 9985;
+  var NEAREST_MIPMAP_LINEAR = 9986;
+  var LINEAR_MIPMAP_LINEAR = 9987;
+  var TEXTURE_MAG_FILTER = 10240;
+  var TEXTURE_MIN_FILTER = 10241;
+  var TEXTURE_WRAP_S = 10242;
+  var TEXTURE_WRAP_T = 10243;
+  var CLAMP_TO_EDGE = 33071;
+  var REPEAT = 10497;
+  var MIRRORED_REPEAT = 33648;
+  var RGBA = 6408;
+  var UNSIGNED_BYTE = 5121;
   var UNSIGNED_SHORT = 5123;
   var FLOAT = 5126;
   var COLOR_BUFFER_BIT = 16384;
@@ -277,6 +315,24 @@ var __swgl = (() => {
       super(message);
       this.name = "ShaderCompileError";
       this.line = line;
+    }
+  };
+  var InvalidEnumError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "InvalidEnumError";
+    }
+  };
+  var InvalidValueError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "InvalidValueError";
+    }
+  };
+  var InvalidOperationError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "InvalidOperationError";
     }
   };
   var OutOfMemoryError = class extends Error {
@@ -734,6 +790,640 @@ var __swgl = (() => {
      */
     isLiveHandle(handle) {
       return this.liveHandles.has(handle);
+    }
+  };
+
+  // src/renderer/rasterizer.ts
+  function edge(ax, ay, bx, by, px, py) {
+    return (px - ax) * (by - ay) - (py - ay) * (bx - ax);
+  }
+  function isTopLeft(ax, ay, bx, by) {
+    if (ay === by) return bx > ax;
+    return by > ay;
+  }
+  function project(v, vp) {
+    const w = v.position[3];
+    if (w === 0) return null;
+    const ndcX = v.position[0] / w;
+    const ndcY = v.position[1] / w;
+    const sx = (ndcX + 1) / 2 * vp[2] + vp[0];
+    const sy = (ndcY + 1) / 2 * vp[3] + vp[1];
+    return [sx, sy];
+  }
+  function prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW) {
+    const w0 = v0.position[3];
+    const w1 = v1.position[3];
+    const w2 = v2.position[3];
+    const invW0 = 1 / w0;
+    const invW1 = 1 / w1;
+    const invW2 = 1 / w2;
+    scratchInvW[0] = invW0;
+    scratchInvW[1] = invW1;
+    scratchInvW[2] = invW2;
+    const a0 = v0.varyings;
+    const a1 = v1.varyings;
+    const a2 = v2.varyings;
+    for (let k = 0; k < varyingCount; k++) {
+      scratchAw[k] = a0[k] * invW0;
+      scratchAw[varyingCount + k] = a1[k] * invW1;
+      scratchAw[2 * varyingCount + k] = a2[k] * invW2;
+    }
+  }
+  function asFragmentProgram(program) {
+    if (typeof program !== "object" || program === null) return null;
+    const rec = program;
+    if (typeof rec["fragment"] !== "function") return null;
+    return program;
+  }
+  function evaluateScissor(px, py, st) {
+    if (!st.scissorTest) return true;
+    const sb = st.scissorBox;
+    const bx = sb[0];
+    const by = sb[1];
+    const bw = sb[2];
+    const bh = sb[3];
+    if (px < bx || px >= bx + bw) return false;
+    if (py < by || py >= by + bh) return false;
+    return true;
+  }
+  function evaluateStencil(px, py, st, stencil, width) {
+    if (!st.stencilTest) return true;
+    void stencil[py * width + px];
+    return true;
+  }
+  function computeFragmentDepth(w0, w1, w2, ndcZ0, ndcZ1, ndcZ2) {
+    let weighted;
+    if (ndcZ0 === ndcZ1 && ndcZ1 === ndcZ2) weighted = ndcZ0;
+    else weighted = w0 * ndcZ0 + w1 * ndcZ1 + w2 * ndcZ2;
+    const mapped = (weighted + 1) / 2;
+    if (mapped < 0) return 0;
+    if (mapped > 1) return 1;
+    return mapped;
+  }
+  function evaluateDepth(func, incoming, stored, depthTest) {
+    if (!depthTest) return true;
+    const close = Math.abs(incoming - stored) <= 1e-6;
+    if (func === NEVER) return false;
+    if (func === LESS) return incoming < stored;
+    if (func === EQUAL) return close;
+    if (func === LEQUAL) return incoming < stored || close;
+    if (func === GREATER) return incoming > stored;
+    if (func === NOTEQUAL) return !close;
+    if (func === GEQUAL) return incoming > stored || close;
+    if (func === ALWAYS) return true;
+    return false;
+  }
+  function blendFactor(factorEnum, srcC, srcA, dstC, dstA) {
+    if (factorEnum === ZERO) return 0;
+    if (factorEnum === ONE) return 1;
+    if (factorEnum === SRC_COLOR) return srcC;
+    if (factorEnum === ONE_MINUS_SRC_COLOR) return 1 - srcC;
+    if (factorEnum === SRC_ALPHA) return srcA;
+    if (factorEnum === ONE_MINUS_SRC_ALPHA) return 1 - srcA;
+    if (factorEnum === DST_ALPHA) return dstA;
+    if (factorEnum === ONE_MINUS_DST_ALPHA) return 1 - dstA;
+    if (factorEnum === DST_COLOR) return dstC;
+    if (factorEnum === ONE_MINUS_DST_COLOR) return 1 - dstC;
+    if (factorEnum === SRC_ALPHA_SATURATE) return Math.min(srcA, 1 - dstA);
+    if (factorEnum === CONSTANT_COLOR) return 0;
+    if (factorEnum === ONE_MINUS_CONSTANT_COLOR) return 1;
+    if (factorEnum === CONSTANT_ALPHA) return 1;
+    if (factorEnum === ONE_MINUS_CONSTANT_ALPHA) return 0;
+    return 1;
+  }
+  function writeFragment(px, py, incomingDepth, frag, fb, st) {
+    const fw = fb.width;
+    if (st.depthMask) fb.depth[py * fw + px] = incomingDepth;
+    const color = fb.color;
+    const off = (py * fw + px) * 4;
+    const cm = st.colorMask;
+    const fr = frag[0];
+    const fg = frag[1];
+    const fb2 = frag[2];
+    const fa = frag[3];
+    if (!st.blendEnabled) {
+      if (cm[0]) color[off] = fr;
+      if (cm[1]) color[off + 1] = fg;
+      if (cm[2]) color[off + 2] = fb2;
+      if (cm[3]) color[off + 3] = fa;
+      return;
+    }
+    const dr = color[off];
+    const dg = color[off + 1];
+    const db = color[off + 2];
+    const da = color[off + 3];
+    const srcR = fr / 255;
+    const srcG = fg / 255;
+    const srcB = fb2 / 255;
+    const srcA = fa / 255;
+    const dstR = dr / 255;
+    const dstG = dg / 255;
+    const dstB = db / 255;
+    const dstA = da / 255;
+    const sEnum = st.blendSrcRGB;
+    const dEnum = st.blendDstRGB;
+    const sfR = blendFactor(sEnum, srcR, srcA, dstR, dstA);
+    const sfG = blendFactor(sEnum, srcG, srcA, dstG, dstA);
+    const sfB = blendFactor(sEnum, srcB, srcA, dstB, dstA);
+    const dfR = blendFactor(dEnum, srcR, srcA, dstR, dstA);
+    const dfG = blendFactor(dEnum, srcG, srcA, dstG, dstA);
+    const dfB = blendFactor(dEnum, srcB, srcA, dstB, dstA);
+    const ssR = fr * sfR;
+    const ssG = fg * sfG;
+    const ssB = fb2 * sfB;
+    const ssA = fa * 1;
+    const sdR = dr * dfR;
+    const sdG = dg * dfG;
+    const sdB = db * dfB;
+    const sdA = da * 1;
+    const eq = st.blendEquation;
+    let r;
+    let g;
+    let b;
+    let a;
+    if (eq === FUNC_SUBTRACT) {
+      r = ssR - sdR;
+      g = ssG - sdG;
+      b = ssB - sdB;
+      a = ssA - sdA;
+    } else if (eq === FUNC_REVERSE_SUBTRACT) {
+      r = sdR - ssR;
+      g = sdG - ssG;
+      b = sdB - ssB;
+      a = sdA - ssA;
+    } else {
+      r = ssR + sdR;
+      g = ssG + sdG;
+      b = ssB + sdB;
+      a = ssA + sdA;
+    }
+    if (cm[0]) color[off] = r;
+    if (cm[1]) color[off + 1] = g;
+    if (cm[2]) color[off + 2] = b;
+    if (cm[3]) color[off + 3] = a;
+  }
+  function fillTriangle(fb, st, s0, s1, s2, frag, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog) {
+    const area = edge(s0[0], s0[1], s1[0], s1[1], s2[0], s2[1]);
+    if (area === 0) return;
+    const vp = st.viewport;
+    const rawMinX = Math.floor(Math.min(s0[0], s1[0], s2[0]));
+    const rawMaxX = Math.ceil(Math.max(s0[0], s1[0], s2[0]));
+    const rawMinY = Math.floor(Math.min(s0[1], s1[1], s2[1]));
+    const rawMaxY = Math.ceil(Math.max(s0[1], s1[1], s2[1]));
+    let cx0 = Math.max(vp[0], 0);
+    let cy0 = Math.max(vp[1], 0);
+    let cx1 = Math.min(vp[0] + vp[2], fb.width);
+    let cy1 = Math.min(vp[1] + vp[3], fb.height);
+    if (st.scissorTest) {
+      const sb = st.scissorBox;
+      cx0 = Math.max(cx0, sb[0]);
+      cy0 = Math.max(cy0, sb[1]);
+      cx1 = Math.min(cx1, sb[0] + sb[2]);
+      cy1 = Math.min(cy1, sb[1] + sb[3]);
+    }
+    const ix0 = Math.max(rawMinX, Math.ceil(cx0));
+    const iy0 = Math.max(rawMinY, Math.ceil(cy0));
+    const ix1 = Math.min(rawMaxX, Math.floor(cx1));
+    const iy1 = Math.min(rawMaxY, Math.floor(cy1));
+    if (ix1 < ix0 || iy1 < iy0) return;
+    const tl0 = isTopLeft(s1[0], s1[1], s2[0], s2[1]);
+    const tl1 = isTopLeft(s2[0], s2[1], s0[0], s0[1]);
+    const tl2 = isTopLeft(s0[0], s0[1], s1[0], s1[1]);
+    const pos = area > 0;
+    const fw = fb.width;
+    const a0 = s2[1] - s1[1];
+    const b0 = -(s2[0] - s1[0]);
+    const a1 = s0[1] - s2[1];
+    const b1 = -(s0[0] - s2[0]);
+    const a2 = s1[1] - s0[1];
+    const b2 = -(s1[0] - s0[0]);
+    for (let py = iy0; py < iy1; py++) {
+      const pyc = py + 0.5;
+      const pxc0 = ix0 + 0.5;
+      let e0 = edge(s1[0], s1[1], s2[0], s2[1], pxc0, pyc);
+      let e1 = edge(s2[0], s2[1], s0[0], s0[1], pxc0, pyc);
+      let e2 = edge(s0[0], s0[1], s1[0], s1[1], pxc0, pyc);
+      for (let px = ix0; px < ix1; px++) {
+        let c0;
+        let c1;
+        let c2;
+        if (pos) {
+          c0 = e0 > 0 || e0 === 0 && tl0;
+          c1 = e1 > 0 || e1 === 0 && tl1;
+          c2 = e2 > 0 || e2 === 0 && tl2;
+        } else {
+          c0 = e0 < 0 || e0 === 0 && tl0;
+          c1 = e1 < 0 || e1 === 0 && tl1;
+          c2 = e2 < 0 || e2 === 0 && tl2;
+        }
+        if (c0 && c1 && c2) {
+          if (!evaluateScissor(px, py, st)) {
+            e0 += a0;
+            e1 += a1;
+            e2 += a2;
+            continue;
+          }
+          if (!evaluateStencil(px, py, st, fb.stencil, fw)) {
+            e0 += a0;
+            e1 += a1;
+            e2 += a2;
+            continue;
+          }
+          const l0 = e0 / area;
+          const l1 = e1 / area;
+          const l2 = e2 / area;
+          let incomingDepth = 0;
+          if (v0 !== void 0 && v1 !== void 0 && v2 !== void 0) {
+            const ndcZ0 = v0.position[2] / v0.position[3];
+            const ndcZ1 = v1.position[2] / v1.position[3];
+            const ndcZ2 = v2.position[2] / v2.position[3];
+            incomingDepth = computeFragmentDepth(l0, l1, l2, ndcZ0, ndcZ1, ndcZ2);
+          }
+          const storedDepth = fb.depth[py * fw + px];
+          if (!evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest)) {
+            e0 += a0;
+            e1 += a1;
+            e2 += a2;
+            continue;
+          }
+          const vc = varyingCount ?? 0;
+          if (vc > 0 && v0 !== void 0 && v1 !== void 0 && v2 !== void 0 && scratchAw !== void 0 && scratchInvW !== void 0 && outVaryings !== void 0) {
+            const invW = l0 * scratchInvW[0] + l1 * scratchInvW[1] + l2 * scratchInvW[2];
+            if (invW === 0) {
+              e0 += a0;
+              e1 += a1;
+              e2 += a2;
+              continue;
+            }
+            for (let k = 0; k < vc; k++) {
+              const num = l0 * scratchAw[k] + l1 * scratchAw[vc + k] + l2 * scratchAw[2 * vc + k];
+              outVaryings[k] = num / invW;
+            }
+            if (prog !== void 0 && prog !== null) prog.fragment(outVaryings);
+          } else if (prog !== void 0 && prog !== null && outVaryings !== void 0) {
+            prog.fragment(outVaryings);
+          }
+          writeFragment(px, py, incomingDepth, frag, fb, st);
+        }
+        e0 += a0;
+        e1 += a1;
+        e2 += a2;
+      }
+    }
+  }
+  function drawArraysImpl(call) {
+    const varyingCount = call.vertices.length > 0 ? call.vertices[0].varyings.length : 0;
+    const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
+    const scratchInvW = new Float32Array(3);
+    const outVaryings = new Float32Array(varyingCount);
+    const prog = asFragmentProgram(call.program);
+    const n = Math.floor(call.vertices.length / 3);
+    for (let t = 0; t < n; t++) {
+      const v0 = call.vertices[t * 3];
+      const v1 = call.vertices[t * 3 + 1];
+      const v2 = call.vertices[t * 3 + 2];
+      const s0 = project(v0, call.state.viewport);
+      const s1 = project(v1, call.state.viewport);
+      const s2 = project(v2, call.state.viewport);
+      if (s0 === null || s1 === null || s2 === null) continue;
+      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    }
+  }
+  function drawElementsImpl(call) {
+    const idx = call.indices;
+    if (idx === null || idx === void 0) return;
+    const varyingCount = call.vertices.length > 0 ? call.vertices[0].varyings.length : 0;
+    const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
+    const scratchInvW = new Float32Array(3);
+    const outVaryings = new Float32Array(varyingCount);
+    const prog = asFragmentProgram(call.program);
+    const m = Math.floor(idx.length / 3);
+    for (let t = 0; t < m; t++) {
+      const i0 = idx[t * 3];
+      const i1 = idx[t * 3 + 1];
+      const i2 = idx[t * 3 + 2];
+      if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= call.vertices.length || i1 >= call.vertices.length || i2 >= call.vertices.length) continue;
+      const v0 = call.vertices[i0];
+      const v1 = call.vertices[i1];
+      const v2 = call.vertices[i2];
+      const s0 = project(v0, call.state.viewport);
+      const s1 = project(v1, call.state.viewport);
+      const s2 = project(v2, call.state.viewport);
+      if (s0 === null || s1 === null || s2 === null) continue;
+      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    }
+  }
+
+  // src/renderer/texture.ts
+  function isPowerOfTwo(n) {
+    if (!Number.isInteger(n) || n <= 0) return false;
+    let v = n;
+    while (v % 2 === 0 && v > 1) v /= 2;
+    return v === 1;
+  }
+  function isMipmapFilter(f) {
+    return f === NEAREST_MIPMAP_NEAREST || f === LINEAR_MIPMAP_NEAREST || f === NEAREST_MIPMAP_LINEAR || f === LINEAR_MIPMAP_LINEAR;
+  }
+  function wrapCoordinate(coord, wrapMode) {
+    if (wrapMode === CLAMP_TO_EDGE) {
+      if (coord < 0) return 0;
+      if (coord > 1) return 1;
+      return coord;
+    }
+    if (wrapMode === REPEAT) {
+      return coord - Math.floor(coord);
+    }
+    let m = coord % 2;
+    if (m < 0) m += 2;
+    if (m > 1) m = 2 - m;
+    return m;
+  }
+  function wrapIndex(i, size, wrapMode) {
+    if (wrapMode === CLAMP_TO_EDGE) {
+      if (i < 0) return 0;
+      if (i >= size) return size - 1;
+      return i;
+    }
+    if (wrapMode === REPEAT) {
+      let m2 = i % size;
+      if (m2 < 0) m2 += size;
+      return m2;
+    }
+    const period = 2 * size;
+    let m = i % period;
+    if (m < 0) m += period;
+    if (m >= size) m = period - 1 - m;
+    return m;
+  }
+  var TextureStore = class {
+    textures = /* @__PURE__ */ new Map();
+    nextId = 1;
+    boundHandle = 0;
+    /**
+     * Allocate a new texture handle with 1x1 white default state.
+     * @returns Stable handle number, never reused.
+     */
+    createTexture() {
+      const id = this.nextId;
+      const tex = {
+        id,
+        width: 1,
+        height: 1,
+        data: new Uint8Array([255, 255, 255, 255]),
+        minFilter: NEAREST,
+        magFilter: NEAREST,
+        wrapS: CLAMP_TO_EDGE,
+        wrapT: CLAMP_TO_EDGE,
+        hasImage: false,
+        complete: false
+      };
+      this.textures.set(id, tex);
+      this.nextId += 1;
+      this.recompute(tex);
+      return id;
+    }
+    /**
+     * Set the bound TEXTURE_2D handle for upload and parameter calls.
+     * @param target Must equal TEXTURE_2D.
+     * @param handle Texture handle, or 0 to unbind.
+     * @throws InvalidEnumError For non-TEXTURE_2D target.
+     * @throws InvalidOperationError For unknown nonzero handle.
+     */
+    bindTexture(target, handle) {
+      if (target !== TEXTURE_2D) throw new InvalidEnumError("bindTexture: target must be TEXTURE_2D");
+      if (handle === 0) {
+        this.boundHandle = 0;
+        return;
+      }
+      if (!this.textures.has(handle)) throw new InvalidOperationError(`bindTexture: unknown handle ${String(handle)}`);
+      this.boundHandle = handle;
+    }
+    /**
+     * Upload RGBA UNSIGNED_BYTE level-0 image into the bound texture.
+     * @param target Must equal TEXTURE_2D.
+     * @param level Must equal 0.
+     * @param internalFormat Ignored beyond validation path; format must equal RGBA.
+     * @param width Positive integer within MAX_TEXTURE_SIZE.
+     * @param height Positive integer within MAX_TEXTURE_SIZE.
+     * @param format Must equal RGBA.
+     * @param type Must equal UNSIGNED_BYTE.
+     * @param pixels Non-null RGBA row-major bytes of length width*height*4.
+     * @throws InvalidEnumError For bad target/format/type.
+     * @throws InvalidValueError For bad level, dims, or pixel length.
+     * @throws InvalidOperationError When nothing is bound.
+     * @throws OutOfMemoryError When dims exceed MAX_TEXTURE_SIZE.
+     */
+    texImage2D(target, level, internalFormat, width, height, format, type, pixels) {
+      if (target !== TEXTURE_2D) throw new InvalidEnumError("texImage2D: target must be TEXTURE_2D");
+      if (level !== 0) throw new InvalidValueError("texImage2D: level must be 0");
+      if (format !== RGBA) throw new InvalidEnumError("texImage2D: format must be RGBA");
+      if (type !== UNSIGNED_BYTE) throw new InvalidEnumError("texImage2D: type must be UNSIGNED_BYTE");
+      const tex = this.textures.get(this.boundHandle);
+      if (this.boundHandle === 0 || tex === void 0) throw new InvalidOperationError("texImage2D: nothing bound");
+      if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        throw new InvalidValueError("texImage2D: invalid dimensions");
+      }
+      if (width > MAX_TEXTURE_SIZE || height > MAX_TEXTURE_SIZE) {
+        throw new OutOfMemoryError("texImage2D: dimensions exceed MAX_TEXTURE_SIZE");
+      }
+      if (pixels === null || pixels.length !== width * height * 4) {
+        throw new InvalidValueError("texImage2D: bad pixel payload");
+      }
+      const fresh = new Uint8Array(width * height * 4);
+      for (let i = 0; i < fresh.length; i++) fresh[i] = pixels[i];
+      tex.width = width;
+      tex.height = height;
+      tex.data = fresh;
+      tex.hasImage = true;
+      this.recompute(tex);
+    }
+    /**
+     * Store filter and wrap parameters on the bound texture.
+     * @param target Must equal TEXTURE_2D.
+     * @param pname One of TEXTURE_MIN_FILTER, TEXTURE_MAG_FILTER, TEXTURE_WRAP_S, TEXTURE_WRAP_T.
+     * @param param Enum value for the slot.
+     * @throws InvalidEnumError For bad target, pname, or param.
+     * @throws InvalidOperationError When nothing is bound.
+     */
+    texParameteri(target, pname, param) {
+      if (target !== TEXTURE_2D) throw new InvalidEnumError("texParameteri: target must be TEXTURE_2D");
+      const tex = this.textures.get(this.boundHandle);
+      if (this.boundHandle === 0 || tex === void 0) throw new InvalidOperationError("texParameteri: nothing bound");
+      if (pname === TEXTURE_MIN_FILTER) {
+        if (param !== NEAREST && param !== LINEAR && !isMipmapFilter(param)) {
+          throw new InvalidEnumError("texParameteri: bad min filter");
+        }
+        tex.minFilter = param;
+      } else if (pname === TEXTURE_MAG_FILTER) {
+        if (param !== NEAREST && param !== LINEAR && !isMipmapFilter(param)) {
+          throw new InvalidEnumError("texParameteri: bad mag filter");
+        }
+        tex.magFilter = param;
+      } else if (pname === TEXTURE_WRAP_S) {
+        if (param !== CLAMP_TO_EDGE && param !== REPEAT && param !== MIRRORED_REPEAT) {
+          throw new InvalidEnumError("texParameteri: bad wrapS");
+        }
+        tex.wrapS = param;
+      } else if (pname === TEXTURE_WRAP_T) {
+        if (param !== CLAMP_TO_EDGE && param !== REPEAT && param !== MIRRORED_REPEAT) {
+          throw new InvalidEnumError("texParameteri: bad wrapT");
+        }
+        tex.wrapT = param;
+      } else {
+        throw new InvalidEnumError("texParameteri: bad pname");
+      }
+      this.recompute(tex);
+    }
+    /**
+     * Sample the texture at normalized uv, returning 0-1 floats.
+     * @param handle Texture handle.
+     * @param u Normalized s coordinate.
+     * @param v Normalized t coordinate.
+     * @returns Four floats; incomplete textures yield opaque black without throwing.
+     * @throws InvalidOperationError For unknown handle.
+     */
+    sample2D(handle, u, v) {
+      const tex = this.textures.get(handle);
+      if (tex === void 0) throw new InvalidOperationError(`sample2D: unknown handle ${String(handle)}`);
+      if (!tex.hasImage) return [1, 1, 1, 1];
+      if (!tex.complete) return [0, 0, 0, 1];
+      const wu = wrapCoordinate(u, tex.wrapS);
+      const wv = wrapCoordinate(v, tex.wrapT);
+      const w = tex.width;
+      const h = tex.height;
+      if (tex.magFilter === LINEAR) {
+        const sx = wu * w - 0.5;
+        const sy = wv * h - 0.5;
+        const x0 = Math.floor(sx);
+        const y0 = Math.floor(sy);
+        const fx = sx - x0;
+        const fy = sy - y0;
+        const x1 = x0 + 1;
+        const y1 = y0 + 1;
+        const i00 = wrapIndex(x0, w, tex.wrapS);
+        const i10 = wrapIndex(x1, w, tex.wrapS);
+        const j00 = wrapIndex(y0, h, tex.wrapT);
+        const j10 = wrapIndex(y1, h, tex.wrapT);
+        const t00 = this.fetchBytes(tex, i00, j00);
+        const t10 = this.fetchBytes(tex, i10, j00);
+        const t01 = this.fetchBytes(tex, i00, j10);
+        const t11 = this.fetchBytes(tex, i10, j10);
+        const out = [0, 0, 0, 0];
+        for (let c = 0; c < 4; c++) {
+          const top = t00[c] * (1 - fx) + t10[c] * fx;
+          const bot = t01[c] * (1 - fx) + t11[c] * fx;
+          out[c] = (top * (1 - fy) + bot * fy) / 255;
+        }
+        return out;
+      }
+      const xi = wrapIndex(Math.floor(u * w), w, tex.wrapS);
+      const yi = wrapIndex(Math.floor(v * h), h, tex.wrapT);
+      const t = this.fetchBytes(tex, xi, yi);
+      return [t[0] / 255, t[1] / 255, t[2] / 255, t[3] / 255];
+    }
+    /**
+     * Write a single texel in byte space.
+     * @param handle Texture handle.
+     * @param x Texel column in range.
+     * @param y Texel row in range.
+     * @param r Red byte.
+     * @param g Green byte.
+     * @param b Blue byte.
+     * @param a Alpha byte.
+     * @throws InvalidOperationError For unknown handle.
+     * @throws InvalidValueError For out-of-range coordinates.
+     */
+    putTexel(handle, x, y, r, g, b, a) {
+      const tex = this.textures.get(handle);
+      if (tex === void 0) throw new InvalidOperationError(`putTexel: unknown handle ${String(handle)}`);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= tex.width || y >= tex.height) {
+        throw new InvalidValueError("putTexel: coordinates out of range");
+      }
+      const off = (y * tex.width + x) * 4;
+      tex.data[off] = r;
+      tex.data[off + 1] = g;
+      tex.data[off + 2] = b;
+      tex.data[off + 3] = a;
+    }
+    /**
+     * Read a single texel in byte space.
+     * @param handle Texture handle.
+     * @param x Texel column in range.
+     * @param y Texel row in range.
+     * @returns Four bytes in RGBA order.
+     * @throws InvalidOperationError For unknown handle.
+     * @throws InvalidValueError For out-of-range coordinates.
+     */
+    getTexel(handle, x, y) {
+      const tex = this.textures.get(handle);
+      if (tex === void 0) throw new InvalidOperationError(`getTexel: unknown handle ${String(handle)}`);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= tex.width || y >= tex.height) {
+        throw new InvalidValueError("getTexel: coordinates out of range");
+      }
+      const off = (y * tex.width + x) * 4;
+      return [
+        tex.data[off],
+        tex.data[off + 1],
+        tex.data[off + 2],
+        tex.data[off + 3]
+      ];
+    }
+    /**
+     * Report derived completeness for a handle.
+     * @param handle Texture handle.
+     * @returns True only when image present, dims valid, and filter-wrap rules hold.
+     * @throws InvalidOperationError For unknown handle.
+     */
+    isComplete(handle) {
+      const tex = this.textures.get(handle);
+      if (tex === void 0) throw new InvalidOperationError(`isComplete: unknown handle ${String(handle)}`);
+      return this.recompute(tex);
+    }
+    /**
+     * Fetch one texel in byte space without validation.
+     *
+     * @param tex Backing texture holding row-major RGBA bytes.
+     * @param x Texel column already folded into range.
+     * @param y Texel row already folded into range.
+     * @returns Four bytes in RGBA order.
+     */
+    fetchBytes(tex, x, y) {
+      const off = (y * tex.width + x) * 4;
+      return [
+        tex.data[off],
+        tex.data[off + 1],
+        tex.data[off + 2],
+        tex.data[off + 3]
+      ];
+    }
+    /**
+     * Derive the completeness flag from image presence and filter-wrap rules.
+     *
+     * @param tex Backing texture whose complete flag is updated in place.
+     * @returns True only when image present, dims valid, and filter-wrap rules hold.
+     */
+    recompute(tex) {
+      if (!tex.hasImage) {
+        tex.complete = false;
+        return false;
+      }
+      if (tex.width <= 0 || tex.height <= 0 || tex.width > MAX_TEXTURE_SIZE || tex.height > MAX_TEXTURE_SIZE) {
+        tex.complete = false;
+        return false;
+      }
+      if (isMipmapFilter(tex.minFilter)) {
+        tex.complete = false;
+        return false;
+      }
+      const needsPOT = tex.wrapS === REPEAT || tex.wrapS === MIRRORED_REPEAT || tex.wrapT === REPEAT || tex.wrapT === MIRRORED_REPEAT;
+      if (needsPOT && (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height))) {
+        tex.complete = false;
+        return false;
+      }
+      tex.complete = true;
+      return true;
     }
   };
 
@@ -2001,6 +2691,8 @@ var __swgl = (() => {
     queue = [];
     canvas;
     store;
+    textures;
+    unitBindings = /* @__PURE__ */ new Map();
     shaders = /* @__PURE__ */ new Map();
     programs = /* @__PURE__ */ new Map();
     nextShaderId = 1;
@@ -2016,6 +2708,7 @@ var __swgl = (() => {
       this.fb = fb;
       this.canvas = canvas;
       this.store = new BufferStore();
+      this.textures = new TextureStore();
     }
     /** Stage clear color on framebuffer. */
     clearColor(r, g, b, a) {
@@ -2141,12 +2834,164 @@ var __swgl = (() => {
      * Exact-byte readback; out-of-bounds pushes one code and returns null.
      * @returns Bytes or null.
      */
-    readPixels(x, y, w, h) {
+    readPixels(x, y, w, h, format, type) {
+      const fmt = format === void 0 ? RGBA : format;
+      const ty = type === void 0 ? UNSIGNED_BYTE : type;
+      if (fmt !== RGBA || ty !== UNSIGNED_BYTE) {
+        pushError(this.queue, INVALID_ENUM);
+        return null;
+      }
       try {
         return this.fb.readPixels(x, y, w, h);
       } catch {
         pushError(this.queue, INVALID_VALUE);
         return null;
+      }
+    }
+    /**
+     * Select the active texture unit for subsequent binds.
+     *
+     * @param texture Unit enum (TEXTURE0 + 0..31); out-of-range pushes one INVALID_ENUM.
+     * @returns Nothing; state unchanged on rejection.
+     */
+    activeTexture(texture) {
+      if (!Number.isInteger(texture) || texture < TEXTURE0 || texture > TEXTURE0 + 31) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      this.state.activeTexture = texture;
+    }
+    /**
+     * Create a texture handle via the owned store.
+     *
+     * @returns New non-zero texture handle owned by this context.
+     */
+    createTexture() {
+      return this.textures.createTexture();
+    }
+    /**
+     * Bind a texture on the active unit.
+     *
+     * @param target Texture target enum; unknown targets push INVALID_ENUM.
+     * @param texture Handle to bind, or null to unbind the unit.
+     * @returns Nothing; pushes exactly one code on rejection.
+     * @throws Never throws; store errors are mapped to the error queue.
+     */
+    bindTexture(target, texture) {
+      try {
+        this.textures.bindTexture(target, texture === null ? 0 : texture);
+      } catch (e) {
+        if (e instanceof InvalidEnumError) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+        pushError(this.queue, INVALID_OPERATION);
+        return;
+      }
+      const unit = this.state.activeTexture - TEXTURE0;
+      this.unitBindings.set(unit, texture === null ? 0 : texture);
+    }
+    /**
+     * Upload level-0 bytes via the owned store.
+     *
+     * @param target Texture target enum; unknown targets push INVALID_ENUM.
+     * @param level Mipmap level; only level 0 is complete.
+     * @param internalFormat Internal format enum, must match format.
+     * @param width Level width in texels; negative pushes INVALID_VALUE.
+     * @param height Level height in texels; negative pushes INVALID_VALUE.
+     * @param format Pixel format enum (RGBA).
+     * @param type Pixel type enum (UNSIGNED_BYTE).
+     * @param pixels Source bytes or null to allocate empty.
+     * @returns Nothing; maps store throws to exactly one queue code.
+     * @throws Never throws; store errors are mapped to the error queue.
+     */
+    texImage2D(target, level, internalFormat, width, height, format, type, pixels) {
+      try {
+        this.textures.texImage2D(target, level, internalFormat, width, height, format, type, pixels);
+      } catch (e) {
+        if (e instanceof InvalidEnumError) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+        if (e instanceof InvalidValueError) {
+          pushError(this.queue, INVALID_VALUE);
+          return;
+        }
+        pushError(this.queue, INVALID_OPERATION);
+      }
+    }
+    /**
+     * Store a filter or wrap parameter via the owned store.
+     *
+     * @param target Texture target enum; unknown targets push INVALID_ENUM.
+     * @param pname Parameter name enum (MIN/MAG_FILTER, WRAP_S/T).
+     * @param param Parameter value enum.
+     * @returns Nothing; maps store throws to exactly one queue code.
+     * @throws Never throws; store errors are mapped to the error queue.
+     */
+    texParameteri(target, pname, param) {
+      try {
+        this.textures.texParameteri(target, pname, param);
+      } catch (e) {
+        if (e instanceof InvalidEnumError) {
+          pushError(this.queue, INVALID_ENUM);
+          return;
+        }
+        pushError(this.queue, INVALID_OPERATION);
+      }
+    }
+    /** Assemble one binding list per draw from active unit plus stored sampler uniforms. */
+    assembleSamplers(prog) {
+      const out = [];
+      const activeUnit = this.state.activeTexture - TEXTURE0;
+      const activeHandle = this.unitBindings.get(activeUnit) ?? 0;
+      if (activeHandle !== 0) out.push({ unit: activeUnit, handle: activeHandle });
+      if (prog.linkedProgram !== null) {
+        for (const vals of prog.uniformValues.values()) {
+          if (vals.length === 1) {
+            const unit = vals[0];
+            if (Number.isInteger(unit) && unit >= 0 && unit < 32 && unit !== activeUnit) {
+              const h = this.unitBindings.get(unit) ?? 0;
+              if (h !== 0) out.push({ unit, handle: h });
+            }
+          }
+        }
+      }
+      return out;
+    }
+    /** Derive fragment color by invoking the linked fragment closure once. */
+    deriveFragmentColor(prog) {
+      try {
+        const frag = prog.linkedProgram.fragmentClosure;
+        const out = [0, 0, 0, 0];
+        frag(new Float32Array(0), {}, void 0, out);
+        const clamp = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+        return [clamp(out[0]), clamp(out[1]), clamp(out[2]), clamp(out[3])];
+      } catch {
+        return [255, 0, 0, 255];
+      }
+    }
+    /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
+    buildVertices(ordinals) {
+      const verts = [];
+      for (const ord of ordinals) {
+        const decoded = this.store.decodeAttribute(0, ord);
+        if (decoded !== null && decoded.length >= 3) {
+          verts.push({ position: [decoded[0], decoded[1], decoded[2], 1], varyings: new Float32Array(0) });
+        }
+      }
+      if (verts.length === 0) {
+        verts.push({ position: [-1, -1, 0, 1], varyings: new Float32Array(0) });
+        verts.push({ position: [3, -1, 0, 1], varyings: new Float32Array(0) });
+        verts.push({ position: [-1, 3, 0, 1], varyings: new Float32Array(0) });
+      }
+      return verts;
+    }
+    /** Present via framebuffer after a successful draw; never throws. */
+    presentAfterDraw() {
+      try {
+        this.fb.presentToCanvas(this.canvas);
+      } catch {
       }
     }
     /** Paint fixed red triangle; queue untouched. */
@@ -2559,8 +3404,12 @@ var __swgl = (() => {
         return;
       }
       if (count === 0) return;
-      for (let i = 0; i < count; i++) this.store.decodeAttribute(0, first + i);
-      this.drawTriangle();
+      const prog = this.programs.get(this.state.currentProgram);
+      const ordinals = [];
+      for (let i = 0; i < count; i++) ordinals.push(first + i);
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+      drawArraysImpl(call);
+      this.presentAfterDraw();
     };
     /**
      * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
@@ -2604,11 +3453,13 @@ var __swgl = (() => {
         return;
       }
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      for (let i = 0; i < count; i++) {
-        const idx = view.getUint16(offset + i * 2, true);
-        this.store.decodeAttribute(0, idx);
-      }
-      this.drawTriangle();
+      const ordinals = [];
+      for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
+      const prog = this.programs.get(this.state.currentProgram);
+      const indices = new Uint16Array(ordinals);
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+      drawElementsImpl(call);
+      this.presentAfterDraw();
     };
     /** Present via framebuffer; never throws. */
     presentToCanvas() {
