@@ -1,5 +1,5 @@
 /**
- * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, error queue.
+ * @fileoverview SoftwareWebGLContext composition root owning GLState, Framebuffer, BufferStore, RenderbufferStore, error queue.
  *
  * Sprint 3 Task 7 wires the Task 6 compiler chain plus program linker into this
  * facade. Compile/link failures travel the status-flag channel (COMPILE_STATUS /
@@ -17,18 +17,19 @@
 // - Sprint 4: Wired sampler bindings, exact readPixels, and per-draw presentToCanvas.
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
-import { pushError, drainError, ShaderCompileError, InvalidEnumError, InvalidValueError, InvalidOperationError } from "./errors";
+import { pushError, drainError, ShaderCompileError, InvalidEnumError, InvalidValueError, InvalidOperationError, OutOfMemoryError as QueueOutOfMemoryError } from "./errors";
 import { BufferStore } from "./buffer";
 import { drawArraysImpl, drawElementsImpl } from "./rasterizer";
 import type { DrawCall, TextureBinding, Vertex } from "./rasterizer";
 import { TextureStore } from "./texture";
+import { RenderbufferStore } from "./renderbuffer";
+import { ExtensionManager } from "./extensions";
 import { compileShaderSource } from "./shader-compiler/codegen";
 import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
 import type { SymbolTable } from "./shader-compiler/typechecker";
 import { linkProgram as linkProgramValidator, getAttribLocation as resolveAttribLocation, getUniformLocation as resolveUniformLocation } from "./program";
 import type { GLProgram, UniformHandle, CompiledShader } from "./program";
-import { BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CULL_FACE, DEPTH_CLEAR_VALUE, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
-
+import { ARRAY_BUFFER, BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CONTEXT_LOST_WEBGL, CULL_FACE, DEPTH24_STENCIL8, DEPTH_CLEAR_VALUE, DEPTH_COMPONENT16, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FLOAT, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, OUT_OF_MEMORY, RENDERBUFFER, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
 type ShaderRecord = {
   id: number;
   type: number;
@@ -40,7 +41,6 @@ type ShaderRecord = {
   version: 100 | 300 | null;
   hasMain: boolean;
 };
-
 type ProgramRecord = {
   id: number;
   attachedVertex: number[];
@@ -50,7 +50,13 @@ type ProgramRecord = {
   linkedProgram: GLProgram | null;
   uniformValues: Map<number, number[]>;
 };
-
+/** VAO snapshot: per-attribute pointer copies plus enable flags plus buffer bindings. */
+type VertexArrayRecord = {
+  attribs: Array<{ size: number; type: number; normalized: boolean; stride: number; offset: number; boundArrayBuffer: number }>;
+  enabled: boolean[];
+  boundArrayBuffer: number;
+  boundElementArrayBuffer: number;
+};
 /** Scan source lines for bare `target = ident;` reads undeclared in scope. */
 function findUndeclaredIdent(source: string, symbols: SymbolTable): { line: number; name: string } | null {
   const known = new Set<string>(["true", "false", "gl_Position", "gl_FragColor", "gl_PointSize", "gl_FragCoord", "float", "int", "bool", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4"]);
@@ -67,13 +73,11 @@ function findUndeclaredIdent(source: string, symbols: SymbolTable): { line: numb
   }
   return null;
 }
-
 interface CanvasLike {
   width?: number;
   height?: number;
   getContext?: (kind: string) => unknown;
 }
-
 /**
  * Minimal software WebGL context: owns state, pixels, BufferStore, and error queue.
  */
@@ -84,12 +88,110 @@ export class SoftwareWebGLContext {
   private canvas: unknown;
   private store: BufferStore;
   private textures: TextureStore;
+  private renderbuffers: RenderbufferStore;
   private unitBindings = new Map<number, number>();
   private shaders = new Map<number, ShaderRecord>();
   private programs = new Map<number, ProgramRecord>();
   private nextShaderId = 1;
   private nextProgramId = 1;
-
+  private extensions = new ExtensionManager();
+  private nextVAOHandle = 1;
+  private liveVAOs = new Set<number>();
+  private vaoRecords = new Map<number, VertexArrayRecord>();
+  private currentVAO = 0;
+  private static freshVAORecord(): VertexArrayRecord {
+    const attribs: VertexArrayRecord["attribs"] = [];
+    const enabled: boolean[] = [];
+    for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+      attribs.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, boundArrayBuffer: 0 });
+      enabled.push(false);
+    }
+    return { attribs, enabled, boundArrayBuffer: 0, boundElementArrayBuffer: 0 };
+  }
+  private defaultVAO: VertexArrayRecord = SoftwareWebGLContext.freshVAORecord();
+  private vaoMirror: VertexArrayRecord = SoftwareWebGLContext.freshVAORecord();
+  /** Resolve the record for the currently bound VAO (default when 0). */
+  private activeVAORecord(): VertexArrayRecord {
+    if (this.currentVAO === 0) return this.defaultVAO;
+    const rec = this.vaoRecords.get(this.currentVAO);
+    if (rec === undefined) return this.defaultVAO;
+    return rec;
+  }
+  /** Deep-copy a VAO record. */
+  private static cloneVAORecord(src: VertexArrayRecord): VertexArrayRecord {
+    return {
+      attribs: src.attribs.map((a) => ({ size: a.size, type: a.type, normalized: a.normalized, stride: a.stride, offset: a.offset, boundArrayBuffer: a.boundArrayBuffer })),
+      enabled: src.enabled.slice(),
+      boundArrayBuffer: src.boundArrayBuffer,
+      boundElementArrayBuffer: src.boundElementArrayBuffer,
+    };
+  }
+  /** Capture live BufferStore state into the mirror plus active record. */
+  private captureLiveIntoActive(): void {
+    const rec = this.activeVAORecord();
+    rec.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
+    rec.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
+    this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
+  }
+  /** Replay a record into the live BufferStore (per-slot ARRAY_BUFFER bind, pointer, enable). */
+  private restoreRecord(rec: VertexArrayRecord): void {
+    for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+      const a = rec.attribs[i]!;
+      this.store.bindBuffer(ARRAY_BUFFER, a.boundArrayBuffer === 0 ? null : a.boundArrayBuffer);
+      this.store.vertexAttribPointer(i, a.size, a.type, a.normalized, a.stride, a.offset);
+      if (rec.enabled[i] === true) this.store.enableVertexAttribArray(i);
+      else this.store.disableVertexAttribArray(i);
+    }
+    this.store.bindBuffer(ARRAY_BUFFER, rec.boundArrayBuffer === 0 ? null : rec.boundArrayBuffer);
+    this.store.bindBuffer(ELEMENT_ARRAY_BUFFER, rec.boundElementArrayBuffer === 0 ? null : rec.boundElementArrayBuffer);
+    this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
+    this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
+  }
+  /**
+   * Create a VAO handle with monotonic never-reused numbering; captures current live state; binding unchanged; never pushes.
+   * @returns Fresh non-zero handle.
+   */
+  createVertexArray(): number {
+    const handle = this.nextVAOHandle++;
+    this.liveVAOs.add(handle);
+    this.vaoRecords.set(handle, SoftwareWebGLContext.cloneVAORecord(this.vaoMirror));
+    return handle;
+  }
+  /**
+   * Bind a VAO; null/0 selects default. Unknown non-zero handle pushes one INVALID_OPERATION with no state change.
+   * @param array Handle, null, or 0.
+   */
+  bindVertexArray(array: number | null): void {
+    const target = array === null ? 0 : array;
+    if (target === 0) {
+      this.captureLiveIntoActive();
+      this.currentVAO = 0;
+      this.restoreRecord(this.defaultVAO);
+      return;
+    }
+    if (!this.liveVAOs.has(target)) { pushError(this.queue, INVALID_OPERATION); return; }
+    this.captureLiveIntoActive();
+    this.currentVAO = target;
+    const rec = this.vaoRecords.get(target);
+    if (rec !== undefined) this.restoreRecord(rec);
+  }
+  /**
+   * Delete a VAO; null/0/unknown are silent no-ops. Deleting the bound VAO adopts live state into default and unbinds; never pushes.
+   * @param array Handle or null.
+   */
+  deleteVertexArray(array: number | null): void {
+    if (array === null || array === 0) return;
+    if (!this.liveVAOs.has(array)) return;
+    this.liveVAOs.delete(array);
+    this.vaoRecords.delete(array);
+    if (this.currentVAO === array) {
+      this.captureLiveIntoActive();
+      this.defaultVAO = SoftwareWebGLContext.cloneVAORecord(this.vaoMirror);
+      this.currentVAO = 0;
+      this.restoreRecord(this.defaultVAO);
+    }
+  }
   /**
    * Build owned state, pixels, and queue sized to canvas extent.
    * @param state Fresh capability store.
@@ -102,44 +204,38 @@ export class SoftwareWebGLContext {
     this.canvas = canvas;
     this.store = new BufferStore();
     this.textures = new TextureStore();
+    this.renderbuffers = new RenderbufferStore();
   }
-
   /** Stage clear color on framebuffer. */
   clearColor(r: number, g: number, b: number, a: number): void {
     this.state.clearColor = [r, g, b, a];
     this.fb.clearColor(r, g, b, a);
   }
-
   /** Stage clear depth on GLState and framebuffer. */
   clearDepth(v: number): void {
     this.state.setClearDepth(v);
     this.fb.clearDepth(v);
   }
-
   /** Stage clear stencil on GLState and framebuffer. */
   clearStencil(v: number): void {
     this.state.setClearStencil(v);
     this.fb.clearStencil(v);
   }
-
   /** Stage depth write mask on GLState and framebuffer. */
   depthMask(flag: boolean): void {
     this.state.setDepthMask(flag);
     this.fb.setDepthMask(flag);
   }
-
   /** Stage color write mask on GLState and framebuffer. */
   colorMask(r: boolean, g: boolean, b: boolean, a: boolean): void {
     this.state.setColorMask(r, g, b, a);
     this.fb.setColorMask(r, g, b, a);
   }
-
   /** Stage stencil write mask on GLState and framebuffer. */
   stencilMask(mask: number): void {
     this.state.setStencilMask(mask);
     this.fb.setStencilMask(mask);
   }
-
   /**
    * Replace scissor box; negative size pushes one code with no state change.
    * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
@@ -148,7 +244,6 @@ export class SoftwareWebGLContext {
     const code = this.state.setScissor(x, y, w, h);
     if (code !== null) pushError(this.queue, code);
   }
-
   /**
    * Query capability flag; unknown enum returns false without queue change
    * (the TDD unknown-enum case requires exactly one code total across the
@@ -160,16 +255,43 @@ export class SoftwareWebGLContext {
     if (typeof result !== "boolean") return false;
     return result;
   }
-
+  /** Push one CONTEXT_LOST_WEBGL when lost. @returns True when blocked. */
+  private guardIfLost(): boolean {
+    if (this.extensions.reportLost()) {
+      pushError(this.queue, CONTEXT_LOST_WEBGL);
+      return true;
+    }
+    return false;
+  }
+  /**
+   * List supported extension names. @returns Fresh three-name copy.
+   */
+  getSupportedExtensions(): string[] {
+    return this.extensions.listSupportedNames();
+  }
+  /**
+   * Fetch stub by name. @param name Extension name. @returns Stub or null, never pushes.
+   */
+  getExtension(name: string): object | null {
+    return this.extensions.lookupStub(name);
+  }
+  /** Mark context lost; no error push. */
+  loseContext(): void {
+    this.extensions.markLost();
+  }
+  /** Mark context restored; no error push. */
+  restoreContext(): void {
+    this.extensions.markRestored();
+  }
   /** Run masked clear on framebuffer, confined to scissor box when scissor test is enabled. */
   clear(mask: number): void {
+    if (this.guardIfLost()) return;
     if (this.state.scissorTest) {
       this.fb.clear(mask, this.state.scissorBox);
     } else {
       this.fb.clear(mask);
     }
   }
-
   /**
    * Replace viewport box; negative values rejected with one code.
    * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
@@ -178,7 +300,6 @@ export class SoftwareWebGLContext {
     const code = this.state.setViewport(x, y, w, h);
     if (code !== null) pushError(this.queue, code);
   }
-
   /**
    * Flip capability on; unknown enum pushes one code.
    * @param cap Capability code.
@@ -187,7 +308,6 @@ export class SoftwareWebGLContext {
     const code = this.state.enable(cap);
     if (code !== null) pushError(this.queue, code);
   }
-
   /**
    * Flip capability off; unknown enum pushes one code.
    * @param cap Capability code.
@@ -196,7 +316,6 @@ export class SoftwareWebGLContext {
     const code = this.state.disable(cap);
     if (code !== null) pushError(this.queue, code);
   }
-
   /**
    * Read back state or limits; unknown query pushes one code and returns null.
    * @param pname Query code.
@@ -229,7 +348,6 @@ export class SoftwareWebGLContext {
     pushError(this.queue, INVALID_ENUM);
     return null;
   }
-
   /**
    * Drain head of error queue or NO_ERROR; never throws.
    * @returns Head code or NO_ERROR.
@@ -237,12 +355,19 @@ export class SoftwareWebGLContext {
   getError(): number {
     return drainError(this.queue);
   }
-
   /**
    * Exact-byte readback; out-of-bounds pushes one code and returns null.
    * @returns Bytes or null.
    */
   readPixels(x: number, y: number, w: number, h: number, format?: number, type?: number): Uint8Array | null {
+    if (this.extensions.reportLost()) {
+      pushError(this.queue, CONTEXT_LOST_WEBGL);
+      try {
+        return this.fb.readPixels(x, y, w, h);
+      } catch {
+        return new Uint8Array(0);
+      }
+    }
     const fmt = format === undefined ? RGBA : format;
     const ty = type === undefined ? UNSIGNED_BYTE : type;
     if (fmt !== RGBA || ty !== UNSIGNED_BYTE) {
@@ -256,7 +381,6 @@ export class SoftwareWebGLContext {
       return null;
     }
   }
-
   /**
    * Select the active texture unit for subsequent binds.
    *
@@ -270,7 +394,6 @@ export class SoftwareWebGLContext {
     }
     this.state.activeTexture = texture;
   }
-
   /**
    * Create a texture handle via the owned store.
    *
@@ -279,7 +402,6 @@ export class SoftwareWebGLContext {
   createTexture(): number {
     return this.textures.createTexture();
   }
-
   /**
    * Bind a texture on the active unit.
    *
@@ -299,31 +421,30 @@ export class SoftwareWebGLContext {
     const unit = this.state.activeTexture - TEXTURE0;
     this.unitBindings.set(unit, texture === null ? 0 : texture);
   }
-
   /**
-   * Upload level-0 bytes via the owned store.
+   * Upload a level-0 image via the owned store (bytes or floats).
    *
    * @param target Texture target enum; unknown targets push INVALID_ENUM.
    * @param level Mipmap level; only level 0 is complete.
-   * @param internalFormat Internal format enum, must match format.
+   * @param internalFormat Internal format enum (RGBA, RGBA32F, R32F).
    * @param width Level width in texels; negative pushes INVALID_VALUE.
    * @param height Level height in texels; negative pushes INVALID_VALUE.
-   * @param format Pixel format enum (RGBA).
-   * @param type Pixel type enum (UNSIGNED_BYTE).
-   * @param pixels Source bytes or null to allocate empty.
-   * @returns Nothing; maps store throws to exactly one queue code.
+   * @param format Pixel format enum (RGBA, or RED for R32F).
+   * @param type Pixel type enum (UNSIGNED_BYTE or FLOAT).
+   * @param pixels Source bytes, source floats, or null; bad payloads push INVALID_VALUE.
+   * @returns Nothing; maps store throws to exactly one queue code (OOM maps to OUT_OF_MEMORY).
    * @throws Never throws; store errors are mapped to the error queue.
    */
-  texImage2D(target: number, level: number, internalFormat: number, width: number, height: number, format: number, type: number, pixels: Uint8Array | null): void {
+  texImage2D(target: number, level: number, internalFormat: number, width: number, height: number, format: number, type: number, pixels: Uint8Array | Float32Array | null): void {
     try {
       this.textures.texImage2D(target, level, internalFormat, width, height, format, type, pixels);
     } catch (e) {
       if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
       if (e instanceof InvalidValueError) { pushError(this.queue, INVALID_VALUE); return; }
+      if (e instanceof QueueOutOfMemoryError) { pushError(this.queue, OUT_OF_MEMORY); return; }
       pushError(this.queue, INVALID_OPERATION);
     }
   }
-
   /**
    * Store a filter or wrap parameter via the owned store.
    *
@@ -341,7 +462,6 @@ export class SoftwareWebGLContext {
       pushError(this.queue, INVALID_OPERATION);
     }
   }
-
   /** Assemble one binding list per draw from active unit plus stored sampler uniforms. */
   private assembleSamplers(prog: ProgramRecord): TextureBinding[] {
     const out: TextureBinding[] = [];
@@ -361,7 +481,6 @@ export class SoftwareWebGLContext {
     }
     return out;
   }
-
   /** Derive fragment color by invoking the linked fragment closure once. */
   private deriveFragmentColor(prog: ProgramRecord): [number, number, number, number] {
     try {
@@ -374,15 +493,29 @@ export class SoftwareWebGLContext {
       return [255, 0, 0, 255];
     }
   }
-
+  /** Build one vertex combining slot-0 XYZ with slot-1 XY offset resolved via divisor formula. */
+  private buildVertexAt(baseOrd: number, instance: number): Vertex | null {
+    const decoded = this.store.decodeAttribute(0, baseOrd);
+    if (decoded === null || decoded.length < 3) return null;
+    let ox = 0;
+    let oy = 0;
+    if (this.store.isAttribEnabled(1)) {
+      const div = this.store.getDivisor(1);
+      const effOrd = div === 0 ? baseOrd : Math.floor(instance / div);
+      const off = this.store.decodeAttribute(1, effOrd);
+      if (off !== null && off.length >= 2) {
+        ox = off[0] as number;
+        oy = off[1] as number;
+      }
+    }
+    return { position: [(decoded[0] as number) + ox, (decoded[1] as number) + oy, decoded[2] as number, 1], varyings: new Float32Array(0) };
+  }
   /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
   private buildVertices(ordinals: number[]): Vertex[] {
     const verts: Vertex[] = [];
     for (const ord of ordinals) {
-      const decoded = this.store.decodeAttribute(0, ord);
-      if (decoded !== null && decoded.length >= 3) {
-        verts.push({ position: [decoded[0] as number, decoded[1] as number, decoded[2] as number, 1], varyings: new Float32Array(0) });
-      }
+      const v = this.buildVertexAt(ord, 0);
+      if (v !== null) verts.push(v);
     }
     if (verts.length === 0) {
       verts.push({ position: [-1, -1, 0, 1], varyings: new Float32Array(0) });
@@ -391,7 +524,78 @@ export class SoftwareWebGLContext {
     }
     return verts;
   }
-
+  /** Assemble concatenated per-instance vertices (count*instanceCount total). */
+  private buildInstancedVertices(ordinals: number[], instanceCount: number): Vertex[] {
+    const verts: Vertex[] = [];
+    for (let inst = 0; inst < instanceCount; inst++) {
+      for (const ord of ordinals) {
+        const v = this.buildVertexAt(ord, inst);
+        if (v !== null) verts.push(v);
+      }
+    }
+    return verts;
+  }
+  /**
+   * Set per-instance divisor; validates index then divisor, pushing one INVALID_VALUE on rejection.
+   * @param index Attribute slot ordinal. @param divisor Non-negative integer.
+   */
+  vertexAttribDivisor(index: number, divisor: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(divisor) || divisor < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    this.store.setDivisor(index, divisor);
+  }
+  /**
+   * Validate and execute an instanced non-indexed TRIANGLES draw.
+   * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count. @param instanceCount Instance count.
+   */
+  drawArraysInstanced = (mode: number, first: number, count: number, instanceCount: number): void => {
+    if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (!Number.isInteger(first) || first < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(instanceCount) || instanceCount < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (this.rejectUnlinkedDraw()) return;
+    if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (count === 0 || instanceCount === 0) return;
+    const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
+    const ordinals: number[] = [];
+    for (let i = 0; i < count; i++) ordinals.push(first + i);
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    drawArraysImpl(call);
+    this.presentAfterDraw();
+  };
+  /**
+   * Validate and execute an instanced indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+   * @param mode Draw mode. @param count Index count. @param type Index type. @param offset Byte offset. @param instanceCount Instance count.
+   */
+  drawElementsInstanced = (mode: number, count: number, type: number, offset: number, instanceCount: number): void => {
+    if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (type !== UNSIGNED_SHORT) { this.reportDrawFailure(INVALID_ENUM); return; }
+    if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(offset) || offset < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (!Number.isInteger(instanceCount) || instanceCount < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
+    if (this.state.currentProgram === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (this.rejectUnlinkedDraw()) return;
+    if (!this.checkDefaultFramebufferComplete()) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    const elemHandle = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    if (count > 0 && elemHandle === 0) { this.reportDrawFailure(INVALID_OPERATION); return; }
+    if (count === 0 || instanceCount === 0) return;
+    const bytes = this.store.getBufferBytes(elemHandle);
+    if (!bytes || offset + count * 2 > bytes.length) { this.reportDrawFailure(INVALID_VALUE); return; }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const ordinals: number[] = [];
+    for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
+    const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
+    const perInstance = this.buildInstancedVertices(ordinals, instanceCount);
+    const perCount = count === 0 ? 0 : Math.floor(perInstance.length / instanceCount);
+    const indices = new Uint16Array(instanceCount * count);
+    for (let inst = 0; inst < instanceCount; inst++) {
+      for (let i = 0; i < count; i++) indices[inst * count + i] = inst * perCount + i;
+    }
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog) };
+    drawElementsImpl(call);
+    this.presentAfterDraw();
+  };
   /** Present via framebuffer after a successful draw; never throws. */
   private presentAfterDraw(): void {
     try {
@@ -400,7 +604,6 @@ export class SoftwareWebGLContext {
       // documented no-op
     }
   }
-
   /** Paint fixed red triangle; queue untouched. */
   drawTriangle(): void {
     const v0x = 32; const v0y = 16;
@@ -429,47 +632,56 @@ export class SoftwareWebGLContext {
     }
     void NO_ERROR;
   }
-
   /** Create a buffer handle via owned store. @returns Fresh handle. */
   createBuffer(): number {
     return this.store.createBuffer();
   }
-
   /** Bind buffer via owned store; pushes one code on rejection. */
   bindBuffer(target: number, buffer: number | null): void {
     const code = this.store.bindBuffer(target, buffer);
-    if (code !== null) pushError(this.queue, code);
+    if (code !== null) { pushError(this.queue, code); return; }
+    if (target === ARRAY_BUFFER) this.vaoMirror.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
+    else if (target === ELEMENT_ARRAY_BUFFER) this.vaoMirror.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    this.activeVAORecord().boundArrayBuffer = this.vaoMirror.boundArrayBuffer;
+    this.activeVAORecord().boundElementArrayBuffer = this.vaoMirror.boundElementArrayBuffer;
   }
-
   /** Upload bytes via owned store; pushes one code on rejection. */
   bufferData(target: number, data: ArrayBufferView, usage: number): void {
     const code = this.store.bufferData(target, data, usage);
     if (code !== null) pushError(this.queue, code);
   }
-
   /** Delete buffer via owned store; never pushes. */
   deleteBuffer(buffer: number): void {
     this.store.deleteBuffer(buffer);
   }
-
   /** Configure attribute pointer; pushes one code on rejection. */
   vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
     const code = this.store.vertexAttribPointer(index, size, type, normalized, stride, offset);
-    if (code !== null) pushError(this.queue, code);
+    if (code !== null) { pushError(this.queue, code); return; }
+    if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+      const rec = this.activeVAORecord();
+      rec.attribs[index] = { size, type, normalized, stride, offset, boundArrayBuffer: this.store.getBoundBuffer(ARRAY_BUFFER) };
+      this.vaoMirror.attribs[index] = { size, type, normalized, stride, offset, boundArrayBuffer: this.store.getBoundBuffer(ARRAY_BUFFER) };
+    }
   }
-
   /** Enable attribute array; pushes one code on rejection. */
   enableVertexAttribArray(index: number): void {
     const code = this.store.enableVertexAttribArray(index);
-    if (code !== null) pushError(this.queue, code);
+    if (code !== null) { pushError(this.queue, code); return; }
+    if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+      this.activeVAORecord().enabled[index] = true;
+      this.vaoMirror.enabled[index] = true;
+    }
   }
-
   /** Disable attribute array; pushes one code on rejection. */
   disableVertexAttribArray(index: number): void {
     const code = this.store.disableVertexAttribArray(index);
-    if (code !== null) pushError(this.queue, code);
+    if (code !== null) { pushError(this.queue, code); return; }
+    if (Number.isInteger(index) && index >= 0 && index < MAX_VERTEX_ATTRIBS) {
+      this.activeVAORecord().enabled[index] = false;
+      this.vaoMirror.enabled[index] = false;
+    }
   }
-
   /**
    * Decode attribute vertex; never pushes.
    * @param index Attribute index. @param vertexIndex Vertex ordinal.
@@ -478,14 +690,12 @@ export class SoftwareWebGLContext {
   decodeAttribute(index: number, vertexIndex: number): number[] | null {
     return this.store.decodeAttribute(index, vertexIndex);
   }
-
   /**
    * Resolve bound handle. @param target Bind target. @returns Handle or 0.
    */
   getBoundBuffer(target: number): number {
     return this.store.getBoundBuffer(target);
   }
-
   /**
    * Create a shader record.
    *
@@ -497,7 +707,6 @@ export class SoftwareWebGLContext {
     this.shaders.set(id, { id, type, source: "", compiled: false, infoLog: "", closure: null, symbols: null, version: null, hasMain: true });
     return id;
   }
-
   /**
    * Stage shader source text verbatim and reset compile status.
    *
@@ -515,7 +724,6 @@ export class SoftwareWebGLContext {
     rec.version = null;
     rec.hasMain = true;
   }
-
   /**
    * Compile staged source; failures travel the status channel only.
    *
@@ -566,7 +774,6 @@ export class SoftwareWebGLContext {
       rec.closure = null;
     }
   }
-
   /**
    * Read shader status.
    *
@@ -580,7 +787,6 @@ export class SoftwareWebGLContext {
     if (pname === COMPILE_STATUS) return rec.compiled;
     return null;
   }
-
   /**
    * Read shader info log verbatim.
    *
@@ -592,7 +798,6 @@ export class SoftwareWebGLContext {
     if (rec === undefined) return "";
     return rec.infoLog;
   }
-
   /**
    * Create a program record.
    *
@@ -603,7 +808,6 @@ export class SoftwareWebGLContext {
     this.programs.set(id, { id, attachedVertex: [], attachedFragment: [], linked: false, infoLog: "", linkedProgram: null, uniformValues: new Map() });
     return id;
   }
-
   /**
    * Attach a shader handle to a program record and invalidate prior link.
    *
@@ -620,7 +824,6 @@ export class SoftwareWebGLContext {
     p.linked = false;
     p.linkedProgram = null;
   }
-
   /**
    * Link attached shaders via the program validator; stores GLProgram verbatim.
    *
@@ -649,7 +852,6 @@ export class SoftwareWebGLContext {
     p.infoLog = result.infoLog;
     p.linkedProgram = result;
   }
-
   /**
    * Read program status.
    *
@@ -663,7 +865,6 @@ export class SoftwareWebGLContext {
     if (pname === LINK_STATUS) return p.linked;
     return null;
   }
-
   /**
    * Read program info log verbatim.
    *
@@ -675,7 +876,6 @@ export class SoftwareWebGLContext {
     if (p === undefined) return "";
     return p.infoLog;
   }
-
   /**
    * Select the current program, recording even unlinked handles.
    *
@@ -687,7 +887,6 @@ export class SoftwareWebGLContext {
     if (p === undefined) { this.state.currentProgram = 0; return; }
     this.state.currentProgram = program;
   }
-
   /**
    * Resolve an attribute location via the stored linked program.
    *
@@ -700,7 +899,6 @@ export class SoftwareWebGLContext {
     if (p === undefined || p.linkedProgram === null) return -1;
     return resolveAttribLocation(p.linkedProgram, name);
   }
-
   /**
    * Resolve a uniform handle via the stored linked program.
    *
@@ -713,7 +911,6 @@ export class SoftwareWebGLContext {
     if (p === undefined || p.linkedProgram === null) return null;
     return resolveUniformLocation(p.linkedProgram, name);
   }
-
   /**
    * Store one float component against the owning program.
    *
@@ -723,7 +920,6 @@ export class SoftwareWebGLContext {
   uniform1f(location: UniformHandle | null, v0: number): void {
     this.storeUniform(location, [v0]);
   }
-
   /**
    * Store two float components against the owning program.
    *
@@ -734,7 +930,6 @@ export class SoftwareWebGLContext {
   uniform2f(location: UniformHandle | null, v0: number, v1: number): void {
     this.storeUniform(location, [v0, v1]);
   }
-
   /**
    * Store four float components against the owning program.
    *
@@ -747,7 +942,6 @@ export class SoftwareWebGLContext {
   uniform4f(location: UniformHandle | null, v0: number, v1: number, v2: number, v3: number): void {
     this.storeUniform(location, [v0, v1, v2, v3]);
   }
-
   /**
    * Store one integer component as a number against the owning program.
    *
@@ -757,7 +951,6 @@ export class SoftwareWebGLContext {
   uniform1i(location: UniformHandle | null, v0: number): void {
     this.storeUniform(location, [v0]);
   }
-
   /**
    * Store uniform components matched by handle identity.
    *
@@ -778,7 +971,6 @@ export class SoftwareWebGLContext {
     }
     pushError(this.queue, INVALID_OPERATION);
   }
-
   /**
    * Reject draws whose current program is absent or unlinked.
    *
@@ -792,7 +984,6 @@ export class SoftwareWebGLContext {
     }
     return false;
   }
-
   /**
    * Push one draw-failure code; no state or pixel change.
    * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
@@ -800,7 +991,6 @@ export class SoftwareWebGLContext {
   private reportDrawFailure(code: number): void {
     pushError(this.queue, code);
   }
-
   /**
    * Report default-framebuffer completeness; never pushes.
    * @returns True when width and height are positive.
@@ -808,12 +998,12 @@ export class SoftwareWebGLContext {
   checkDefaultFramebufferComplete(): boolean {
     return this.fb.width > 0 && this.fb.height > 0;
   }
-
   /**
    * Validate and execute a non-indexed TRIANGLES draw; placeholder shading on success.
    * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
    */
   drawArrays = (mode: number, first: number, count: number): void => {
+    if (this.guardIfLost()) return;
     if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (!Number.isInteger(first) || first < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
@@ -828,12 +1018,12 @@ export class SoftwareWebGLContext {
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
-
   /**
    * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
    * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
    */
   drawElements = (mode: number, count: number, type: number, offset: number): void => {
+    if (this.guardIfLost()) return;
     if (mode !== TRIANGLES) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (type !== UNSIGNED_SHORT) { this.reportDrawFailure(INVALID_ENUM); return; }
     if (!Number.isInteger(count) || count < 0) { this.reportDrawFailure(INVALID_VALUE); return; }
@@ -855,7 +1045,77 @@ export class SoftwareWebGLContext {
     drawElementsImpl(call);
     this.presentAfterDraw();
   }
-
+  /**
+   * Create a renderbuffer handle via the owned store; never pushes.
+   * @returns Fresh non-zero handle.
+   */
+  createRenderbuffer(): number {
+    return this.renderbuffers.createRenderbuffer();
+  }
+  /**
+   * Bind a renderbuffer; pushes exactly one code on rejection.
+   * @param target Must equal RENDERBUFFER.
+   * @param renderbuffer Handle or null to unbind.
+   */
+  bindRenderbuffer(target: number, renderbuffer: number | null): void {
+    if (target !== RENDERBUFFER) { pushError(this.queue, INVALID_ENUM); return; }
+    try {
+      this.renderbuffers.bindRenderbuffer(target, renderbuffer);
+    } catch (e) {
+      if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
+      pushError(this.queue, INVALID_OPERATION);
+    }
+  }
+  /**
+   * Allocate renderbuffer storage; pushes exactly one code on rejection.
+   * @param target Must equal RENDERBUFFER.
+   * @param internalFormat DEPTH_COMPONENT16 or DEPTH24_STENCIL8.
+   * @param width Texel width.
+   * @param height Texel height.
+   */
+  renderbufferStorage(target: number, internalFormat: number, width: number, height: number): void {
+    if (target !== RENDERBUFFER) { pushError(this.queue, INVALID_ENUM); return; }
+    if (internalFormat !== DEPTH_COMPONENT16 && internalFormat !== DEPTH24_STENCIL8) {
+      pushError(this.queue, INVALID_ENUM); return;
+    }
+    try {
+      this.renderbuffers.renderbufferStorage(target, internalFormat, width, height);
+    } catch (e) {
+      if (e instanceof InvalidEnumError) { pushError(this.queue, INVALID_ENUM); return; }
+      if (e instanceof InvalidValueError) { pushError(this.queue, INVALID_VALUE); return; }
+      if (e instanceof InvalidOperationError) { pushError(this.queue, INVALID_OPERATION); return; }
+      if (e instanceof QueueOutOfMemoryError) { pushError(this.queue, OUT_OF_MEMORY); return; }
+      pushError(this.queue, INVALID_OPERATION);
+    }
+  }
+  /**
+   * Delete a renderbuffer; null/0/unknown are silent no-ops, never pushes.
+   * @param renderbuffer Handle or null.
+   */
+  deleteRenderbuffer(renderbuffer: number | null): void {
+    if (renderbuffer === null || renderbuffer === 0) return;
+    this.renderbuffers.deleteRenderbuffer(renderbuffer);
+  }
+  /**
+   * Read normalized depth; null when unavailable, never pushes.
+   * @param handle Renderbuffer handle.
+   * @param x Column.
+   * @param y Row.
+   * @returns Depth in 0..1 or null.
+   */
+  readDepth(handle: number, x: number, y: number): number | null {
+    return this.renderbuffers.readDepth(handle, x, y);
+  }
+  /**
+   * LESS-conditional depth write for tests; never pushes.
+   * @param handle Renderbuffer handle.
+   * @param x Column.
+   * @param y Row.
+   * @param depth Normalized depth.
+   */
+  writeDepthForTest(handle: number, x: number, y: number, depth: number): void {
+    this.renderbuffers.writeDepthForTest(handle, x, y, depth);
+  }
   /** Present via framebuffer; never throws. */
   presentToCanvas(): void {
     try {
@@ -865,7 +1125,6 @@ export class SoftwareWebGLContext {
     }
   }
 }
-
 /**
  * Build isolated context or return null on allocation failure without throwing.
  * @param canvas Canvas supplying width/height and presentation target.
