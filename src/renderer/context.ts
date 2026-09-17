@@ -145,6 +145,11 @@ export class SoftwareWebGLContext {
     }
     this.store.bindBuffer(ARRAY_BUFFER, rec.boundArrayBuffer === 0 ? null : rec.boundArrayBuffer);
     this.store.bindBuffer(ELEMENT_ARRAY_BUFFER, rec.boundElementArrayBuffer === 0 ? null : rec.boundElementArrayBuffer);
+    for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
+      const src = rec.attribs[i]!;
+      this.vaoMirror.attribs[i] = { size: src.size, type: src.type, normalized: src.normalized, stride: src.stride, offset: src.offset, boundArrayBuffer: src.boundArrayBuffer };
+      this.vaoMirror.enabled[i] = rec.enabled[i]!;
+    }
     this.vaoMirror.boundArrayBuffer = rec.boundArrayBuffer;
     this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
   }
@@ -642,8 +647,9 @@ export class SoftwareWebGLContext {
     if (code !== null) { pushError(this.queue, code); return; }
     if (target === ARRAY_BUFFER) this.vaoMirror.boundArrayBuffer = this.store.getBoundBuffer(ARRAY_BUFFER);
     else if (target === ELEMENT_ARRAY_BUFFER) this.vaoMirror.boundElementArrayBuffer = this.store.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
-    this.activeVAORecord().boundArrayBuffer = this.vaoMirror.boundArrayBuffer;
-    this.activeVAORecord().boundElementArrayBuffer = this.vaoMirror.boundElementArrayBuffer;
+    const rec = this.activeVAORecord();
+    rec.boundArrayBuffer = this.vaoMirror.boundArrayBuffer;
+    rec.boundElementArrayBuffer = this.vaoMirror.boundElementArrayBuffer;
   }
   /** Upload bytes via owned store; pushes one code on rejection. */
   bufferData(target: number, data: ArrayBufferView, usage: number): void {

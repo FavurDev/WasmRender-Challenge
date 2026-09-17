@@ -489,17 +489,22 @@ export function drawArraysImpl(call: DrawCall): void {
   const scratchInvW = new Float32Array(3);
   const outVaryings = new Float32Array(varyingCount);
   const prog = asFragmentProgram(call.program);
-  const n = Math.floor(call.vertices.length / 3);
-  for (let t = 0; t < n; t++) {
-    const v0 = call.vertices[t * 3] as Vertex;
-    const v1 = call.vertices[t * 3 + 1] as Vertex;
-    const v2 = call.vertices[t * 3 + 2] as Vertex;
-    const s0 = project(v0, call.state.viewport);
-    const s1 = project(v1, call.state.viewport);
-    const s2 = project(v2, call.state.viewport);
-    if (s0 === null || s1 === null || s2 === null) continue;
-    if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-    fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+  const instances = call.instanceCount > 0 ? call.instanceCount : 1;
+  const perInstance = Math.floor(call.vertices.length / instances);
+  for (let inst = 0; inst < instances; inst++) {
+    const base = inst * perInstance;
+    const n = Math.floor(perInstance / 3);
+    for (let t = 0; t < n; t++) {
+      const v0 = call.vertices[base + t * 3] as Vertex;
+      const v1 = call.vertices[base + t * 3 + 1] as Vertex;
+      const v2 = call.vertices[base + t * 3 + 2] as Vertex;
+      const s0 = project(v0, call.state.viewport);
+      const s1 = project(v1, call.state.viewport);
+      const s2 = project(v2, call.state.viewport);
+      if (s0 === null || s1 === null || s2 === null) continue;
+      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    }
   }
 }
 
@@ -517,20 +522,24 @@ export function drawElementsImpl(call: DrawCall): void {
   const scratchInvW = new Float32Array(3);
   const outVaryings = new Float32Array(varyingCount);
   const prog = asFragmentProgram(call.program);
-  const m = Math.floor(idx.length / 3);
-  for (let t = 0; t < m; t++) {
-    const i0 = idx[t * 3] as number;
-    const i1 = idx[t * 3 + 1] as number;
-    const i2 = idx[t * 3 + 2] as number;
-    if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= call.vertices.length || i1 >= call.vertices.length || i2 >= call.vertices.length) continue;
-    const v0 = call.vertices[i0] as Vertex;
-    const v1 = call.vertices[i1] as Vertex;
-    const v2 = call.vertices[i2] as Vertex;
-    const s0 = project(v0, call.state.viewport);
-    const s1 = project(v1, call.state.viewport);
-    const s2 = project(v2, call.state.viewport);
-    if (s0 === null || s1 === null || s2 === null) continue;
-    if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-    fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+  const instances = call.instanceCount > 0 ? call.instanceCount : 1;
+  const perCount = Math.floor(idx.length / instances);
+  for (let inst = 0; inst < instances; inst++) {
+    const m = Math.floor(perCount / 3);
+    for (let t = 0; t < m; t++) {
+      const i0 = idx[inst * perCount + t * 3] as number;
+      const i1 = idx[inst * perCount + t * 3 + 1] as number;
+      const i2 = idx[inst * perCount + t * 3 + 2] as number;
+      if (i0 < 0 || i1 < 0 || i2 < 0 || i0 >= call.vertices.length || i1 >= call.vertices.length || i2 >= call.vertices.length) continue;
+      const v0 = call.vertices[i0] as Vertex;
+      const v1 = call.vertices[i1] as Vertex;
+      const v2 = call.vertices[i2] as Vertex;
+      const s0 = project(v0, call.state.viewport);
+      const s1 = project(v1, call.state.viewport);
+      const s2 = project(v2, call.state.viewport);
+      if (s0 === null || s1 === null || s2 === null) continue;
+      if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog);
+    }
   }
 }

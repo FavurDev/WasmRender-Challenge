@@ -13,6 +13,7 @@ interface AttribSlot {
   offset: number;
   snapshot: number;
   hasSnapshot: boolean;
+  divisor: number;
 }
 
 /**
@@ -29,7 +30,7 @@ export class BufferStore {
 
   constructor() {
     for (let i = 0; i < MAX_VERTEX_ATTRIBS; i++) {
-      this.attribPointers.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, snapshot: 0, hasSnapshot: false });
+      this.attribPointers.push({ size: 4, type: FLOAT, normalized: false, stride: 16, offset: 0, snapshot: 0, hasSnapshot: false, divisor: 0 });
       this.attribEnabled.push(false);
     }
   }
@@ -127,6 +128,33 @@ export class BufferStore {
     slot.snapshot = this.boundArrayBuffer;
     slot.hasSnapshot = this.boundArrayBuffer !== 0;
     return null;
+  }
+
+  /**
+   * Store per-slot divisor. @param index Slot ordinal. @param divisor Non-negative integer.
+   * @returns Error code or null on success.
+   */
+  setDivisor(index: number, divisor: number): number | null {
+    if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return INVALID_VALUE;
+    if (!Number.isInteger(divisor) || divisor < 0) return INVALID_VALUE;
+    this.attribPointers[index]!.divisor = divisor;
+    return null;
+  }
+
+  /**
+   * Read per-slot divisor. @param index Slot ordinal. @returns Stored divisor or 0.
+   */
+  getDivisor(index: number): number {
+    if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return 0;
+    return this.attribPointers[index]!.divisor;
+  }
+
+  /**
+   * Check whether an attribute array is enabled. @param index Attribute index. @returns True when enabled.
+   */
+  isAttribEnabled(index: number): boolean {
+    if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) return false;
+    return this.attribEnabled[index] === true;
   }
 
   /**
