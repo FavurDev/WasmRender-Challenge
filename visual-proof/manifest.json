@@ -1,0 +1,16 @@
+{
+  "scene": "red-triangle-64",
+  "dimensions": {
+    "width": 64,
+    "height": 64
+  },
+  "background": "dark opaque background (clear color black, alpha 1)",
+  "provenance": {
+    "bundlePath": "renderer.js",
+    "bundleBytes": 175210,
+    "bundleHash": "a5ff7a08cfe2caf35729a5c18afb8981fe5ceefb9980667d6b4d8ef4cf7c3223",
+    "command": "node scripts/capture-visual-proof.mjs",
+    "createdAt": "2026-09-17T09:52:09.535Z"
+  },
+  "pngPath": "visual-proof/first-triangle.png"
+}
