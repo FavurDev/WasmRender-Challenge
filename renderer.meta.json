@@ -1,0 +1,312 @@
+{
+  "inputs": {
+    "src/renderer/gl-constants.ts": {
+      "bytes": 6902,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/renderer/state.ts": {
+      "bytes": 6114,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/errors.ts": {
+      "bytes": 2959,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/framebuffer.ts": {
+      "bytes": 16543,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        },
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors"
+        },
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/buffer.ts": {
+      "bytes": 8909,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/rasterizer.ts": {
+      "bytes": 26480,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/texture.ts": {
+      "bytes": 19616,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        },
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/renderbuffer.ts": {
+      "bytes": 7360,
+      "imports": [
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        },
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/extensions.ts": {
+      "bytes": 2423,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/tokenizer.ts": {
+      "bytes": 6472,
+      "imports": [
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "../errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/parser.ts": {
+      "bytes": 22421,
+      "imports": [
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "../errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/typechecker.ts": {
+      "bytes": 7240,
+      "imports": [
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "../errors"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/builtins-100.ts": {
+      "bytes": 8362,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/builtins-300.ts": {
+      "bytes": 11955,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/renderer/shader-compiler/codegen.ts": {
+      "bytes": 9837,
+      "imports": [
+        {
+          "path": "src/renderer/shader-compiler/tokenizer.ts",
+          "kind": "import-statement",
+          "original": "./tokenizer"
+        },
+        {
+          "path": "src/renderer/shader-compiler/parser.ts",
+          "kind": "import-statement",
+          "original": "./parser"
+        },
+        {
+          "path": "src/renderer/shader-compiler/typechecker.ts",
+          "kind": "import-statement",
+          "original": "./typechecker"
+        },
+        {
+          "path": "src/renderer/shader-compiler/builtins-100.ts",
+          "kind": "import-statement",
+          "original": "./builtins-100"
+        },
+        {
+          "path": "src/renderer/shader-compiler/builtins-300.ts",
+          "kind": "import-statement",
+          "original": "./builtins-300"
+        }
+      ],
+      "format": "esm"
+    },
+    "src/renderer/program.ts": {
+      "bytes": 3729,
+      "imports": [],
+      "format": "esm"
+    },
+    "src/renderer/context.ts": {
+      "bytes": 56861,
+      "imports": [
+        {
+          "path": "src/renderer/state.ts",
+          "kind": "import-statement",
+          "original": "./state"
+        },
+        {
+          "path": "src/renderer/framebuffer.ts",
+          "kind": "import-statement",
+          "original": "./framebuffer"
+        },
+        {
+          "path": "src/renderer/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors"
+        },
+        {
+          "path": "src/renderer/buffer.ts",
+          "kind": "import-statement",
+          "original": "./buffer"
+        },
+        {
+          "path": "src/renderer/rasterizer.ts",
+          "kind": "import-statement",
+          "original": "./rasterizer"
+        },
+        {
+          "path": "src/renderer/texture.ts",
+          "kind": "import-statement",
+          "original": "./texture"
+        },
+        {
+          "path": "src/renderer/renderbuffer.ts",
+          "kind": "import-statement",
+          "original": "./renderbuffer"
+        },
+        {
+          "path": "src/renderer/extensions.ts",
+          "kind": "import-statement",
+          "original": "./extensions"
+        },
+        {
+          "path": "src/renderer/shader-compiler/codegen.ts",
+          "kind": "import-statement",
+          "original": "./shader-compiler/codegen"
+        },
+        {
+          "path": "src/renderer/program.ts",
+          "kind": "import-statement",
+          "original": "./program"
+        },
+        {
+          "path": "src/renderer/gl-constants.ts",
+          "kind": "import-statement",
+          "original": "./gl-constants"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "renderer.js": {
+      "imports": [],
+      "exports": [],
+      "entryPoint": "src/renderer/context.ts",
+      "inputs": {
+        "src/renderer/context.ts": {
+          "bytesInOutput": 50700
+        },
+        "src/renderer/gl-constants.ts": {
+          "bytesInOutput": 2843
+        },
+        "src/renderer/state.ts": {
+          "bytesInOutput": 5078
+        },
+        "src/renderer/errors.ts": {
+          "bytesInOutput": 1079
+        },
+        "src/renderer/framebuffer.ts": {
+          "bytesInOutput": 13623
+        },
+        "src/renderer/buffer.ts": {
+          "bytesInOutput": 7980
+        },
+        "src/renderer/rasterizer.ts": {
+          "bytesInOutput": 13415
+        },
+        "src/renderer/texture.ts": {
+          "bytesInOutput": 15925
+        },
+        "src/renderer/renderbuffer.ts": {
+          "bytesInOutput": 6179
+        },
+        "src/renderer/extensions.ts": {
+          "bytesInOutput": 1821
+        },
+        "src/renderer/shader-compiler/tokenizer.ts": {
+          "bytesInOutput": 5219
+        },
+        "src/renderer/shader-compiler/parser.ts": {
+          "bytesInOutput": 19216
+        },
+        "src/renderer/shader-compiler/typechecker.ts": {
+          "bytesInOutput": 3284
+        },
+        "src/renderer/shader-compiler/builtins-100.ts": {
+          "bytesInOutput": 7596
+        },
+        "src/renderer/shader-compiler/builtins-300.ts": {
+          "bytesInOutput": 11202
+        },
+        "src/renderer/shader-compiler/codegen.ts": {
+          "bytesInOutput": 6466
+        },
+        "src/renderer/program.ts": {
+          "bytesInOutput": 1945
+        }
+      },
+      "bytes": 175210
+    }
+  }
+}
