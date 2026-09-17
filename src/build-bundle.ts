@@ -2,6 +2,7 @@
 // CHANGELOG:
 // - Sprint 1: Created esbuild IIFE bundle script with 800 KB and no-require gates.
 // - Sprint 6: Added metafile purity gate (no node_modules inputs) and global-install gate.
+// - Sprint 8: Comment-only closure re-verification (rebuild + typecheck + full suite green), no logic change.
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, statSync } from "node:fs";
 
