@@ -71,7 +71,7 @@
       "format": "esm"
     },
     "src/renderer/texture.ts": {
-      "bytes": 19616,
+      "bytes": 19876,
       "imports": [
         {
           "path": "src/renderer/gl-constants.ts",
@@ -87,7 +87,7 @@
       "format": "esm"
     },
     "src/renderer/renderbuffer.ts": {
-      "bytes": 7360,
+      "bytes": 7314,
       "imports": [
         {
           "path": "src/renderer/gl-constants.ts",
@@ -276,10 +276,10 @@
           "bytesInOutput": 13406
         },
         "src/renderer/texture.ts": {
-          "bytesInOutput": 15925
+          "bytesInOutput": 16188
         },
         "src/renderer/renderbuffer.ts": {
-          "bytesInOutput": 6179
+          "bytesInOutput": 6151
         },
         "src/renderer/extensions.ts": {
           "bytesInOutput": 1821
@@ -306,7 +306,7 @@
           "bytesInOutput": 1945
         }
       },
-      "bytes": 175201
+      "bytes": 175436
     }
   }
 }
