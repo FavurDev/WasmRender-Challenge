@@ -45,11 +45,14 @@ describe("renderbuffer lifecycle (AC-3)", () => {
     const gl = fresh();
     const a = gl.createRenderbuffer();
     const b = gl.createRenderbuffer();
+    const c = gl.createRenderbuffer();
     // Act
     gl.deleteRenderbuffer(b);
     const d = gl.createRenderbuffer();
     // Assert
     expect(a).toBe(1);
+    expect(b).toBe(2);
+    expect(c).toBe(3);
     expect(d).toBe(4);
     expect(gl.getError()).toBe(NO_ERROR);
   });
@@ -204,6 +207,11 @@ describe("renderbufferStorage validation order (AC-5)", () => {
     gl.bindRenderbuffer(RENDERBUFFER, h);
     // Act
     gl.renderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT16, 0, 4);
+    // Assert
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act
+    gl.renderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT16, -1, 4);
     // Assert
     expect(gl.getError()).toBe(INVALID_VALUE);
     expect(gl.getError()).toBe(NO_ERROR);

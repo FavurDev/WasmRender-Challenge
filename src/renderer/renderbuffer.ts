@@ -111,9 +111,8 @@ export class RenderbufferStore {
     this.live.delete(handle);
     this.records.delete(handle);
     if (this.boundHandle === handle) this.boundHandle = 0;
-    // Counter never decrements and released values are never reissued; advance
-    // past the released value so a subsequent create skips it deterministically.
-    this.nextHandle += 1;
+    // Counter never decrements and released values are never reissued;
+    // create-only increment already guarantees monotonic never-reuse.
   }
 
   /**
