@@ -167,19 +167,18 @@ function evaluateScissor(px: number, py: number, st: GLState): boolean {
 }
 
 /**
- * Minimal stencil pass-through contract honoring only the stencilTest boolean.
+ * Minimal deterministic stencil gate: nonzero stencil value passes while stencilTest is true.
  *
  * @param px Integer pixel x.
  * @param py Integer pixel y.
  * @param st State snapshot supplying stencilTest.
  * @param stencil Stencil store, read only and never written here.
  * @param width Framebuffer width for indexing.
- * @returns True always; never discards on its own.
+ * @returns True when stencilTest is off or stored value is nonzero; false otherwise.
  */
 function evaluateStencil(px: number, py: number, st: GLState, stencil: Uint8Array, width: number): boolean {
   if (!st.stencilTest) return true;
-  void (stencil[py * width + px] as number);
-  return true;
+  return (stencil[py * width + px] as number) !== 0;
 }
 
 /**
