@@ -5,6 +5,7 @@
 // - Sprint 4: Created TextureStore with upload, parameters, completeness, and sampling math.
 import {
   CLAMP_TO_EDGE,
+  FLOAT,
   LINEAR,
   LINEAR_MIPMAP_LINEAR,
   LINEAR_MIPMAP_NEAREST,
@@ -13,8 +14,11 @@ import {
   NEAREST,
   NEAREST_MIPMAP_LINEAR,
   NEAREST_MIPMAP_NEAREST,
+  R32F,
+  RED,
   REPEAT,
   RGBA,
+  RGBA32F,
   TEXTURE_2D,
   TEXTURE_MAG_FILTER,
   TEXTURE_MIN_FILTER,
@@ -31,7 +35,9 @@ interface TextureObject {
   id: number;
   width: number;
   height: number;
-  data: Uint8Array;
+  data: Uint8Array | Float32Array;
+  tag: "BYTE" | "FLOAT32";
+  channels: 1 | 4;
   minFilter: number;
   magFilter: number;
   wrapS: number;
@@ -137,6 +143,8 @@ export class TextureStore {
       width: 1,
       height: 1,
       data: new Uint8Array([255, 255, 255, 255]),
+      tag: "BYTE",
+      channels: 4,
       minFilter: NEAREST,
       magFilter: NEAREST,
       wrapS: CLAMP_TO_EDGE,
@@ -168,17 +176,21 @@ export class TextureStore {
   }
 
   /**
-   * Upload RGBA UNSIGNED_BYTE level-0 image into the bound texture.
+   * Upload a level-0 image into the bound texture (byte or float triple).
+   *
+   * Accepts exactly three triples: (RGBA, RGBA, UNSIGNED_BYTE) with a
+   * Uint8Array payload, (RGBA32F, RGBA, FLOAT) with a Float32Array payload,
+   * or (R32F, RED, FLOAT) with a single-channel Float32Array payload.
    * @param target Must equal TEXTURE_2D.
    * @param level Must equal 0.
-   * @param internalFormat Ignored beyond validation path; format must equal RGBA.
+   * @param internalFormat One of RGBA, RGBA32F, R32F.
    * @param width Positive integer within MAX_TEXTURE_SIZE.
    * @param height Positive integer within MAX_TEXTURE_SIZE.
-   * @param format Must equal RGBA.
-   * @param type Must equal UNSIGNED_BYTE.
-   * @param pixels Non-null RGBA row-major bytes of length width*height*4.
-   * @throws InvalidEnumError For bad target/format/type.
-   * @throws InvalidValueError For bad level, dims, or pixel length.
+   * @param format Must pair with internalFormat (RGBA, or RED for R32F).
+   * @param type Must pair with the payload (UNSIGNED_BYTE or FLOAT).
+   * @param pixels Non-null row-major texels of length width*height*channels.
+   * @throws InvalidEnumError For bad target or unsupported format/type enums.
+   * @throws InvalidValueError For bad level, dims, payload kind, or pixel length.
    * @throws InvalidOperationError When nothing is bound.
    * @throws OutOfMemoryError When dims exceed MAX_TEXTURE_SIZE.
    */
@@ -190,30 +202,56 @@ export class TextureStore {
     height: number,
     format: number,
     type: number,
-    pixels: Uint8Array | null,
+    pixels: Uint8Array | Float32Array | null,
   ): void {
     if (target !== TEXTURE_2D) throw new InvalidEnumError("texImage2D: target must be TEXTURE_2D");
     if (level !== 0) throw new InvalidValueError("texImage2D: level must be 0");
-    void internalFormat;
-    if (format !== RGBA) throw new InvalidEnumError("texImage2D: format must be RGBA");
-    if (type !== UNSIGNED_BYTE) throw new InvalidEnumError("texImage2D: type must be UNSIGNED_BYTE");
-    const tex = this.textures.get(this.boundHandle);
-    if (this.boundHandle === 0 || tex === undefined) throw new InvalidOperationError("texImage2D: nothing bound");
     if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
       throw new InvalidValueError("texImage2D: invalid dimensions");
     }
+    const isTripleA =
+      internalFormat === RGBA && format === RGBA && type === UNSIGNED_BYTE && pixels instanceof Uint8Array;
+    const isTripleB =
+      internalFormat === RGBA32F && format === RGBA && type === FLOAT && pixels instanceof Float32Array;
+    const isTripleC =
+      internalFormat === R32F && format === RED && type === FLOAT && pixels instanceof Float32Array;
+    if (!isTripleA && !isTripleB && !isTripleC) {
+      const enumsOk =
+        (internalFormat === RGBA || internalFormat === RGBA32F || internalFormat === R32F) &&
+        (format === RGBA || format === RED) &&
+        (type === UNSIGNED_BYTE || type === FLOAT);
+      if (!enumsOk) throw new InvalidEnumError("texImage2D: unsupported format/type pair");
+      throw new InvalidValueError("texImage2D: bad pixel payload");
+    }
+    const tex = this.textures.get(this.boundHandle);
+    if (this.boundHandle === 0 || tex === undefined) throw new InvalidOperationError("texImage2D: nothing bound");
     if (width > MAX_TEXTURE_SIZE || height > MAX_TEXTURE_SIZE) {
       throw new OutOfMemoryError("texImage2D: dimensions exceed MAX_TEXTURE_SIZE");
     }
-    if (pixels === null || pixels.length !== width * height * 4) {
+    const channels: 1 | 4 = isTripleC ? 1 : 4;
+    if (pixels === null || pixels.length !== width * height * channels) {
       throw new InvalidValueError("texImage2D: bad pixel payload");
     }
     // IMPLEMENTATION DECISION: guard-then-allocate, swap only after full copy. Rationale: failed upload retains prior backing. Alternatives: in-place resize (risks partial state).
-    const fresh = new Uint8Array(width * height * 4);
-    for (let i = 0; i < fresh.length; i++) fresh[i] = pixels[i] as number;
-    tex.width = width;
-    tex.height = height;
-    tex.data = fresh;
+    if (isTripleA) {
+      const src = pixels as Uint8Array;
+      const fresh = new Uint8Array(width * height * 4);
+      for (let i = 0; i < fresh.length; i++) fresh[i] = src[i] as number;
+      tex.width = width;
+      tex.height = height;
+      tex.data = fresh;
+      tex.tag = "BYTE";
+      tex.channels = 4;
+    } else {
+      const src = pixels as Float32Array;
+      const fresh = new Float32Array(width * height * channels);
+      for (let i = 0; i < fresh.length; i++) fresh[i] = src[i] as number;
+      tex.width = width;
+      tex.height = height;
+      tex.data = fresh;
+      tex.tag = "FLOAT32";
+      tex.channels = channels;
+    }
     tex.hasImage = true;
     this.recompute(tex);
   }
@@ -274,6 +312,36 @@ export class TextureStore {
     const wv = wrapCoordinate(v, tex.wrapT);
     const w = tex.width;
     const h = tex.height;
+    if (tex.tag === "FLOAT32" && tex.magFilter === LINEAR) {
+      const sx = wu * w - 0.5;
+      const sy = wv * h - 0.5;
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const fx = sx - x0;
+      const fy = sy - y0;
+      const i00 = wrapIndex(x0, w, tex.wrapS);
+      const i10 = wrapIndex(x0 + 1, w, tex.wrapS);
+      const j00 = wrapIndex(y0, h, tex.wrapT);
+      const j10 = wrapIndex(y0 + 1, h, tex.wrapT);
+      const t00 = this.fetchFloats(tex, i00, j00);
+      const t10 = this.fetchFloats(tex, i10, j00);
+      const t01 = this.fetchFloats(tex, i00, j10);
+      const t11 = this.fetchFloats(tex, i10, j10);
+      const out: [number, number, number, number] = [0, 0, 0, 0];
+      for (let c = 0; c < 4; c++) {
+        const top = (t00[c] as number) * (1 - fx) + (t10[c] as number) * fx;
+        const bot = (t01[c] as number) * (1 - fx) + (t11[c] as number) * fx;
+        out[c] = top * (1 - fy) + bot * fy;
+      }
+      return out;
+    }
+    if (tex.tag === "FLOAT32") {
+      const xi = wrapIndex(Math.floor(u * w), w, tex.wrapS);
+      const yi = wrapIndex(Math.floor(v * h), h, tex.wrapT);
+      void wu;
+      void wv;
+      return this.fetchFloats(tex, xi, yi);
+    }
     if (tex.magFilter === LINEAR) {
       const sx = wu * w - 0.5;
       const sy = wv * h - 0.5;
@@ -370,13 +438,46 @@ export class TextureStore {
   }
 
   /**
-   * Fetch one texel in byte space without validation.
+   * Fetch one texel in float space with handle and coordinate validation.
    *
-   * @param tex Backing texture holding row-major RGBA bytes.
-   * @param x Texel column already folded into range.
-   * @param y Texel row already folded into range.
-   * @returns Four bytes in RGBA order.
+   * Returns exact stored floats; R32F expands to [r, 0, 0, 1] per AD-2
+   * and byte-backed textures normalize by 255.
+   * @param handle Texture handle.
+   * @param x Texel column in range.
+   * @param y Texel row in range.
+   * @returns Four floats in RGBA order.
+   * @throws InvalidOperationError For unknown handle.
+   * @throws InvalidValueError For out-of-range coordinates.
    */
+  getFloatTexel(handle: number, x: number, y: number): [number, number, number, number] {
+    const tex = this.textures.get(handle);
+    if (tex === undefined) throw new InvalidOperationError(`getFloatTexel: unknown handle ${String(handle)}`);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= tex.width || y >= tex.height) {
+      throw new InvalidValueError("getFloatTexel: coordinates out of range");
+    }
+    return this.fetchFloats(tex, x, y);
+  }
+
+  private fetchFloats(tex: TextureObject, x: number, y: number): [number, number, number, number] {
+    if (tex.tag === "FLOAT32" && tex.channels === 1) {
+      const data = tex.data as Float32Array;
+      const r = data[y * tex.width + x] as number;
+      return [r, 0, 0, 1];
+    }
+    if (tex.tag === "FLOAT32") {
+      const data = tex.data as Float32Array;
+      const off = (y * tex.width + x) * 4;
+      return [
+        data[off] as number,
+        data[off + 1] as number,
+        data[off + 2] as number,
+        data[off + 3] as number,
+      ];
+    }
+    const t = this.fetchBytes(tex, x, y);
+    return [(t[0] as number) / 255, (t[1] as number) / 255, (t[2] as number) / 255, (t[3] as number) / 255];
+  }
+
   private fetchBytes(tex: TextureObject, x: number, y: number): [number, number, number, number] {
     const off = (y * tex.width + x) * 4;
     return [
