@@ -1,9 +1,9 @@
 /**
- * @fileoverview TDD red-phase suite for R32F/RGBA32F float textures (Sprint 5 Task 5).
- * All float tests FAIL until texture.ts gains Float32Array backing.
+ * @fileoverview Verification suite for R32F/RGBA32F float textures (Sprint 5 Task 5).
+ * All float tests pass against the Float32Array backing in texture.ts.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { TextureStore } from "../../src/renderer/texture";
 import { createSoftwareWebGLContext } from "../../src/renderer/context";
 import {
@@ -70,6 +70,11 @@ describe("TextureStore float formats (red phase)", () => {
     expect(tr).toEqual([-0.5, 0, 0, 1]);
     expect(bl).toEqual([2.5, 0, 0, 1]);
     expect(br).toEqual([0.0, 0, 0, 1]);
+    // Assert: getFloatTexel reads exact [r,0,0,1]
+    expect(store.getFloatTexel(h, 0, 0)).toEqual([1.5, 0, 0, 1]);
+    expect(store.getFloatTexel(h, 1, 0)).toEqual([-0.5, 0, 0, 1]);
+    expect(store.getFloatTexel(h, 0, 1)).toEqual([2.5, 0, 0, 1]);
+    expect(store.getFloatTexel(h, 1, 1)).toEqual([0.0, 0, 0, 1]);
   });
 
   it("unsupported pairs push exactly one code and leave prior image unchanged", () => {
@@ -103,6 +108,22 @@ describe("TextureStore float formats (red phase)", () => {
     mirror.bindTexture(TEXTURE_2D, mh);
     mirror.texImage2D(TEXTURE_2D, 0, RGBA, 2, 1, RGBA, UNSIGNED_BYTE, good);
     expect(mirror.sample2D(mh, 0.25, 0.5)).toEqual([10 / 255, 20 / 255, 30 / 255, 1]);
+  });
+
+  it("byte path unregressed and no duplicate float-texture path exists", () => {
+    // Arrange
+    const store = new TextureStore();
+    const h = store.createTexture();
+    store.bindTexture(TEXTURE_2D, h);
+    const px = new Uint8Array([10, 20, 30, 255]);
+    // Act
+    store.texImage2D(TEXTURE_2D, 0, RGBA, 1, 1, RGBA, UNSIGNED_BYTE, px);
+    const s = store.sample2D(h, 0.5, 0.5);
+    // Assert
+    expect(s).toEqual([10 / 255, 20 / 255, 30 / 255, 1]);
+    expect(store.isComplete(h)).toBe(true);
+    // Assert: single deliverable path — duplicate must not exist
+    expect(existsSync("tests/unit/float-texture.test.ts")).toBe(false);
   });
 
   it("module imports only gl-constants and errors", () => {

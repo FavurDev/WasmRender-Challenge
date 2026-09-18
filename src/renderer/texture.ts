@@ -1,5 +1,5 @@
 /**
- * @fileoverview Texture object store: RGBA UNSIGNED_BYTE level-0 upload with NEAREST/LINEAR sampling.
+ * @fileoverview Texture object store: RGBA UNSIGNED_BYTE plus R32F/RGBA32F Float32Array level-0 upload with NEAREST/LINEAR sampling (exact-float on float paths).
  */
 // CHANGELOG:
 // - Sprint 4: Created TextureStore with upload, parameters, completeness, and sampling math.
