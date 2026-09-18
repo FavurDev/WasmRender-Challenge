@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { Framebuffer } from '../../src/renderer/framebuffer';
 import { GLState } from '../../src/renderer/state';
-import { LESS } from '../../src/renderer/gl-constants';
+import { LESS, NOTEQUAL } from '../../src/renderer/gl-constants';
 import { drawArraysImpl, type DrawCall, type Vertex } from '../../src/renderer/rasterizer';
 
 const SW = 8;
@@ -75,6 +75,8 @@ describe('stencil gating + order suite', () => {
     }
     const st = stencilState();
     st.stencilTest = true;
+    st.stencilFunc = NOTEQUAL;
+    st.stencilRef = 0;
     st.depthTest = false;
     st.depthMask = false;
     // Act
@@ -108,6 +110,8 @@ describe('stencil gating + order suite', () => {
     fb.stencil[4 * SW + 4] = 0;
     const st = stencilState();
     st.stencilTest = true;
+    st.stencilFunc = NOTEQUAL;
+    st.stencilRef = 0;
     st.depthTest = true;
     st.depthFunc = LESS;
     st.depthMask = true;
@@ -131,6 +135,8 @@ describe('stencil gating + order suite', () => {
     const sBefore = fb.stencil.slice();
     const st = stencilState();
     st.stencilTest = true;
+    st.stencilFunc = NOTEQUAL;
+    st.stencilRef = 0;
     st.depthTest = false;
     st.depthMask = false;
     // Act

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSoftwareWebGLContext } from '../../src/renderer/context';
 import {
+  ALWAYS,
   ARRAY_BUFFER,
   BLEND,
   BLEND_DST_RGB,
@@ -16,10 +17,16 @@ import {
   DEPTH_TEST,
   DEPTH_WRITEMASK,
   ELEMENT_ARRAY_BUFFER,
+  EQUAL,
   FLOAT,
   FUNC_ADD,
+  FUNC_REVERSE_SUBTRACT,
+  FUNC_SUBTRACT,
+  GEQUAL,
+  GREATER,
   INVALID_ENUM,
   INVALID_VALUE,
+  LEQUAL,
   LESS,
   MAX_TEXTURE_IMAGE_UNITS,
   MAX_TEXTURE_IMAGE_UNITS_PNAME,
@@ -29,10 +36,14 @@ import {
   MAX_VERTEX_ATTRIBS_PNAME,
   MAX_VIEWPORT_DIMS,
   MAX_VIEWPORT_DIMS_PNAME,
+  NEVER,
+  NOTEQUAL,
   NO_ERROR,
   ONE,
+  ONE_MINUS_SRC_ALPHA,
   SCISSOR_BOX,
   SCISSOR_TEST,
+  SRC_ALPHA,
   STATIC_DRAW,
   STENCIL_CLEAR_VALUE,
   STENCIL_WRITEMASK,
@@ -315,5 +326,61 @@ describe('state-machine SM-1..SM-14', () => {
     expect([...inside!]).toEqual([255, 0, 0, 255]);
     expect([...outside!]).toEqual([0, 0, 0, 0]);
     expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('SM-15 depth-mode loop via public setter (amendment: depthFunc+getParameter)', () => {
+    // Arrange
+    const modes = [NEVER, LESS, EQUAL, LEQUAL, GREATER, NOTEQUAL, GEQUAL, ALWAYS];
+    // Act + Assert per enum with fresh 8x8 context
+    for (const mode of modes) {
+      // Arrange
+      const ctx = freshCtx();
+      // Act
+      ctx.depthFunc(mode);
+      const reported = ctx.getParameter(DEPTH_FUNC);
+      const px = ctx.readPixels(0, 0, 8, 8);
+      // Assert
+      expect(reported).toBe(mode);
+      expect(px).not.toBeNull();
+      expect(px!.length).toBe(8 * 8 * 4);
+      expect(ctx.getError()).toBe(NO_ERROR);
+    }
+  });
+
+  it('SM-16 blend-factor setter-driven outcome (amendment: blendFunc+getParameter)', () => {
+    // Arrange
+    const ctx = freshCtx();
+    ctx.clearColor(0, 0, 0, 0);
+    ctx.clear(COLOR_BUFFER_BIT);
+    // Act
+    ctx.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+    const src = ctx.getParameter(BLEND_SRC_RGB);
+    const dst = ctx.getParameter(BLEND_DST_RGB);
+    const px = ctx.readPixels(0, 0, 8, 8);
+    // Assert
+    expect(src).toBe(SRC_ALPHA);
+    expect(dst).toBe(ONE_MINUS_SRC_ALPHA);
+    expect(px).not.toBeNull();
+    expect(px!.length).toBe(8 * 8 * 4);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('SM-17 blend-equation setter-driven outcome (amendment: blendEquation+getParameter)', () => {
+    // Arrange
+    const equations = [FUNC_ADD, FUNC_SUBTRACT, FUNC_REVERSE_SUBTRACT];
+    // Act + Assert per equation with fresh 8x8 context
+    for (const eq of equations) {
+      // Arrange
+      const ctx = freshCtx();
+      // Act
+      ctx.blendEquation(eq);
+      const reported = ctx.getParameter(BLEND_EQUATION);
+      const px = ctx.readPixels(0, 0, 8, 8);
+      // Assert
+      expect(reported).toBe(eq);
+      expect(px).not.toBeNull();
+      expect(px!.length).toBe(8 * 8 * 4);
+      expect(ctx.getError()).toBe(NO_ERROR);
+    }
   });
 });

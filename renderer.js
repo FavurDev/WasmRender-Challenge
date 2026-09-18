@@ -40,10 +40,14 @@ var __swgl = (() => {
   var SRC_ALPHA_SATURATE = 776;
   var FUNC_ADD = 32774;
   var BLEND_EQUATION = 32777;
+  var BLEND_EQUATION_RGB = 32777;
+  var BLEND_EQUATION_ALPHA = 34877;
   var FUNC_SUBTRACT = 32778;
   var FUNC_REVERSE_SUBTRACT = 32779;
   var BLEND_DST_RGB = 32968;
   var BLEND_SRC_RGB = 32969;
+  var BLEND_DST_ALPHA = 32970;
+  var BLEND_SRC_ALPHA = 32971;
   var CONSTANT_COLOR = 32769;
   var ONE_MINUS_CONSTANT_COLOR = 32770;
   var CONSTANT_ALPHA = 32771;
@@ -56,6 +60,13 @@ var __swgl = (() => {
   var NOTEQUAL = 517;
   var GEQUAL = 518;
   var ALWAYS = 519;
+  var KEEP = 7680;
+  var REPLACE = 7681;
+  var INCR = 7682;
+  var DECR = 7683;
+  var INVERT = 5386;
+  var INCR_WRAP = 34055;
+  var DECR_WRAP = 34056;
   var BLEND = 3042;
   var DEPTH_TEST = 2929;
   var STENCIL_TEST = 2960;
@@ -114,6 +125,12 @@ var __swgl = (() => {
   var DEPTH_CLEAR_VALUE = 2931;
   var DEPTH_FUNC = 2932;
   var STENCIL_CLEAR_VALUE = 2961;
+  var STENCIL_FUNC = 2962;
+  var STENCIL_VALUE_MASK = 2963;
+  var STENCIL_FAIL = 2964;
+  var STENCIL_PASS_DEPTH_FAIL = 2965;
+  var STENCIL_PASS_DEPTH_PASS = 2966;
+  var STENCIL_REF = 2967;
   var STENCIL_WRITEMASK = 2968;
   var VIEWPORT = 2978;
   var SCISSOR_BOX = 3088;
@@ -135,6 +152,13 @@ var __swgl = (() => {
     depthMask = true;
     colorMask = [true, true, true, true];
     stencilTest = false;
+    // Stencil func/ref/mask + fail/zfail/zpass ops (STENCIL_FUNC/REF/VALUE_MASK/FAIL/PASS_DEPTH_FAIL/PASS_DEPTH_PASS).
+    stencilFunc = ALWAYS;
+    stencilRef = 0;
+    stencilValueMask = 255;
+    stencilFail = KEEP;
+    stencilPassDepthFail = KEEP;
+    stencilPassDepthPass = KEEP;
     blendEnabled = false;
     blendSrcRGB = ONE;
     blendDstRGB = ZERO;
@@ -1005,9 +1029,43 @@ var __swgl = (() => {
     if (py < by || py >= by + bh) return false;
     return true;
   }
-  function evaluateStencil(px, py, st, stencil, width) {
+  function applyStencil(px, py, st, stencil, width, depthWillPass) {
     if (!st.stencilTest) return true;
-    return stencil[py * width + px] !== 0;
+    const idx = py * width + px;
+    const stored = stencil[idx];
+    const func = st.stencilFunc;
+    const ref = st.stencilRef;
+    const valueMask = st.stencilValueMask;
+    const maskedRef = ref & valueMask;
+    const maskedStored = stored & valueMask;
+    let pass = false;
+    if (func === NEVER) pass = false;
+    else if (func === ALWAYS) pass = true;
+    else if (func === LESS) pass = maskedRef < maskedStored;
+    else if (func === LEQUAL) pass = maskedRef <= maskedStored;
+    else if (func === GREATER) pass = maskedRef > maskedStored;
+    else if (func === GEQUAL) pass = maskedRef >= maskedStored;
+    else if (func === EQUAL) pass = maskedRef === maskedStored;
+    else if (func === NOTEQUAL) pass = maskedRef !== maskedStored;
+    else pass = false;
+    let op;
+    if (!pass) op = st.stencilFail;
+    else if (!depthWillPass) op = st.stencilPassDepthFail;
+    else op = st.stencilPassDepthPass;
+    let computed;
+    if (op === KEEP) computed = stored;
+    else if (op === ZERO) computed = 0;
+    else if (op === REPLACE) computed = ref & 255;
+    else if (op === INCR) computed = stored >= 255 ? 255 : stored + 1;
+    else if (op === DECR) computed = stored <= 0 ? 0 : stored - 1;
+    else if (op === INCR_WRAP) computed = (stored + 1) % 256;
+    else if (op === DECR_WRAP) computed = (stored + 255) % 256;
+    else if (op === INVERT) computed = ~stored & 255;
+    else computed = stored;
+    const wmask = st.stencilMask & 255;
+    const final = stored & ~wmask | computed & wmask;
+    stencil[idx] = final & 255;
+    return pass;
   }
   function computeFragmentDepth(w0, w1, w2, ndcZ0, ndcZ1, ndcZ2) {
     let weighted;
@@ -1192,12 +1250,6 @@ var __swgl = (() => {
             e2 += a2;
             continue;
           }
-          if (!evaluateStencil(px, py, st, fb.stencil, fw)) {
-            e0 += a0;
-            e1 += a1;
-            e2 += a2;
-            continue;
-          }
           const l0 = e0 / area;
           const l1 = e1 / area;
           const l2 = e2 / area;
@@ -1209,7 +1261,15 @@ var __swgl = (() => {
             incomingDepth = computeFragmentDepth(l0, l1, l2, ndcZ0, ndcZ1, ndcZ2);
           }
           const storedDepth = fb.depth[py * fw + px];
-          if (!evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest)) {
+          const depthWillPass = evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest);
+          const stencilPass = applyStencil(px, py, st, fb.stencil, fw, depthWillPass);
+          if (!stencilPass) {
+            e0 += a0;
+            e1 += a1;
+            e2 += a2;
+            continue;
+          }
+          if (!depthWillPass) {
             e0 += a0;
             e1 += a1;
             e2 += a2;
@@ -3453,9 +3513,12 @@ var __swgl = (() => {
       this.vaoMirror.boundElementArrayBuffer = rec.boundElementArrayBuffer;
     }
     /**
-     * Create a VAO handle with monotonic never-reused numbering; captures current live state; binding unchanged; never pushes.
-     * @returns Fresh non-zero handle.
-     */
+    
+       * Create a VAO handle with monotonic never-reused numbering; captures current live state; binding unchanged; never pushes.
+    
+       * @returns Fresh non-zero handle.
+    
+       */
     createVertexArray() {
       const handle = this.nextVAOHandle++;
       this.liveVAOs.add(handle);
@@ -3463,9 +3526,12 @@ var __swgl = (() => {
       return handle;
     }
     /**
-     * Bind a VAO; null/0 selects default. Unknown non-zero handle pushes one INVALID_OPERATION with no state change.
-     * @param array Handle, null, or 0.
-     */
+    
+       * Bind a VAO; null/0 selects default. Unknown non-zero handle pushes one INVALID_OPERATION with no state change.
+    
+       * @param array Handle, null, or 0.
+    
+       */
     bindVertexArray(array) {
       const target = array === null ? 0 : array;
       if (target === 0) {
@@ -3484,9 +3550,12 @@ var __swgl = (() => {
       if (rec !== void 0) this.restoreRecord(rec);
     }
     /**
-     * Delete a VAO; null/0/unknown are silent no-ops. Deleting the bound VAO adopts live state into default and unbinds; never pushes.
-     * @param array Handle or null.
-     */
+    
+       * Delete a VAO; null/0/unknown are silent no-ops. Deleting the bound VAO adopts live state into default and unbinds; never pushes.
+    
+       * @param array Handle or null.
+    
+       */
     deleteVertexArray(array) {
       if (array === null || array === 0) return;
       if (!this.liveVAOs.has(array)) return;
@@ -3500,11 +3569,16 @@ var __swgl = (() => {
       }
     }
     /**
-     * Build owned state, pixels, and queue sized to canvas extent.
-     * @param state Fresh capability store.
-     * @param fb Fresh pixel triple.
-     * @param canvas Canvas handle for presentation only.
-     */
+    
+       * Build owned state, pixels, and queue sized to canvas extent.
+    
+       * @param state Fresh capability store.
+    
+       * @param fb Fresh pixel triple.
+    
+       * @param canvas Canvas handle for presentation only.
+    
+       */
     constructor(state, fb, canvas) {
       this.state = state;
       this.fb = fb;
@@ -3544,19 +3618,88 @@ var __swgl = (() => {
       this.fb.setStencilMask(mask);
     }
     /**
-     * Replace scissor box; negative size pushes one code with no state change.
-     * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
-     */
+    
+       * Set stencil comparison func plus 8-bit ref and mask; validate-then-commit, never throws.
+    
+       * @param func Comparison enum (NEVER..ALWAYS). @param ref Reference value, clamped to 8 bits. @param mask Value mask, clamped to 8 bits.
+    
+       */
+    stencilFunc(func, ref, mask) {
+      if (this.guardIfLost()) return;
+      switch (func) {
+        case NEVER:
+        case LESS:
+        case EQUAL:
+        case LEQUAL:
+        case GREATER:
+        case NOTEQUAL:
+        case GEQUAL:
+        case ALWAYS:
+          break;
+        default:
+          pushError(this.queue, INVALID_ENUM);
+          return;
+      }
+      const clampedRef = (Math.trunc(Number(ref)) & 255) >>> 0;
+      const clampedMask = (Math.trunc(Number(mask)) & 255) >>> 0;
+      this.state.stencilFunc = func;
+      this.state.stencilRef = clampedRef;
+      this.state.stencilValueMask = clampedMask;
+    }
+    /**
+    
+       * Set stencil fail/zfail/zpass ops; all three validated before any commit, never throws.
+    
+       * @param fail Fail op. @param zfail Depth-fail op. @param zpass Depth-pass op.
+    
+       */
+    stencilOp(fail, zfail, zpass) {
+      if (this.guardIfLost()) return;
+      const valid = (op) => {
+        switch (op) {
+          case KEEP:
+          case ZERO:
+          case REPLACE:
+          case INCR:
+          case DECR:
+          case INVERT:
+          case INCR_WRAP:
+          case DECR_WRAP:
+            return true;
+          default:
+            return false;
+        }
+      };
+      if (!valid(fail) || !valid(zfail) || !valid(zpass)) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      this.state.stencilFail = fail;
+      this.state.stencilPassDepthFail = zfail;
+      this.state.stencilPassDepthPass = zpass;
+    }
+    /**
+    
+       * Replace scissor box; negative size pushes one code with no state change.
+    
+       * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
+    
+       */
     scissor(x, y, w, h) {
       const code = this.state.setScissor(x, y, w, h);
       if (code !== null) pushError(this.queue, code);
     }
     /**
-     * Query capability flag; unknown enum returns false without queue change
-     * (the TDD unknown-enum case requires exactly one code total across the
-     * enable+isEnabled pair, with the single push owned by enable).
-     * @param cap Capability code. @returns Flag or false on rejection.
-     */
+    
+       * Query capability flag; unknown enum returns false without queue change
+    
+       * (the TDD unknown-enum case requires exactly one code total across the
+    
+       * enable+isEnabled pair, with the single push owned by enable).
+    
+       * @param cap Capability code. @returns Flag or false on rejection.
+    
+       */
     isEnabled(cap) {
       const result = this.state.isEnabled(cap);
       if (typeof result !== "boolean") return false;
@@ -3571,14 +3714,18 @@ var __swgl = (() => {
       return false;
     }
     /**
-     * List supported extension names. @returns Fresh three-name copy.
-     */
+    
+       * List supported extension names. @returns Fresh three-name copy.
+    
+       */
     getSupportedExtensions() {
       return this.extensions.listSupportedNames();
     }
     /**
-     * Fetch stub by name. @param name Extension name. @returns Stub or null, never pushes.
-     */
+    
+       * Fetch stub by name. @param name Extension name. @returns Stub or null, never pushes.
+    
+       */
     getExtension(name) {
       return this.extensions.lookupStub(name);
     }
@@ -3601,34 +3748,47 @@ var __swgl = (() => {
       }
     }
     /**
-     * Replace viewport box; negative values rejected with one code.
-     * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
-     */
+    
+       * Replace viewport box; negative values rejected with one code.
+    
+       * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
+    
+       */
     viewport(x, y, w, h) {
       const code = this.state.setViewport(x, y, w, h);
       if (code !== null) pushError(this.queue, code);
     }
     /**
-     * Flip capability on; unknown enum pushes one code.
-     * @param cap Capability code.
-     */
+    
+       * Flip capability on; unknown enum pushes one code.
+    
+       * @param cap Capability code.
+    
+       */
     enable(cap) {
       const code = this.state.enable(cap);
       if (code !== null) pushError(this.queue, code);
     }
     /**
-     * Flip capability off; unknown enum pushes one code.
-     * @param cap Capability code.
-     */
+    
+       * Flip capability off; unknown enum pushes one code.
+    
+       * @param cap Capability code.
+    
+       */
     disable(cap) {
       const code = this.state.disable(cap);
       if (code !== null) pushError(this.queue, code);
     }
     /**
-     * Read back state or limits; unknown query pushes one code and returns null.
-     * @param pname Query code.
-     * @returns Value copy, limit, or null.
-     */
+    
+       * Read back state or limits; unknown query pushes one code and returns null.
+    
+       * @param pname Query code.
+    
+       * @returns Value copy, limit, or null.
+    
+       */
     getParameter(pname) {
       if (pname === BLEND) return this.state.blendEnabled;
       if (pname === DEPTH_TEST) return this.state.depthTest;
@@ -3641,12 +3801,22 @@ var __swgl = (() => {
       if (pname === COLOR_WRITEMASK) return [...this.state.colorMask];
       if (pname === DEPTH_WRITEMASK) return this.state.depthMask;
       if (pname === STENCIL_WRITEMASK) return this.state.stencilMask;
+      if (pname === STENCIL_FUNC) return this.state.stencilFunc;
+      if (pname === STENCIL_REF) return this.state.stencilRef;
+      if (pname === STENCIL_VALUE_MASK) return this.state.stencilValueMask;
+      if (pname === STENCIL_FAIL) return this.state.stencilFail;
+      if (pname === STENCIL_PASS_DEPTH_FAIL) return this.state.stencilPassDepthFail;
+      if (pname === STENCIL_PASS_DEPTH_PASS) return this.state.stencilPassDepthPass;
       if (pname === VIEWPORT) return [...this.state.viewport];
       if (pname === SCISSOR_BOX) return [...this.state.scissorBox];
       if (pname === DEPTH_FUNC) return this.state.depthFunc;
       if (pname === BLEND_SRC_RGB) return this.state.blendSrcRGB;
+      if (pname === BLEND_SRC_ALPHA) return this.state.blendSrcRGB;
       if (pname === BLEND_DST_RGB) return this.state.blendDstRGB;
+      if (pname === BLEND_DST_ALPHA) return this.state.blendDstRGB;
       if (pname === BLEND_EQUATION) return this.state.blendEquation;
+      if (pname === BLEND_EQUATION_RGB) return this.state.blendEquation;
+      if (pname === BLEND_EQUATION_ALPHA) return this.state.blendEquation;
       if (pname === MAX_TEXTURE_SIZE_PNAME) return MAX_TEXTURE_SIZE;
       if (pname === MAX_VIEWPORT_DIMS_PNAME) return [...MAX_VIEWPORT_DIMS];
       if (pname === MAX_VERTEX_ATTRIBS_PNAME) return MAX_VERTEX_ATTRIBS;
@@ -3657,16 +3827,22 @@ var __swgl = (() => {
       return null;
     }
     /**
-     * Drain head of error queue or NO_ERROR; never throws.
-     * @returns Head code or NO_ERROR.
-     */
+    
+       * Drain head of error queue or NO_ERROR; never throws.
+    
+       * @returns Head code or NO_ERROR.
+    
+       */
     getError() {
       return drainError(this.queue);
     }
     /**
-     * Exact-byte readback; out-of-bounds pushes one code and returns null.
-     * @returns Bytes or null.
-     */
+    
+       * Exact-byte readback; out-of-bounds pushes one code and returns null.
+    
+       * @returns Bytes or null.
+    
+       */
     readPixels(x, y, w, h, format, type) {
       if (this.extensions.reportLost()) {
         pushError(this.queue, CONTEXT_LOST_WEBGL);
@@ -3690,11 +3866,16 @@ var __swgl = (() => {
       }
     }
     /**
-     * Select the active texture unit for subsequent binds.
-     *
-     * @param texture Unit enum (TEXTURE0 + 0..31); out-of-range pushes one INVALID_ENUM.
-     * @returns Nothing; state unchanged on rejection.
-     */
+    
+       * Select the active texture unit for subsequent binds.
+    
+       *
+    
+       * @param texture Unit enum (TEXTURE0 + 0..31); out-of-range pushes one INVALID_ENUM.
+    
+       * @returns Nothing; state unchanged on rejection.
+    
+       */
     activeTexture(texture) {
       if (!Number.isInteger(texture) || texture < TEXTURE0 || texture > TEXTURE0 + 31) {
         pushError(this.queue, INVALID_ENUM);
@@ -3703,21 +3884,121 @@ var __swgl = (() => {
       this.state.activeTexture = texture;
     }
     /**
-     * Create a texture handle via the owned store.
-     *
-     * @returns New non-zero texture handle owned by this context.
-     */
+    
+       * Set depth comparison function; unknown enum pushes one INVALID_ENUM with no commit.
+    
+       * @param func Comparison enum (NEVER..ALWAYS).
+    
+       * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+    
+       */
+    depthFunc(func) {
+      if (this.guardIfLost()) return;
+      switch (func) {
+        case NEVER:
+        case LESS:
+        case EQUAL:
+        case LEQUAL:
+        case GREATER:
+        case NOTEQUAL:
+        case GEQUAL:
+        case ALWAYS:
+          break;
+        default:
+          pushError(this.queue, INVALID_ENUM);
+          return;
+      }
+      this.state.depthFunc = func;
+    }
+    /**
+    
+       * Set blend factors with all-or-nothing semantics; either invalid pushes one INVALID_ENUM, neither commits.
+    
+       * @param sfactor Source factor enum. @param dfactor Destination factor enum.
+    
+       * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+    
+       */
+    blendFunc(sfactor, dfactor) {
+      if (this.guardIfLost()) return;
+      const valid = (v) => {
+        switch (v) {
+          case ZERO:
+          case ONE:
+          case SRC_COLOR:
+          case ONE_MINUS_SRC_COLOR:
+          case SRC_ALPHA:
+          case ONE_MINUS_SRC_ALPHA:
+          case DST_ALPHA:
+          case ONE_MINUS_DST_ALPHA:
+          case DST_COLOR:
+          case ONE_MINUS_DST_COLOR:
+          case SRC_ALPHA_SATURATE:
+          case CONSTANT_COLOR:
+          case ONE_MINUS_CONSTANT_COLOR:
+          case CONSTANT_ALPHA:
+          case ONE_MINUS_CONSTANT_ALPHA:
+            return true;
+          default:
+            return false;
+        }
+      };
+      if (!valid(sfactor) || !valid(dfactor)) {
+        pushError(this.queue, INVALID_ENUM);
+        return;
+      }
+      this.state.blendSrcRGB = sfactor;
+      this.state.blendDstRGB = dfactor;
+    }
+    /**
+    
+       * Set blend equation; unknown mode pushes one INVALID_ENUM with no commit.
+    
+       * @param mode Equation enum (FUNC_ADD, FUNC_SUBTRACT, FUNC_REVERSE_SUBTRACT).
+    
+       * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+    
+       */
+    blendEquation(mode) {
+      if (this.guardIfLost()) return;
+      switch (mode) {
+        case FUNC_ADD:
+        case FUNC_SUBTRACT:
+        case FUNC_REVERSE_SUBTRACT:
+          break;
+        default:
+          pushError(this.queue, INVALID_ENUM);
+          return;
+      }
+      this.state.blendEquation = mode;
+    }
+    /**
+    
+       * Create a texture handle via the owned store.
+    
+       *
+    
+       * @returns New non-zero texture handle owned by this context.
+    
+       */
     createTexture() {
       return this.textures.createTexture();
     }
     /**
-     * Bind a texture on the active unit.
-     *
-     * @param target Texture target enum; unknown targets push INVALID_ENUM.
-     * @param texture Handle to bind, or null to unbind the unit.
-     * @returns Nothing; pushes exactly one code on rejection.
-     * @throws Never throws; store errors are mapped to the error queue.
-     */
+    
+       * Bind a texture on the active unit.
+    
+       *
+    
+       * @param target Texture target enum; unknown targets push INVALID_ENUM.
+    
+       * @param texture Handle to bind, or null to unbind the unit.
+    
+       * @returns Nothing; pushes exactly one code on rejection.
+    
+       * @throws Never throws; store errors are mapped to the error queue.
+    
+       */
     bindTexture(target, texture) {
       try {
         this.textures.bindTexture(target, texture === null ? 0 : texture);
@@ -3733,19 +4014,32 @@ var __swgl = (() => {
       this.unitBindings.set(unit, texture === null ? 0 : texture);
     }
     /**
-     * Upload a level-0 image via the owned store (bytes or floats).
-     *
-     * @param target Texture target enum; unknown targets push INVALID_ENUM.
-     * @param level Mipmap level; only level 0 is complete.
-     * @param internalFormat Internal format enum (RGBA, RGBA32F, R32F).
-     * @param width Level width in texels; negative pushes INVALID_VALUE.
-     * @param height Level height in texels; negative pushes INVALID_VALUE.
-     * @param format Pixel format enum (RGBA, or RED for R32F).
-     * @param type Pixel type enum (UNSIGNED_BYTE or FLOAT).
-     * @param pixels Source bytes, source floats, or null; bad payloads push INVALID_VALUE.
-     * @returns Nothing; maps store throws to exactly one queue code (OOM maps to OUT_OF_MEMORY).
-     * @throws Never throws; store errors are mapped to the error queue.
-     */
+    
+       * Upload a level-0 image via the owned store (bytes or floats).
+    
+       *
+    
+       * @param target Texture target enum; unknown targets push INVALID_ENUM.
+    
+       * @param level Mipmap level; only level 0 is complete.
+    
+       * @param internalFormat Internal format enum (RGBA, RGBA32F, R32F).
+    
+       * @param width Level width in texels; negative pushes INVALID_VALUE.
+    
+       * @param height Level height in texels; negative pushes INVALID_VALUE.
+    
+       * @param format Pixel format enum (RGBA, or RED for R32F).
+    
+       * @param type Pixel type enum (UNSIGNED_BYTE or FLOAT).
+    
+       * @param pixels Source bytes, source floats, or null; bad payloads push INVALID_VALUE.
+    
+       * @returns Nothing; maps store throws to exactly one queue code (OOM maps to OUT_OF_MEMORY).
+    
+       * @throws Never throws; store errors are mapped to the error queue.
+    
+       */
     texImage2D(target, level, internalFormat, width, height, format, type, pixels) {
       try {
         this.textures.texImage2D(target, level, internalFormat, width, height, format, type, pixels);
@@ -3766,14 +4060,22 @@ var __swgl = (() => {
       }
     }
     /**
-     * Store a filter or wrap parameter via the owned store.
-     *
-     * @param target Texture target enum; unknown targets push INVALID_ENUM.
-     * @param pname Parameter name enum (MIN/MAG_FILTER, WRAP_S/T).
-     * @param param Parameter value enum.
-     * @returns Nothing; maps store throws to exactly one queue code.
-     * @throws Never throws; store errors are mapped to the error queue.
-     */
+    
+       * Store a filter or wrap parameter via the owned store.
+    
+       *
+    
+       * @param target Texture target enum; unknown targets push INVALID_ENUM.
+    
+       * @param pname Parameter name enum (MIN/MAG_FILTER, WRAP_S/T).
+    
+       * @param param Parameter value enum.
+    
+       * @returns Nothing; maps store throws to exactly one queue code.
+    
+       * @throws Never throws; store errors are mapped to the error queue.
+    
+       */
     texParameteri(target, pname, param) {
       try {
         this.textures.texParameteri(target, pname, param);
@@ -3828,10 +4130,14 @@ var __swgl = (() => {
       return out;
     }
     /**
-     * Build the live name-keyed uniform map for one draw from the program record.
-     * @param prog Program record holding handle-id-keyed uniform values.
-     * @returns Fresh record mapping uniform name to value array.
-     */
+    
+       * Build the live name-keyed uniform map for one draw from the program record.
+    
+       * @param prog Program record holding handle-id-keyed uniform values.
+    
+       * @returns Fresh record mapping uniform name to value array.
+    
+       */
     assembleUniforms(prog) {
       const out = {};
       if (prog.linkedProgram !== null) {
@@ -3845,10 +4151,14 @@ var __swgl = (() => {
     /** Caller-owned per-fragment scratch reused across fragments; zero per-fragment allocation. */
     fragScratch = [];
     /**
-     * Read back one attachment plane for tests; attachment 0 equals readPixels bytes.
-     * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height. @param index Attachment slot.
-     * @returns Row-major RGBA bytes or null on out-of-bounds.
-     */
+    
+       * Read back one attachment plane for tests; attachment 0 equals readPixels bytes.
+    
+       * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height. @param index Attachment slot.
+    
+       * @returns Row-major RGBA bytes or null on out-of-bounds.
+    
+       */
     readAttachment(x, y, w, h, index) {
       try {
         return this.fb.readAttachment(x, y, w, h, index);
@@ -3925,9 +4235,12 @@ var __swgl = (() => {
       return verts;
     }
     /**
-     * Set per-instance divisor; validates index then divisor, pushing one INVALID_VALUE on rejection.
-     * @param index Attribute slot ordinal. @param divisor Non-negative integer.
-     */
+    
+       * Set per-instance divisor; validates index then divisor, pushing one INVALID_VALUE on rejection.
+    
+       * @param index Attribute slot ordinal. @param divisor Non-negative integer.
+    
+       */
     vertexAttribDivisor(index, divisor) {
       if (!Number.isInteger(index) || index < 0 || index >= MAX_VERTEX_ATTRIBS) {
         this.reportDrawFailure(INVALID_VALUE);
@@ -3942,9 +4255,12 @@ var __swgl = (() => {
       this.vaoMirror.divisors[index] = divisor;
     }
     /**
-     * Validate and execute an instanced non-indexed TRIANGLES draw.
-     * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count. @param instanceCount Instance count.
-     */
+    
+       * Validate and execute an instanced non-indexed TRIANGLES draw.
+    
+       * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count. @param instanceCount Instance count.
+    
+       */
     drawArraysInstanced = (mode, first, count, instanceCount) => {
       if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
@@ -3981,9 +4297,12 @@ var __swgl = (() => {
       this.presentAfterDraw();
     };
     /**
-     * Validate and execute an instanced indexed TRIANGLES draw via UNSIGNED_SHORT indices.
-     * @param mode Draw mode. @param count Index count. @param type Index type. @param offset Byte offset. @param instanceCount Instance count.
-     */
+    
+       * Validate and execute an instanced indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+    
+       * @param mode Draw mode. @param count Index count. @param type Index type. @param offset Byte offset. @param instanceCount Instance count.
+    
+       */
     drawElementsInstanced = (mode, count, type, offset, instanceCount) => {
       if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
@@ -4142,36 +4461,52 @@ var __swgl = (() => {
       }
     }
     /**
-     * Decode attribute vertex; never pushes.
-     * @param index Attribute index. @param vertexIndex Vertex ordinal.
-     * @returns Components or null.
-     */
+    
+       * Decode attribute vertex; never pushes.
+    
+       * @param index Attribute index. @param vertexIndex Vertex ordinal.
+    
+       * @returns Components or null.
+    
+       */
     decodeAttribute(index, vertexIndex) {
       return this.store.decodeAttribute(index, vertexIndex);
     }
     /**
-     * Resolve bound handle. @param target Bind target. @returns Handle or 0.
-     */
+    
+       * Resolve bound handle. @param target Bind target. @returns Handle or 0.
+    
+       */
     getBoundBuffer(target) {
       return this.store.getBoundBuffer(target);
     }
     /**
-     * Create a shader record.
-     *
-     * @param type Shader stage, VERTEX_SHADER or FRAGMENT_SHADER; other values compile to INVALID_SHADER_TYPE.
-     * @returns Fresh non-zero shader handle.
-     */
+    
+       * Create a shader record.
+    
+       *
+    
+       * @param type Shader stage, VERTEX_SHADER or FRAGMENT_SHADER; other values compile to INVALID_SHADER_TYPE.
+    
+       * @returns Fresh non-zero shader handle.
+    
+       */
     createShader(type) {
       const id = this.nextShaderId++;
       this.shaders.set(id, { id, type, source: "", compiled: false, infoLog: "", closure: null, symbols: null, version: null, hasMain: true });
       return id;
     }
     /**
-     * Stage shader source text verbatim and reset compile status.
-     *
-     * @param shader Target shader handle; unknown handles are a silent no-op.
-     * @param source GLSL ES source text stored verbatim.
-     */
+    
+       * Stage shader source text verbatim and reset compile status.
+    
+       *
+    
+       * @param shader Target shader handle; unknown handles are a silent no-op.
+    
+       * @param source GLSL ES source text stored verbatim.
+    
+       */
     shaderSource(shader, source) {
       const rec = this.shaders.get(shader);
       if (rec === void 0) return;
@@ -4184,11 +4519,16 @@ var __swgl = (() => {
       rec.hasMain = true;
     }
     /**
-     * Compile staged source; failures travel the status channel only.
-     *
-     * @param shader Target shader handle; unknown handles are a silent no-op.
-     * @returns Void; read COMPILE_STATUS plus info log. Never pushes to the error queue.
-     */
+    
+       * Compile staged source; failures travel the status channel only.
+    
+       *
+    
+       * @param shader Target shader handle; unknown handles are a silent no-op.
+    
+       * @returns Void; read COMPILE_STATUS plus info log. Never pushes to the error queue.
+    
+       */
     compileShader(shader) {
       const rec = this.shaders.get(shader);
       if (rec === void 0) return;
@@ -4233,12 +4573,18 @@ var __swgl = (() => {
       }
     }
     /**
-     * Read shader status.
-     *
-     * @param shader Target shader handle.
-     * @param pname Status name; COMPILE_STATUS yields a boolean.
-     * @returns Boolean for COMPILE_STATUS, null for unknown handles or pnames.
-     */
+    
+       * Read shader status.
+    
+       *
+    
+       * @param shader Target shader handle.
+    
+       * @param pname Status name; COMPILE_STATUS yields a boolean.
+    
+       * @returns Boolean for COMPILE_STATUS, null for unknown handles or pnames.
+    
+       */
     getShaderParameter(shader, pname) {
       const rec = this.shaders.get(shader);
       if (rec === void 0) return null;
@@ -4246,32 +4592,46 @@ var __swgl = (() => {
       return null;
     }
     /**
-     * Read shader info log verbatim.
-     *
-     * @param shader Target shader handle.
-     * @returns LINE-prefixed diagnostic, empty string on success or unknown handle.
-     */
+    
+       * Read shader info log verbatim.
+    
+       *
+    
+       * @param shader Target shader handle.
+    
+       * @returns LINE-prefixed diagnostic, empty string on success or unknown handle.
+    
+       */
     getShaderInfoLog(shader) {
       const rec = this.shaders.get(shader);
       if (rec === void 0) return "";
       return rec.infoLog;
     }
     /**
-     * Create a program record.
-     *
-     * @returns Fresh non-zero program handle.
-     */
+    
+       * Create a program record.
+    
+       *
+    
+       * @returns Fresh non-zero program handle.
+    
+       */
     createProgram() {
       const id = this.nextProgramId++;
       this.programs.set(id, { id, attachedVertex: [], attachedFragment: [], linked: false, infoLog: "", linkedProgram: null, uniformValues: /* @__PURE__ */ new Map() });
       return id;
     }
     /**
-     * Attach a shader handle to a program record and invalidate prior link.
-     *
-     * @param program Target program handle; unknown handles are a silent no-op.
-     * @param shader Shader handle to attach; unknown handles are a silent no-op.
-     */
+    
+       * Attach a shader handle to a program record and invalidate prior link.
+    
+       *
+    
+       * @param program Target program handle; unknown handles are a silent no-op.
+    
+       * @param shader Shader handle to attach; unknown handles are a silent no-op.
+    
+       */
     attachShader(program, shader) {
       const p = this.programs.get(program);
       const s = this.shaders.get(shader);
@@ -4283,11 +4643,16 @@ var __swgl = (() => {
       p.linkedProgram = null;
     }
     /**
-     * Link attached shaders via the program validator; stores GLProgram verbatim.
-     *
-     * @param program Target program handle; unknown handles are a silent no-op.
-     * @returns Void; read LINK_STATUS plus info log. Never pushes to the error queue.
-     */
+    
+       * Link attached shaders via the program validator; stores GLProgram verbatim.
+    
+       *
+    
+       * @param program Target program handle; unknown handles are a silent no-op.
+    
+       * @returns Void; read LINK_STATUS plus info log. Never pushes to the error queue.
+    
+       */
     linkProgram(program) {
       const p = this.programs.get(program);
       if (p === void 0) return;
@@ -4309,12 +4674,18 @@ var __swgl = (() => {
       p.linkedProgram = result;
     }
     /**
-     * Read program status.
-     *
-     * @param program Target program handle.
-     * @param pname Status name; LINK_STATUS yields a boolean.
-     * @returns Boolean for LINK_STATUS, null for unknown handles or pnames.
-     */
+    
+       * Read program status.
+    
+       *
+    
+       * @param program Target program handle.
+    
+       * @param pname Status name; LINK_STATUS yields a boolean.
+    
+       * @returns Boolean for LINK_STATUS, null for unknown handles or pnames.
+    
+       */
     getProgramParameter(program, pname) {
       const p = this.programs.get(program);
       if (p === void 0) return null;
@@ -4322,21 +4693,30 @@ var __swgl = (() => {
       return null;
     }
     /**
-     * Read program info log verbatim.
-     *
-     * @param program Target program handle.
-     * @returns Link diagnostic (e.g. MISSING_MAIN), empty string on success or unknown handle.
-     */
+    
+       * Read program info log verbatim.
+    
+       *
+    
+       * @param program Target program handle.
+    
+       * @returns Link diagnostic (e.g. MISSING_MAIN), empty string on success or unknown handle.
+    
+       */
     getProgramInfoLog(program) {
       const p = this.programs.get(program);
       if (p === void 0) return "";
       return p.infoLog;
     }
     /**
-     * Select the current program, recording even unlinked handles.
-     *
-     * @param program Program handle, null, or 0; null/0/unknown selects program 0. Unlinked handles are recorded so draws can reject them.
-     */
+    
+       * Select the current program, recording even unlinked handles.
+    
+       *
+    
+       * @param program Program handle, null, or 0; null/0/unknown selects program 0. Unlinked handles are recorded so draws can reject them.
+    
+       */
     useProgram(program) {
       if (program === null || program === 0) {
         this.state.currentProgram = 0;
@@ -4350,76 +4730,118 @@ var __swgl = (() => {
       this.state.currentProgram = program;
     }
     /**
-     * Resolve an attribute location via the stored linked program.
-     *
-     * @param program Target program handle.
-     * @param name Attribute name in declaration order.
-     * @returns Zero-based index, or -1 when absent or unlinked.
-     */
+    
+       * Resolve an attribute location via the stored linked program.
+    
+       *
+    
+       * @param program Target program handle.
+    
+       * @param name Attribute name in declaration order.
+    
+       * @returns Zero-based index, or -1 when absent or unlinked.
+    
+       */
     getAttribLocation(program, name) {
       const p = this.programs.get(program);
       if (p === void 0 || p.linkedProgram === null) return -1;
       return getAttribLocation(p.linkedProgram, name);
     }
     /**
-     * Resolve a uniform handle via the stored linked program.
-     *
-     * @param program Target program handle.
-     * @param name Uniform name.
-     * @returns Stable handle object, or null when absent or unlinked.
-     */
+    
+       * Resolve a uniform handle via the stored linked program.
+    
+       *
+    
+       * @param program Target program handle.
+    
+       * @param name Uniform name.
+    
+       * @returns Stable handle object, or null when absent or unlinked.
+    
+       */
     getUniformLocation(program, name) {
       const p = this.programs.get(program);
       if (p === void 0 || p.linkedProgram === null) return null;
       return getUniformLocation(p.linkedProgram, name);
     }
     /**
-     * Store one float component against the owning program.
-     *
-     * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
-     * @param v0 Component value.
-     */
+    
+       * Store one float component against the owning program.
+    
+       *
+    
+       * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+    
+       * @param v0 Component value.
+    
+       */
     uniform1f(location, v0) {
       this.storeUniform(location, [v0]);
     }
     /**
-     * Store two float components against the owning program.
-     *
-     * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
-     * @param v0 First component value.
-     * @param v1 Second component value.
-     */
+    
+       * Store two float components against the owning program.
+    
+       *
+    
+       * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+    
+       * @param v0 First component value.
+    
+       * @param v1 Second component value.
+    
+       */
     uniform2f(location, v0, v1) {
       this.storeUniform(location, [v0, v1]);
     }
     /**
-     * Store four float components against the owning program.
-     *
-     * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
-     * @param v0 First component value.
-     * @param v1 Second component value.
-     * @param v2 Third component value.
-     * @param v3 Fourth component value.
-     */
+    
+       * Store four float components against the owning program.
+    
+       *
+    
+       * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+    
+       * @param v0 First component value.
+    
+       * @param v1 Second component value.
+    
+       * @param v2 Third component value.
+    
+       * @param v3 Fourth component value.
+    
+       */
     uniform4f(location, v0, v1, v2, v3) {
       this.storeUniform(location, [v0, v1, v2, v3]);
     }
     /**
-     * Store one integer component as a number against the owning program.
-     *
-     * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
-     * @param v0 Component value.
-     */
+    
+       * Store one integer component as a number against the owning program.
+    
+       *
+    
+       * @param location Handle from getUniformLocation; null is a silent no-op, foreign handles push one INVALID_OPERATION.
+    
+       * @param v0 Component value.
+    
+       */
     uniform1i(location, v0) {
       this.storeUniform(location, [v0]);
     }
     /**
-     * Store uniform components matched by handle identity.
-     *
-     * @param location Handle from getUniformLocation; null is a silent no-op.
-     * @param values Components to copy into the owning program record.
-     * @returns Void; foreign handles push exactly one INVALID_OPERATION.
-     */
+    
+       * Store uniform components matched by handle identity.
+    
+       *
+    
+       * @param location Handle from getUniformLocation; null is a silent no-op.
+    
+       * @param values Components to copy into the owning program record.
+    
+       * @returns Void; foreign handles push exactly one INVALID_OPERATION.
+    
+       */
     storeUniform(location, values) {
       if (location === null) return;
       for (const p of this.programs.values()) {
@@ -4434,10 +4856,14 @@ var __swgl = (() => {
       pushError(this.queue, INVALID_OPERATION);
     }
     /**
-     * Reject draws whose current program is absent or unlinked.
-     *
-     * @returns True when the draw must stop; pushes exactly one INVALID_OPERATION with zero pixel writes.
-     */
+    
+       * Reject draws whose current program is absent or unlinked.
+    
+       *
+    
+       * @returns True when the draw must stop; pushes exactly one INVALID_OPERATION with zero pixel writes.
+    
+       */
     rejectUnlinkedDraw() {
       const p = this.programs.get(this.state.currentProgram);
       if (p === void 0 || p.linked === false || p.linkedProgram === null) {
@@ -4447,23 +4873,32 @@ var __swgl = (() => {
       return false;
     }
     /**
-     * Push one draw-failure code; no state or pixel change.
-     * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
-     */
+    
+       * Push one draw-failure code; no state or pixel change.
+    
+       * @param code One of INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION.
+    
+       */
     reportDrawFailure(code) {
       pushError(this.queue, code);
     }
     /**
-     * Report default-framebuffer completeness; never pushes.
-     * @returns True when width and height are positive.
-     */
+    
+       * Report default-framebuffer completeness; never pushes.
+    
+       * @returns True when width and height are positive.
+    
+       */
     checkDefaultFramebufferComplete() {
       return this.fb.width > 0 && this.fb.height > 0;
     }
     /**
-     * Validate and execute a non-indexed TRIANGLES draw; per-fragment shading via live uniforms on success.
-     * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
-     */
+    
+       * Validate and execute a non-indexed TRIANGLES draw; per-fragment shading via live uniforms on success.
+    
+       * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
+    
+       */
     drawArrays = (mode, first, count) => {
       if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
@@ -4496,9 +4931,12 @@ var __swgl = (() => {
       this.presentAfterDraw();
     };
     /**
-     * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
-     * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
-     */
+    
+       * Validate and execute an indexed TRIANGLES draw via UNSIGNED_SHORT indices.
+    
+       * @param mode Draw mode, TRIANGLES only. @param count Index count. @param type Index type, UNSIGNED_SHORT only. @param offset Byte offset into element bytes.
+    
+       */
     drawElements = (mode, count, type, offset) => {
       if (this.guardIfLost()) return;
       if (mode !== TRIANGLES) {
@@ -4547,17 +4985,24 @@ var __swgl = (() => {
       this.presentAfterDraw();
     };
     /**
-     * Create a renderbuffer handle via the owned store; never pushes.
-     * @returns Fresh non-zero handle.
-     */
+    
+       * Create a renderbuffer handle via the owned store; never pushes.
+    
+       * @returns Fresh non-zero handle.
+    
+       */
     createRenderbuffer() {
       return this.renderbuffers.createRenderbuffer();
     }
     /**
-     * Bind a renderbuffer; pushes exactly one code on rejection.
-     * @param target Must equal RENDERBUFFER.
-     * @param renderbuffer Handle or null to unbind.
-     */
+    
+       * Bind a renderbuffer; pushes exactly one code on rejection.
+    
+       * @param target Must equal RENDERBUFFER.
+    
+       * @param renderbuffer Handle or null to unbind.
+    
+       */
     bindRenderbuffer(target, renderbuffer) {
       if (target !== RENDERBUFFER) {
         pushError(this.queue, INVALID_ENUM);
@@ -4574,12 +5019,18 @@ var __swgl = (() => {
       }
     }
     /**
-     * Allocate renderbuffer storage; pushes exactly one code on rejection.
-     * @param target Must equal RENDERBUFFER.
-     * @param internalFormat DEPTH_COMPONENT16 or DEPTH24_STENCIL8.
-     * @param width Texel width.
-     * @param height Texel height.
-     */
+    
+       * Allocate renderbuffer storage; pushes exactly one code on rejection.
+    
+       * @param target Must equal RENDERBUFFER.
+    
+       * @param internalFormat DEPTH_COMPONENT16 or DEPTH24_STENCIL8.
+    
+       * @param width Texel width.
+    
+       * @param height Texel height.
+    
+       */
     renderbufferStorage(target, internalFormat, width, height) {
       if (target !== RENDERBUFFER) {
         pushError(this.queue, INVALID_ENUM);
@@ -4612,37 +5063,55 @@ var __swgl = (() => {
       }
     }
     /**
-     * Delete a renderbuffer; null/0/unknown are silent no-ops, never pushes.
-     * @param renderbuffer Handle or null.
-     */
+    
+       * Delete a renderbuffer; null/0/unknown are silent no-ops, never pushes.
+    
+       * @param renderbuffer Handle or null.
+    
+       */
     deleteRenderbuffer(renderbuffer) {
       if (renderbuffer === null || renderbuffer === 0) return;
       this.renderbuffers.deleteRenderbuffer(renderbuffer);
     }
     /**
-     * Read normalized depth; null when unavailable, never pushes.
-     * @param handle Renderbuffer handle.
-     * @param x Column.
-     * @param y Row.
-     * @returns Depth in 0..1 or null.
-     */
+    
+       * Read normalized depth; null when unavailable, never pushes.
+    
+       * @param handle Renderbuffer handle.
+    
+       * @param x Column.
+    
+       * @param y Row.
+    
+       * @returns Depth in 0..1 or null.
+    
+       */
     readDepth(handle, x, y) {
       return this.renderbuffers.readDepth(handle, x, y);
     }
     /**
-     * LESS-conditional depth write for tests; never pushes.
-     * @param handle Renderbuffer handle.
-     * @param x Column.
-     * @param y Row.
-     * @param depth Normalized depth.
-     */
+    
+       * LESS-conditional depth write for tests; never pushes.
+    
+       * @param handle Renderbuffer handle.
+    
+       * @param x Column.
+    
+       * @param y Row.
+    
+       * @param depth Normalized depth.
+    
+       */
     writeDepthForTest(handle, x, y, depth) {
       this.renderbuffers.writeDepthForTest(handle, x, y, depth);
     }
     /**
-     * Set draw buffers; validates enum-then-value-then-operation, pushes exactly one code on rejection.
-     * @param buffers Caller-supplied attachment enum list; empty list is a valid no-target config.
-     */
+    
+       * Set draw buffers; validates enum-then-value-then-operation, pushes exactly one code on rejection.
+    
+       * @param buffers Caller-supplied attachment enum list; empty list is a valid no-target config.
+    
+       */
     drawBuffers(buffers) {
       if (this.guardIfLost()) return;
       if (!Array.isArray(buffers)) {
