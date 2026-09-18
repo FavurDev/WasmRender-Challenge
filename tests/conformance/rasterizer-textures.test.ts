@@ -1,8 +1,8 @@
 /**
- * @fileoverview Rasterizer-textures conformance suite: 21 analytic Playwright cases.
+ * @fileoverview Rasterizer-textures conformance suite: 22 analytic Playwright cases.
  *
  * Groups: triangle/coverage (5), depth/pipeline (5), blend (4),
- * texture/sampling (4), readback/presentation (3). Every case drives a real
+ * texture/sampling (5), readback/presentation (3). Every case drives a real
  * canvas context through the intercept harness against renderer.js (never
  * native GL), with a fresh page per case and independent analytic assertions
  * (tolerance 0; blend within 1). No golden PNGs, no snapshots.
@@ -45,6 +45,7 @@ interface DepthClearResult { inner: number[]; err: number; }
 interface ViewportResult { err: number; drained: number; }
 interface BlendDefaultsResult { blend: boolean; src: number; dst: number; eq: number; err: number; }
 interface TextureResult { texIsNum: boolean; err: number; }
+interface QuadResult { bl: number[]; br: number[]; tl: number[]; tr: number[]; err: number; }
 interface NpotResult { px: number[]; err: number; }
 interface OobResult { isNull: boolean; err: number; drained: number; }
 interface PresentResult { rb: number[]; presented: number[]; err: number; }
@@ -221,6 +222,57 @@ const TEXTURE_SCRIPT = `(() => {
   return { texIsNum: typeof tex === "number" && tex !== 0, err: ctx.getError() };
 })()`;
 
+/**
+ * Textured quad (X-5 probe): 2x2 RGBA palette sampled through a real
+ * sampler program over a full-canvas two-triangle quad (NDC -1..1).
+ * Removed flat-path assumption: lifecycle-only upload checks cannot prove
+ * texel output; this script draws and reads back quadrant centers.
+ */
+const TEXTURED_QUAD_SCRIPT = `(() => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64; canvas.height = 64;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("webgl");
+  const tex = ctx.createTexture();
+  ctx.bindTexture(0x0de1, tex);
+  const px = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]);
+  ctx.texImage2D(0x0de1, 0, 0x1908, 2, 2, 0x1908, 0x1401, px);
+  ctx.texParameteri(0x0de1, 0x2801, 0x2600);
+  ctx.texParameteri(0x0de1, 0x2800, 0x2600);
+  ctx.texParameteri(0x0de1, 0x2802, 0x812f);
+  ctx.texParameteri(0x0de1, 0x2803, 0x812f);
+  const vs = ctx.createShader(0x8b31);
+  ctx.shaderSource(vs, "attribute vec3 p; attribute vec2 uv; varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(p, 1.0); }");
+  ctx.compileShader(vs);
+  const fs = ctx.createShader(0x8b30);
+  ctx.shaderSource(fs, "precision mediump float; uniform sampler2D uTex; varying vec2 vUv; void main() { gl_FragColor = texture2D(uTex, vUv); }");
+  ctx.compileShader(fs);
+  const prog = ctx.createProgram();
+  ctx.attachShader(prog, vs);
+  ctx.attachShader(prog, fs);
+  ctx.linkProgram(prog);
+  ctx.useProgram(prog);
+  const pos = ctx.createBuffer();
+  ctx.bindBuffer(0x8892, pos);
+  ctx.bufferData(0x8892, new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0]), 0x88e4);
+  const locP = ctx.getAttribLocation(prog, "p");
+  ctx.vertexAttribPointer(locP, 3, 0x1406, false, 0, 0);
+  ctx.enableVertexAttribArray(locP);
+  const uvb = ctx.createBuffer();
+  ctx.bindBuffer(0x8892, uvb);
+  ctx.bufferData(0x8892, new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]), 0x88e4);
+  const locUv = ctx.getAttribLocation(prog, "uv");
+  ctx.vertexAttribPointer(locUv, 2, 0x1406, false, 0, 0);
+  ctx.enableVertexAttribArray(locUv);
+  ctx.uniform1i(ctx.getUniformLocation(prog, "uTex"), 0);
+  ctx.drawArrays(0x0004, 0, 6);
+  const bl = Array.from(ctx.readPixels(16, 16, 1, 1));
+  const br = Array.from(ctx.readPixels(48, 16, 1, 1));
+  const tl = Array.from(ctx.readPixels(16, 48, 1, 1));
+  const tr = Array.from(ctx.readPixels(48, 48, 1, 1));
+  return { bl, br, tl, tr, err: ctx.getError() };
+})()`;
+
 /** NPOT texture with default mipmap min filter is incomplete; draw leaves clear. */
 const NPOT_SCRIPT = `(() => {
   const canvas = document.createElement("canvas");
@@ -264,7 +316,7 @@ const PRESENT_SCRIPT = `(() => {
   return { presented: Array.from(img.data), rb, err: ctx.getError() };
 })()`;
 
-describe("rasterizer-textures conformance (21 cases)", () => {
+describe("rasterizer-textures conformance (22 cases)", () => {
   describe("triangle/coverage (5)", () => {
     it("T-1 interior pixel is opaque red", async () => {
       // Arrange: fresh page.
@@ -415,6 +467,10 @@ describe("rasterizer-textures conformance (21 cases)", () => {
       const page = await freshPage();
       // Act: draw with blend disabled (default).
       const r = await page.evaluate<TriResult>(TRI_SCRIPT);
+      // Justification: B-3 keeps its pre-existing within-1 threshold because the
+      // honest draw path quantizes the fixed red triangle through float color;
+      // removed flat-path assumption: blend-off overwrite is now read from a real
+      // draw (TRI_SCRIPT) rather than assumed from clear state.
       // Assert: exact source overwrite within tolerance 1.
       for (let i = 0; i < 4; i++) {
         expect(Math.abs((r.inner[i] as number) - [255, 0, 0, 255][i]!)).toBeLessThanOrEqual(1);
@@ -443,6 +499,20 @@ describe("rasterizer-textures conformance (21 cases)", () => {
       expect(r.texIsNum).toBe(true);
       expect(r.err).toBe(G.NO_ERROR);
       await page.close();
+      // Justification: X-1 keeps its lifecycle assertions and adds sampled-output
+      // readback below; removed flat-path assumption: an error-free upload alone
+      // cannot prove texels reach the framebuffer.
+      // Arrange: fresh page for the sampled-output probe.
+      const page2 = await freshPage();
+      // Act: draw the textured quad, read quadrant centers.
+      const q = await page2.evaluate<QuadResult>(TEXTURED_QUAD_SCRIPT);
+      // Assert: NEAREST palette texels land exactly, no error.
+      expect(q.bl).toEqual([255, 0, 0, 255]);
+      expect(q.br).toEqual([0, 255, 0, 255]);
+      expect(q.tl).toEqual([0, 0, 255, 255]);
+      expect(q.tr).toEqual([255, 255, 255, 255]);
+      expect(q.err).toBe(G.NO_ERROR);
+      await page2.close();
     });
 
     it("X-2 texture params accept CLAMP_TO_EDGE", async () => {
@@ -453,6 +523,20 @@ describe("rasterizer-textures conformance (21 cases)", () => {
       // Assert: params accepted without error.
       expect(r.err).toBe(G.NO_ERROR);
       await page.close();
+      // Justification: X-2 keeps its param-acceptance assertion and adds
+      // sampled-output readback below; removed flat-path assumption: accepted
+      // CLAMP_TO_EDGE params alone cannot prove edge texels sample correctly.
+      // Arrange: fresh page for the sampled-output probe.
+      const page2 = await freshPage();
+      // Act: draw the textured quad, read quadrant centers.
+      const q = await page2.evaluate<QuadResult>(TEXTURED_QUAD_SCRIPT);
+      // Assert: clamped edge texels land exactly, no error.
+      expect(q.bl).toEqual([255, 0, 0, 255]);
+      expect(q.br).toEqual([0, 255, 0, 255]);
+      expect(q.tl).toEqual([0, 0, 255, 255]);
+      expect(q.tr).toEqual([255, 255, 255, 255]);
+      expect(q.err).toBe(G.NO_ERROR);
+      await page2.close();
     });
 
     it("X-3 NPOT upload leaves frame clear", async () => {
@@ -473,6 +557,34 @@ describe("rasterizer-textures conformance (21 cases)", () => {
       const r = await page.evaluate<TextureResult>(TEXTURE_SCRIPT);
       // Assert: handle valid.
       expect(r.texIsNum).toBe(true);
+      await page.close();
+      // Justification: X-4 keeps its handle assertion and adds sampled-output
+      // readback below; removed flat-path assumption: a fresh handle alone cannot
+      // prove the bound texture's texels reach the framebuffer.
+      // Arrange: fresh page for the sampled-output probe.
+      const page2 = await freshPage();
+      // Act: draw the textured quad, read quadrant centers.
+      const q = await page2.evaluate<QuadResult>(TEXTURED_QUAD_SCRIPT);
+      // Assert: bound-texture texels land exactly, no error.
+      expect(q.bl).toEqual([255, 0, 0, 255]);
+      expect(q.br).toEqual([0, 255, 0, 255]);
+      expect(q.tl).toEqual([0, 0, 255, 255]);
+      expect(q.tr).toEqual([255, 255, 255, 255]);
+      expect(q.err).toBe(G.NO_ERROR);
+      await page2.close();
+    });
+
+    it("X-5 textured quad returns exact palette texels", async () => {
+      // Arrange: fresh page.
+      const page = await freshPage();
+      // Act: draw the full-canvas 2x2 NEAREST/CLAMP quad, read quadrant centers.
+      const r = await page.evaluate<QuadResult>(TEXTURED_QUAD_SCRIPT);
+      // Assert: each quadrant shows its palette texel exactly, no error.
+      expect(r.bl).toEqual([255, 0, 0, 255]);
+      expect(r.br).toEqual([0, 255, 0, 255]);
+      expect(r.tl).toEqual([0, 0, 255, 255]);
+      expect(r.tr).toEqual([255, 255, 255, 255]);
+      expect(r.err).toBe(G.NO_ERROR);
       await page.close();
     });
   });

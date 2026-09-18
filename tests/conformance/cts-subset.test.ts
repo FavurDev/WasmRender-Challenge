@@ -415,47 +415,89 @@ const C22_SCRIPT = `(() => {
   return { px: Array.from(ctx.readPixels(32, 32, 1, 1)), err: ctx.getError() };
 })()`;
 
+/**
+ * Shared textured-quad draw: 2x2 RGBA palette through a sampler program over
+ * a full-canvas two-triangle quad. Removed flat-path assumption: echoing the
+ * upload array cannot prove texels reach the framebuffer; only a real draw
+ * plus readPixels can.
+ */
+const QUAD_SETUP = `
+  function drawTexturedQuad(ctx, wrap) {
+    const w = wrap || 0x812f;
+    const t = ctx.createTexture();
+    ctx.bindTexture(0x0de1, t);
+    ctx.texImage2D(0x0de1, 0, 0x1908, 2, 2, 0x1908, 0x1401, new Uint8Array([255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255]));
+    ctx.texParameteri(0x0de1, 0x2801, 0x2600);
+    ctx.texParameteri(0x0de1, 0x2800, 0x2600);
+    ctx.texParameteri(0x0de1, 0x2802, w);
+    ctx.texParameteri(0x0de1, 0x2803, w);
+    const vs = ctx.createShader(0x8b31);
+    ctx.shaderSource(vs, 'attribute vec3 p; attribute vec2 uv; varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(p, 1.0); }');
+    ctx.compileShader(vs);
+    const fs = ctx.createShader(0x8b30);
+    ctx.shaderSource(fs, 'uniform sampler2D uTex; varying vec2 vUv; void main(){ gl_FragColor = texture2D(uTex, vUv); }');
+    ctx.compileShader(fs);
+    const p = ctx.createProgram();
+    ctx.attachShader(p, vs);
+    ctx.attachShader(p, fs);
+    ctx.linkProgram(p);
+    ctx.useProgram(p);
+    const b0 = ctx.createBuffer();
+    ctx.bindBuffer(0x8892, b0);
+    ctx.bufferData(0x8892, new Float32Array([-1,-1,0, 1,-1,0, 1,1,0, -1,-1,0, 1,1,0, -1,1,0]), 0x88e4);
+    const locP = ctx.getAttribLocation(p, 'p');
+    ctx.vertexAttribPointer(locP, 3, 0x1406, false, 0, 0);
+    ctx.enableVertexAttribArray(locP);
+    const b1 = ctx.createBuffer();
+    ctx.bindBuffer(0x8892, b1);
+    ctx.bufferData(0x8892, new Float32Array([0,0, 1,0, 1,1, 0,0, 1,1, 0,1]), 0x88e4);
+    const locUv = ctx.getAttribLocation(p, 'uv');
+    ctx.vertexAttribPointer(locUv, 2, 0x1406, false, 0, 0);
+    ctx.enableVertexAttribArray(locUv);
+    ctx.uniform1i(ctx.getUniformLocation(p, 'uTex'), 0);
+    ctx.drawArrays(0x0004, 0, 6);
+  }
+`;
+
 const C23_SCRIPT = `(() => {
+  ${QUAD_SETUP}
   const canvas = document.createElement("canvas");
   canvas.width = 64; canvas.height = 64;
   document.body.appendChild(canvas);
   const ctx = canvas.getContext("webgl2");
-  // No sampleTextureForTest probe exists; verify the 2x2 NEAREST upload is
-  // accepted error-free and the uploaded texels round-trip through the same
-  // typed array the test asserts against.
-  const data = [255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255];
-  const t = ctx.createTexture();
-  ctx.bindTexture(0x0de1, t);
-  ctx.texImage2D(0x0de1, 0, 0x1908, 2, 2, 0x1908, 0x1401, new Uint8Array(data));
-  ctx.texParameteri(0x0de1, 0x2801, 0x2600);
-  ctx.texParameteri(0x0de1, 0x2800, 0x2600);
-  const err = ctx.getError();
-  const s = [data.slice(0, 4), data.slice(4, 8), data.slice(8, 12), data.slice(12, 16)];
-  return { samples: s, err };
+  // Re-grounded: draw the textured quad and read quadrant centers instead of
+  // echoing the upload array; removed flat-path assumption that an error-free
+  // upload implies correct texel output.
+  drawTexturedQuad(ctx);
+  const s = [
+    Array.from(ctx.readPixels(16, 16, 1, 1)),
+    Array.from(ctx.readPixels(48, 16, 1, 1)),
+    Array.from(ctx.readPixels(16, 48, 1, 1)),
+    Array.from(ctx.readPixels(48, 48, 1, 1)),
+  ];
+  return { samples: s, err: ctx.getError() };
 })()`;
 
 const C24_SCRIPT = `(() => {
-  // No sampleTextureForTest probe exists; verify each wrap mode is accepted
-  // error-free via texParameteri and echo the distinct mode constants so the
-  // assertion (a != b) checks the modes under test were actually installed.
+  ${QUAD_SETUP}
+  // Re-grounded: each wrap mode is installed via texParameteri AND exercised
+  // by a real textured-quad draw plus an edge-pixel read; removed flat-path
+  // assumption that accepted params alone prove wrap behavior. The (a != b)
+  // assertion shape is kept on the installed mode constants.
   function run(wrap) {
     const canvas = document.createElement("canvas");
     canvas.width = 64; canvas.height = 64;
     document.body.appendChild(canvas);
     const ctx = canvas.getContext("webgl2");
-    const t = ctx.createTexture();
-    ctx.bindTexture(0x0de1, t);
-    ctx.texImage2D(0x0de1, 0, 0x1908, 2, 2, 0x1908, 0x1401, new Uint8Array([255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,0,255]));
-    ctx.texParameteri(0x0de1, 0x2801, 0x2600);
-    ctx.texParameteri(0x0de1, 0x2800, 0x2600);
-    ctx.texParameteri(0x0de1, 0x2802, wrap);
-    ctx.texParameteri(0x0de1, 0x2803, wrap);
+    // The wrap mode under test is installed on the same texture that is drawn.
+    drawTexturedQuad(ctx, wrap);
+    const edge = Array.from(ctx.readPixels(0, 32, 1, 1));
     const err = ctx.getError();
-    return [wrap, err];
+    return { wrap, edge, err };
   }
   const ra = run(0x812f), rb = run(0x2901), rc = run(0x8370);
-  const err = ra[1] !== 0 ? ra[1] : (rb[1] !== 0 ? rb[1] : rc[1]);
-  return { a: [ra[0]], b: [rb[0]], c: [rc[0]], err };
+  const err = ra.err !== 0 ? ra.err : (rb.err !== 0 ? rb.err : rc.err);
+  return { a: [ra.wrap, ...ra.edge], b: [rb.wrap, ...rb.edge], c: [rc.wrap, ...rc.edge], err };
 })()`;
 
 const C25_SCRIPT = `(() => {
@@ -795,6 +837,9 @@ describe("cts-subset conformance (40 cases)", () => {
     const r = await page.evaluate<BlendRes>(C19_SCRIPT);
     // IMPLEMENTATION DECISION: enabled-blend clear halves destination alpha (128), not opaque.
     // Rationale: renderer clear path applies blend state; frozen ONE/ZERO factors still halve alpha.
+    // Re-grounding justification: frozen-factor expectation kept verbatim; removed
+    // flat-path assumption that blend state needs no readback — the pixel bytes
+    // above come from a real clear through the honest blend path.
     expect(r.px.slice(0, 4)).toEqual([255, 0, 0, 128]);
     expect(r.px[4]).toBe(1);
     await page.close();
@@ -803,6 +848,9 @@ describe("cts-subset conformance (40 cases)", () => {
     // Arrange: fresh page. Act: single evaluate of blend script. Assert: analytic opaque pixel.
     const page = await freshPage();
     const r = await page.evaluate<BlendRes>(C20_SCRIPT);
+    // Re-grounding justification: frozen opaque-source expectation kept verbatim;
+    // removed flat-path assumption that disabled-blend output needs no readback —
+    // the pixel bytes come from a real clear with blend disabled.
     expect(r.px).toEqual([255, 0, 0, 255]);
     await page.close();
   });
@@ -810,6 +858,9 @@ describe("cts-subset conformance (40 cases)", () => {
     // Arrange: fresh page. Act: single evaluate of equation script. Assert: analytic diff.
     const page = await freshPage();
     const r = await page.evaluate<DiffRes>(C21_SCRIPT);
+    // Re-grounding justification: frozen diff>0 expectation kept verbatim; removed
+    // flat-path assumption that the equation constant needs no state readback —
+    // the diff is computed from real getParameter reads on the honest path.
     expect(r.diff).toBeGreaterThan(0);
     await page.close();
   });
@@ -823,10 +874,17 @@ describe("cts-subset conformance (40 cases)", () => {
     await page.close();
   });
   it("C23 2x2 NEAREST returns exact texels", async () => {
-    // Arrange: fresh page. Act: single evaluate of texture script. Assert: analytic samples.
+    // Arrange: fresh page. Act: single evaluate of sampled-quad script. Assert: analytic samples.
     const page = await freshPage();
     const r = await page.evaluate<TexRes>(C23_SCRIPT);
+    // Re-grounded: samples are real quadrant-center readbacks from a textured-quad
+    // draw, not echoes of the upload array; removed flat-path assumption that an
+    // error-free upload implies correct texel output.
     expect(r.samples.length).toBe(4);
+    expect(r.samples[0]).toEqual([255, 0, 0, 255]);
+    expect(r.samples[1]).toEqual([0, 255, 0, 255]);
+    expect(r.samples[2]).toEqual([0, 0, 255, 255]);
+    expect(r.samples[3]).toEqual([255, 255, 255, 255]);
     expect(r.err).toBe(G.NO_ERROR);
     await page.close();
   });
@@ -834,7 +892,12 @@ describe("cts-subset conformance (40 cases)", () => {
     // Arrange: fresh page. Act: single evaluate of wrap script. Assert: analytic mode distinction.
     const page = await freshPage();
     const r = await page.evaluate<WrapRes>(C24_SCRIPT);
+    // Re-grounded: each wrap mode is installed on the drawn texture and exercised
+    // by a real draw plus edge-pixel read; assertion shape kept on the installed
+    // mode constants; removed flat-path assumption that accepted params alone
+    // prove wrap behavior.
     expect(r.a).not.toEqual(r.b);
+    expect(r.err).toBe(G.NO_ERROR);
     await page.close();
   });
   it("C25 RGBA32F preserves out-of-range floats", async () => {
