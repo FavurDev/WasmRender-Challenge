@@ -1,12 +1,12 @@
 {
   "inputs": {
     "src/renderer/gl-constants.ts": {
-      "bytes": 7233,
+      "bytes": 7305,
       "imports": [],
       "format": "esm"
     },
     "src/renderer/state.ts": {
-      "bytes": 6553,
+      "bytes": 6622,
       "imports": [
         {
           "path": "src/renderer/gl-constants.ts",
@@ -60,7 +60,7 @@
       "format": "esm"
     },
     "src/renderer/rasterizer.ts": {
-      "bytes": 32152,
+      "bytes": 32237,
       "imports": [
         {
           "path": "src/renderer/gl-constants.ts",
@@ -187,7 +187,7 @@
       "format": "esm"
     },
     "src/renderer/context.ts": {
-      "bytes": 68303,
+      "bytes": 68414,
       "imports": [
         {
           "path": "src/renderer/state.ts",

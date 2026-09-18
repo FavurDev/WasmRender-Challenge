@@ -8,6 +8,7 @@
 // - Sprint 1: Created GLState capability store with spec-exact defaults and validation.
 // - Sprint 2: Extended GLState for Sprint 2 draw-path state (Task 2).
 // - Sprint 5: Verified GLState wiring for VAO/divisor/instanced/drawBuffers paths (no state-shape change).
+// - Phase 2 Sprint 2: Added six stencil fields with spec defaults.
 import {
   ALWAYS,
   BLEND,

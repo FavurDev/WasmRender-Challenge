@@ -14,6 +14,7 @@
 // - Sprint 5: Added instanced fan-out via writeFragmentToAttachments with fragmentColors/fragScratch.
 // - Sprint 6: Deterministic stencil gate (nonzero stencil passes) replacing pass-through.
 // - Phase 2 Sprint 1: Added per-fragment shading path (T2).
+// - Phase 2 Sprint 2: Added applyStencil + compute-early commit-late fillTriangle.
 import type { Framebuffer } from './framebuffer';
 import type { GLState } from './state';
 import type { FragmentClosure } from './shader-compiler/codegen';

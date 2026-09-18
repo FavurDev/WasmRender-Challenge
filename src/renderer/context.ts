@@ -39,6 +39,7 @@
 // - Sprint 5: Added VAO/divisor/instanced/drawBuffers paths plus RenderbufferStore and ExtensionManager ownership.
 
 // - Phase 2 Sprint 1: Assembled sampler/uniform inputs for per-fragment shading (T3).
+// - Phase 2 Sprint 2: Added depthFunc/blendFunc/blendEquation/stencilFunc/stencilOp + 11-pname getParameter.
 
 import { GLState } from "./state";
 
