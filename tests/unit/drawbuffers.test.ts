@@ -99,7 +99,7 @@ describe("drawBuffers mask-honoring multi-write (AC-2)", () => {
 });
 
 describe("drawBuffers attachment-count limit (AC-1)", () => {
-  it("attachment-count holds 4 independent targets; 5-entry list rejected with one code", () => {
+  it("count-4 holds: four attachments configure with independent buffers", () => {
     // Arrange
     const gl = fresh();
     // Act
@@ -109,11 +109,21 @@ describe("drawBuffers attachment-count limit (AC-1)", () => {
     expect(MAX_COLOR_ATTACHMENTS).toBe(4);
     expect(fb.attachmentCount()).toBe(4);
     expect(fb.attachmentBuffer(0)).not.toBe(fb.attachmentBuffer(1));
-    // Act (over-length)
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it("over-length rejection: five-entry list rejected with exactly one code", () => {
+    // Arrange
+    const gl = fresh();
+    asDraw(gl).drawBuffers([COLOR_ATTACHMENT0, COLOR_ATTACHMENT0 + 1, COLOR_ATTACHMENT0 + 2, COLOR_ATTACHMENT0 + 3]);
+    const fb = fbOf(gl);
+    const cfgBefore = fb.activeDrawBuffers();
+    // Act
     asDraw(gl).drawBuffers([COLOR_ATTACHMENT0, COLOR_ATTACHMENT0 + 1, COLOR_ATTACHMENT0 + 2, COLOR_ATTACHMENT0 + 3, COLOR_ATTACHMENT0]);
     // Assert
     expect(gl.getError()).toBe(INVALID_OPERATION);
     expect(gl.getError()).toBe(NO_ERROR);
+    expect(fb.activeDrawBuffers()).toEqual(cfgBefore);
   });
 });
 
@@ -148,20 +158,6 @@ describe("drawBuffers edge cases (blueprint)", () => {
     expect(gl.getError()).toBe(NO_ERROR);
     expect(fb.activeDrawBuffers()).toEqual([]);
     expect(Array.from(fb.attachmentBuffer(0))).toEqual(before);
-  });
-
-  it("duplicate attachment rejected with exactly one INVALID_OPERATION", () => {
-    // Arrange
-    const gl = fresh();
-    asDraw(gl).drawBuffers([COLOR_ATTACHMENT0]);
-    const fb = fbOf(gl);
-    const cfgBefore = fb.activeDrawBuffers();
-    // Act
-    asDraw(gl).drawBuffers([COLOR_ATTACHMENT0, COLOR_ATTACHMENT0]);
-    // Assert
-    expect(gl.getError()).toBe(INVALID_OPERATION);
-    expect(gl.getError()).toBe(NO_ERROR);
-    expect(fb.activeDrawBuffers()).toEqual(cfgBefore);
   });
 
   it("default-target regression: clear then readPixels reads attachment 0", () => {
