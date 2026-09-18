@@ -15,6 +15,7 @@
 // - Sprint 6: Deterministic stencil gate (nonzero stencil passes) replacing pass-through.
 import type { Framebuffer } from './framebuffer';
 import type { GLState } from './state';
+import type { FragmentClosure } from './shader-compiler/codegen';
 import { ALWAYS, COLOR_ATTACHMENT0, CONSTANT_ALPHA, CONSTANT_COLOR, DST_ALPHA, DST_COLOR, EQUAL, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, ZERO } from './gl-constants';
 
 /** One post-transform vertex consumed by coverage math. */
@@ -38,6 +39,8 @@ export interface DrawCall {
   indices: Uint16Array | number[] | null;
   instanceCount: number;
   samplers: TextureBinding[];
+  uniforms?: Record<string, number[]>;
+  colorOut?: number[];
   fragmentColor: [number, number, number, number];
   fragmentColors?: Array<[number, number, number, number]>;
   fragScratch?: Array<[number, number, number, number]>;
@@ -129,22 +132,36 @@ function prepareVaryingScratch(
   }
 }
 
-/** Fragment closure seam shape owned by the draw program. */
-interface FragmentProgram {
+/** Legacy fragment seam kept as coverage fallback when no T1 closure present. */
+interface LegacyFragmentProgram {
   fragment: (varyings: Float32Array) => void;
 }
 
 /**
- * Returns the fragment closure when the program exposes one, else null.
+ * Resolves the T1 fragment closure once per draw from the program value.
  *
  * @param program Draw program value from the DrawCall descriptor.
- * @returns Fragment closure holder or null when absent.
+ * @returns T1 fragment closure or null when absent.
  */
-function asFragmentProgram(program: unknown): FragmentProgram | null {
+function resolveFragmentClosure(program: unknown): FragmentClosure | null {
+  if (typeof program !== 'object' || program === null) return null;
+  const rec = program as Record<string, unknown>;
+  const c = rec['fragmentClosure'];
+  if (typeof c === 'function') return c as FragmentClosure;
+  return null;
+}
+
+/**
+ * Returns the legacy fragment holder when the program exposes one, else null.
+ *
+ * @param program Draw program value from the DrawCall descriptor.
+ * @returns Legacy fragment holder or null when absent.
+ */
+function asLegacyFragmentProgram(program: unknown): LegacyFragmentProgram | null {
   if (typeof program !== 'object' || program === null) return null;
   const rec = program as Record<string, unknown>;
   if (typeof rec['fragment'] !== 'function') return null;
-  return program as FragmentProgram;
+  return program as LegacyFragmentProgram;
 }
 
 /**
@@ -379,7 +396,12 @@ function writeFragment(px: number, py: number, incomingDepth: number, frag: read
  * @param scratchInvW Per-draw scratch holding the invW triple.
  * @param outVaryings Per-draw reused output buffer for recovered varyings.
  * @param varyingCount Number of varyings per vertex.
- * @param prog Fragment closure holder or null when coverage-only.
+ * @param closure T1 fragment closure or null when coverage-only.
+ * @param legacy Legacy fragment holder fallback or null.
+ * @param uniforms Live uniform map threaded to the closure.
+ * @param samplers Ordered sampler array threaded to the closure.
+ * @param colorOut Caller-owned four-element color scratch reused per pixel.
+ * @param fragBytes Caller-owned byte tuple scratch reused per pixel.
  * @returns Nothing; mutates the framebuffer color store and, when depthMask allows, the depth store.
  */
 function fillTriangle(
@@ -396,7 +418,12 @@ function fillTriangle(
   scratchInvW?: Float32Array,
   outVaryings?: Float32Array,
   varyingCount?: number,
-  prog?: FragmentProgram | null,
+  closure?: FragmentClosure | null,
+  legacy?: LegacyFragmentProgram | null,
+  uniforms?: Record<string, number[]>,
+  samplers?: ReadonlyArray<unknown>,
+  colorOut?: number[],
+  fragBytes?: [number, number, number, number],
   frags?: Array<[number, number, number, number]>,
   fragScratch?: Array<[number, number, number, number]>,
 ): void {
@@ -496,11 +523,20 @@ function fillTriangle(
             const num = l0 * (scratchAw[k] as number) + l1 * (scratchAw[vc + k] as number) + l2 * (scratchAw[2 * vc + k] as number);
             outVaryings[k] = num / invW;
           }
-          if (prog !== undefined && prog !== null) prog.fragment(outVaryings);
-        } else if (prog !== undefined && prog !== null && outVaryings !== undefined) {
-          prog.fragment(outVaryings);
         }
-        writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
+        if (closure !== undefined && closure !== null && outVaryings !== undefined && colorOut !== undefined && fragBytes !== undefined && uniforms !== undefined && samplers !== undefined) {
+          closure(outVaryings as unknown as Readonly<number[]>, uniforms, samplers, colorOut);
+          for (let k = 0; k < 4; k++) {
+            const v = colorOut[k] as number;
+            const byte = v <= 1.0001 && v >= -0.0001 ? v * 255 : v;
+            const r = Math.round(byte);
+            fragBytes[k] = r < 0 ? 0 : r > 255 ? 255 : r;
+          }
+          writeFragment(px, py, incomingDepth, fragBytes, fb, st, frags, fragScratch);
+        } else {
+          if (legacy !== undefined && legacy !== null && outVaryings !== undefined) legacy.fragment(outVaryings);
+          writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
+        }
       }
       e0 += a0;
       e1 += a1;
@@ -523,7 +559,12 @@ export function drawArraysImpl(call: DrawCall): void {
   const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
   const scratchInvW = new Float32Array(3);
   const outVaryings = new Float32Array(varyingCount);
-  const prog = asFragmentProgram(call.program);
+  const closure = resolveFragmentClosure(call.program);
+  const legacy = closure === null ? asLegacyFragmentProgram(call.program) : null;
+  const uniforms = call.uniforms ?? {};
+  const samplerArray: unknown[] = call.samplers as unknown[];
+  const colorOut: number[] = call.colorOut ?? [0, 0, 0, 0];
+  const fragBytes: [number, number, number, number] = [0, 0, 0, 0];
   const instances = call.instanceCount > 0 ? call.instanceCount : 1;
   const perInstance = Math.floor(call.vertices.length / instances);
   for (let inst = 0; inst < instances; inst++) {
@@ -538,7 +579,7 @@ export function drawArraysImpl(call: DrawCall): void {
       const s2 = project(v2, call.state.viewport);
       if (s0 === null || s1 === null || s2 === null) continue;
       if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, closure, legacy, uniforms, samplerArray, colorOut, fragBytes, call.fragmentColors, call.fragScratch);
     }
   }
 }
@@ -556,7 +597,12 @@ export function drawElementsImpl(call: DrawCall): void {
   const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
   const scratchInvW = new Float32Array(3);
   const outVaryings = new Float32Array(varyingCount);
-  const prog = asFragmentProgram(call.program);
+  const closure = resolveFragmentClosure(call.program);
+  const legacy = closure === null ? asLegacyFragmentProgram(call.program) : null;
+  const uniforms = call.uniforms ?? {};
+  const samplerArray: unknown[] = call.samplers as unknown[];
+  const colorOut: number[] = call.colorOut ?? [0, 0, 0, 0];
+  const fragBytes: [number, number, number, number] = [0, 0, 0, 0];
   const instances = call.instanceCount > 0 ? call.instanceCount : 1;
   const perCount = Math.floor(idx.length / instances);
   for (let inst = 0; inst < instances; inst++) {
@@ -574,7 +620,7 @@ export function drawElementsImpl(call: DrawCall): void {
       const s2 = project(v2, call.state.viewport);
       if (s0 === null || s1 === null || s2 === null) continue;
       if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+      fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, closure, legacy, uniforms, samplerArray, colorOut, fragBytes, call.fragmentColors, call.fragScratch);
     }
   }
 }
