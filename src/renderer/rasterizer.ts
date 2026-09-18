@@ -13,6 +13,7 @@
 // - Sprint 4: Created coverage core with top-left rule, perspective-correct varyings, pipeline, and blending.
 // - Sprint 5: Added instanced fan-out via writeFragmentToAttachments with fragmentColors/fragScratch.
 // - Sprint 6: Deterministic stencil gate (nonzero stencil passes) replacing pass-through.
+// - Phase 2 Sprint 1: Added per-fragment shading path (T2).
 import type { Framebuffer } from './framebuffer';
 import type { GLState } from './state';
 import type { FragmentClosure } from './shader-compiler/codegen';

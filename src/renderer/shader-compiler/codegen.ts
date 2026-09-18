@@ -3,6 +3,7 @@
  */
 // CHANGELOG:
 // - Sprint 3: Created AST-to-closure lowering plus compileShaderSource orchestration (Task 5).
+// - Phase 2 Sprint 1: Rewired fragment closure for per-fragment shading (T1).
 import { tokenize } from "./tokenizer";
 import { parse } from "./parser";
 import type { ASTProgram, Declaration, FunctionDef } from "./parser";

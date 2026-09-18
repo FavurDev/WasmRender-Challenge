@@ -18,6 +18,7 @@
 // - Sprint 2: Extended SoftwareWebGLContext with BufferStore ownership and draw paths (Tasks 1/3/4).
 // - Sprint 4: Wired sampler bindings, exact readPixels, and per-draw presentToCanvas.
 // - Sprint 5: Added VAO/divisor/instanced/drawBuffers paths plus RenderbufferStore and ExtensionManager ownership.
+// - Phase 2 Sprint 1: Assembled sampler/uniform inputs for per-fragment shading (T3).
 import { GLState } from "./state";
 import { Framebuffer, OutOfMemoryError } from "./framebuffer";
 import { pushError, drainError, ShaderCompileError, InvalidEnumError, InvalidValueError, InvalidOperationError, OutOfMemoryError as QueueOutOfMemoryError } from "./errors";
