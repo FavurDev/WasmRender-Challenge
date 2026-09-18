@@ -236,6 +236,20 @@ export function applyStencil(px: number, py: number, st: GLState, stencil: Uint8
   return pass;
 }
 
+/**
+ * Legacy stencil predicate superseded by applyStencil.
+ *
+ * Retained for reference only; uncalled after Task 6 fillTriangle rewire.
+ * Do not reintroduce as a loop guard — applyStencil is the sole stencil writer.
+ *
+ * @param px Pixel x coordinate.
+ * @param py Pixel y coordinate.
+ * @param st Pipeline state carrying the stencilTest flag.
+ * @param stencil Stencil buffer storage.
+ * @param width Framebuffer width for indexing.
+ * @returns True when stencil test is disabled or stored byte is nonzero.
+ * @deprecated Uncalled since Task 6; use applyStencil instead.
+ */
 function evaluateStencil(px: number, py: number, st: GLState, stencil: Uint8Array, width: number): boolean {
   if (!st.stencilTest) return true;
   return (stencil[py * width + px] as number) !== 0;
@@ -536,10 +550,6 @@ function fillTriangle(
           e0 += a0; e1 += a1; e2 += a2;
           continue;
         }
-        if (!evaluateStencil(px, py, st, fb.stencil, fw)) {
-          e0 += a0; e1 += a1; e2 += a2;
-          continue;
-        }
         const l0 = e0 / area;
         const l1 = e1 / area;
         const l2 = e2 / area;
@@ -552,7 +562,13 @@ function fillTriangle(
         }
         const storedDepth = fb.depth[py * fw + px] as number;
         // IMPLEMENTATION DECISION: depth test runs independent of depthMask; depthMask gates only the depth store write in writeFragment. Rationale: pseudocode Depth Compare + Mask-Gated Writes sections and SOW-REQ-009 require the compare whenever depthTest is true. Alternatives: gating the compare on depthMask (spec violation, bypasses depth test).
-        if (!evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest)) {
+        const depthWillPass = evaluateDepth(st.depthFunc, incomingDepth, storedDepth, st.depthTest);
+        const stencilPass = applyStencil(px, py, st, fb.stencil, fw, depthWillPass);
+        if (!stencilPass) {
+          e0 += a0; e1 += a1; e2 += a2;
+          continue;
+        }
+        if (!depthWillPass) {
           e0 += a0; e1 += a1; e2 += a2;
           continue;
         }
