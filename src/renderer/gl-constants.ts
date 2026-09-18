@@ -151,6 +151,13 @@ export const DEPTH_WRITEMASK = 0x0b72;
 export const DEPTH_CLEAR_VALUE = 0x0b73;
 export const DEPTH_FUNC = 0x0b74;
 export const STENCIL_CLEAR_VALUE = 0x0b91;
+// Stencil getParameter query enums (STENCIL_FUNC..STENCIL_REF, 0x0B92..0x0B97).
+export const STENCIL_FUNC = 0x0b92;
+export const STENCIL_VALUE_MASK = 0x0b93;
+export const STENCIL_FAIL = 0x0b94;
+export const STENCIL_PASS_DEPTH_FAIL = 0x0b95;
+export const STENCIL_PASS_DEPTH_PASS = 0x0b96;
+export const STENCIL_REF = 0x0b97;
 export const STENCIL_WRITEMASK = 0x0b98;
 export const VIEWPORT = 0x0ba2;
 export const SCISSOR_BOX = 0x0c10;

@@ -9,9 +9,11 @@
 // - Sprint 2: Extended GLState for Sprint 2 draw-path state (Task 2).
 // - Sprint 5: Verified GLState wiring for VAO/divisor/instanced/drawBuffers paths (no state-shape change).
 import {
+  ALWAYS,
   BLEND,
   CULL_FACE,
   DEPTH_TEST,
+  KEEP,
   FUNC_ADD,
   INVALID_ENUM,
   INVALID_VALUE,
@@ -35,6 +37,13 @@ export class GLState {
   depthMask = true;
   colorMask: [boolean, boolean, boolean, boolean] = [true, true, true, true];
   stencilTest = false;
+  // Stencil func/ref/mask + fail/zfail/zpass ops (STENCIL_FUNC/REF/VALUE_MASK/FAIL/PASS_DEPTH_FAIL/PASS_DEPTH_PASS).
+  stencilFunc: number = ALWAYS;
+  stencilRef = 0;
+  stencilValueMask = 0xff;
+  stencilFail: number = KEEP;
+  stencilPassDepthFail: number = KEEP;
+  stencilPassDepthPass: number = KEEP;
   blendEnabled = false;
   blendSrcRGB: number = ONE;
   blendDstRGB: number = ZERO;
