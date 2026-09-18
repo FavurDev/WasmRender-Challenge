@@ -682,13 +682,11 @@ export class SoftwareWebGLContext {
 
   }
 
-  /** Mark context restored; drains queued codes so post-restore head is clean. */
+  /** Mark context restored; no error-queue contact. */
 
   restoreContext(): void {
 
     this.extensions.markRestored();
-
-    this.queue.length = 0;
 
   }
 
