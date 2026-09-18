@@ -501,10 +501,20 @@ export class SoftwareWebGLContext {
     }
     return out;
   }
-  /** Derive per-attachment fragment colors: base closure color plus deterministic complement for plane 1. */
-  private deriveFragmentColors(prog: ProgramRecord): Array<[number, number, number, number]> {
-    const base = this.deriveFragmentColor(prog);
-    return [base, [255 - base[0], 255 - base[1], 255 - base[2], base[3]]];
+  /**
+   * Build the live name-keyed uniform map for one draw from the program record.
+   * @param prog Program record holding handle-id-keyed uniform values.
+   * @returns Fresh record mapping uniform name to value array.
+   */
+  private assembleUniforms(prog: ProgramRecord): Record<string, number[]> {
+    const out: Record<string, number[]> = {};
+    if (prog.linkedProgram !== null) {
+      for (const [name, handle] of prog.linkedProgram.uniformLocations) {
+        const vals = prog.uniformValues.get(handle.id);
+        if (vals !== undefined) out[name] = [...vals];
+      }
+    }
+    return out;
   }
   /** Caller-owned per-fragment scratch reused across fragments; zero per-fragment allocation. */
   private fragScratch: Array<[number, number, number, number]> = [];
@@ -518,18 +528,6 @@ export class SoftwareWebGLContext {
       return this.fb.readAttachment(x, y, w, h, index);
     } catch {
       return null;
-    }
-  }
-  /** Derive fragment color by invoking the linked fragment closure once. */
-  private deriveFragmentColor(prog: ProgramRecord): [number, number, number, number] {
-    try {
-      const frag = (prog.linkedProgram as unknown as { fragmentClosure: (v: Float32Array, u: Record<string, number[]>, s: unknown, out: number[]) => void }).fragmentClosure;
-      const out = [0, 0, 0, 0];
-      frag(new Float32Array(0), {}, undefined, out);
-      const clamp = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
-      return [clamp(out[0] as number), clamp(out[1] as number), clamp(out[2] as number), clamp(out[3] as number)];
-    } catch {
-      return [255, 0, 0, 255];
     }
   }
   /** Build one vertex combining slot-0 XYZ with slot-1 XY offset resolved via divisor formula. */
@@ -602,7 +600,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -635,7 +633,7 @@ export class SoftwareWebGLContext {
     for (let inst = 0; inst < instanceCount; inst++) {
       for (let i = 0; i < count; i++) indices[inst * count + i] = inst * perCount + i;
     }
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawElementsImpl(call);
     this.presentAfterDraw();
   };
@@ -1043,7 +1041,7 @@ export class SoftwareWebGLContext {
     return this.fb.width > 0 && this.fb.height > 0;
   }
   /**
-   * Validate and execute a non-indexed TRIANGLES draw; placeholder shading on success.
+   * Validate and execute a non-indexed TRIANGLES draw; per-fragment shading via live uniforms on success.
    * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
    */
   drawArrays = (mode: number, first: number, count: number): void => {
@@ -1058,7 +1056,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -1085,7 +1083,7 @@ export class SoftwareWebGLContext {
     for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const indices = new Uint16Array(ordinals);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawElementsImpl(call);
     this.presentAfterDraw();
   }
