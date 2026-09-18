@@ -17,7 +17,7 @@
 import type { Framebuffer } from './framebuffer';
 import type { GLState } from './state';
 import type { FragmentClosure } from './shader-compiler/codegen';
-import { ALWAYS, COLOR_ATTACHMENT0, CONSTANT_ALPHA, CONSTANT_COLOR, DST_ALPHA, DST_COLOR, EQUAL, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, ZERO } from './gl-constants';
+import { ALWAYS, COLOR_ATTACHMENT0, CONSTANT_ALPHA, CONSTANT_COLOR, DECR, DECR_WRAP, DST_ALPHA, DST_COLOR, EQUAL, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, INCR, INCR_WRAP, INVERT, KEEP, LEQUAL, LESS, NEVER, NOTEQUAL, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, REPLACE, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, ZERO } from './gl-constants';
 
 /** One post-transform vertex consumed by coverage math. */
 export interface Vertex {
@@ -187,15 +187,55 @@ function evaluateScissor(px: number, py: number, st: GLState): boolean {
 }
 
 /**
- * Minimal deterministic stencil gate: nonzero stencil value passes while stencilTest is true.
+ * Tests one fragment against the stencil function and applies the selected update through the write mask.
  *
  * @param px Integer pixel x.
  * @param py Integer pixel y.
- * @param st State snapshot supplying stencilTest.
- * @param stencil Stencil store, read only and never written here.
- * @param width Framebuffer width for indexing.
- * @returns True when stencilTest is off or stored value is nonzero; false otherwise.
+ * @param st State snapshot supplying stencilTest, func, ref, masks, and ops.
+ * @param stencil Stencil store written in place at most one byte.
+ * @param width Row stride for indexing.
+ * @param depthWillPass Precomputed pure depth outcome selecting zfail vs zpass op.
+ * @returns True when the fragment passes the stencil test.
  */
+export function applyStencil(px: number, py: number, st: GLState, stencil: Uint8Array, width: number, depthWillPass: boolean): boolean {
+  if (!st.stencilTest) return true;
+  const idx = py * width + px;
+  const stored = stencil[idx] as number;
+  const func = st.stencilFunc;
+  const ref = st.stencilRef;
+  const valueMask = st.stencilValueMask;
+  const maskedRef = ref & valueMask;
+  const maskedStored = stored & valueMask;
+  let pass = false;
+  if (func === NEVER) pass = false;
+  else if (func === ALWAYS) pass = true;
+  else if (func === LESS) pass = maskedRef < maskedStored;
+  else if (func === LEQUAL) pass = maskedRef <= maskedStored;
+  else if (func === GREATER) pass = maskedRef > maskedStored;
+  else if (func === GEQUAL) pass = maskedRef >= maskedStored;
+  else if (func === EQUAL) pass = maskedRef === maskedStored;
+  else if (func === NOTEQUAL) pass = maskedRef !== maskedStored;
+  else pass = false;
+  let op: number;
+  if (!pass) op = st.stencilFail;
+  else if (!depthWillPass) op = st.stencilPassDepthFail;
+  else op = st.stencilPassDepthPass;
+  let computed: number;
+  if (op === KEEP) computed = stored;
+  else if (op === ZERO) computed = 0;
+  else if (op === REPLACE) computed = ref & 0xff;
+  else if (op === INCR) computed = stored >= 255 ? 255 : stored + 1;
+  else if (op === DECR) computed = stored <= 0 ? 0 : stored - 1;
+  else if (op === INCR_WRAP) computed = (stored + 1) % 256;
+  else if (op === DECR_WRAP) computed = (stored + 255) % 256;
+  else if (op === INVERT) computed = (~stored) & 0xff;
+  else computed = stored;
+  const wmask = st.stencilMask & 0xff;
+  const final = (stored & (~wmask)) | (computed & wmask);
+  stencil[idx] = final & 0xff;
+  return pass;
+}
+
 function evaluateStencil(px: number, py: number, st: GLState, stencil: Uint8Array, width: number): boolean {
   if (!st.stencilTest) return true;
   return (stencil[py * width + px] as number) !== 0;
