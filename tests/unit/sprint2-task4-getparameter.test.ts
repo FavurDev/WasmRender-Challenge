@@ -6,10 +6,26 @@
 import { describe, expect, it } from "vitest";
 import { createSoftwareWebGLContext } from "../../src/renderer/context";
 import {
+  ALWAYS,
   BLEND,
+  BLEND_DST_ALPHA,
+  BLEND_DST_RGB,
+  BLEND_EQUATION,
+  BLEND_EQUATION_ALPHA,
+  BLEND_EQUATION_RGB,
+  BLEND_SRC_ALPHA,
+  BLEND_SRC_RGB,
   CULL_FACE,
+  DECR,
+  DEPTH_FUNC as DEPTH_FUNC_PNAME,
   DEPTH_TEST,
+  FUNC_ADD,
+  FUNC_REVERSE_SUBTRACT,
+  FUNC_SUBTRACT,
+  INCR,
   INVALID_ENUM,
+  KEEP,
+  LEQUAL,
   LESS,
   MAX_CUBE_MAP_TEXTURE_SIZE,
   MAX_RENDERBUFFER_SIZE,
@@ -18,8 +34,19 @@ import {
   MAX_VERTEX_ATTRIBS,
   MAX_VIEWPORT_DIMS,
   NO_ERROR,
+  ONE,
+  ONE_MINUS_SRC_ALPHA,
+  REPLACE,
   SCISSOR_TEST,
+  SRC_ALPHA,
+  STENCIL_FAIL,
+  STENCIL_PASS_DEPTH_FAIL,
+  STENCIL_PASS_DEPTH_PASS,
+  STENCIL_FUNC,
+  STENCIL_REF,
   STENCIL_TEST,
+  STENCIL_VALUE_MASK,
+  ZERO,
 } from "../../src/renderer/gl-constants";
 
 // Query pnames (WebGL spec values); named exports are Task 4 production scope.
@@ -157,5 +184,103 @@ describe("sprint2 task4 getParameter coverage (red phase)", () => {
     // Assert
     expect(vp2).toEqual([0, 0, 64, 64]);
     expect(sb2).toEqual([0, 0, 64, 64]);
+  });
+
+  it("setter to query round-trip for all 11 pipeline pnames", () => {
+    // Arrange
+    const ctx = freshContext();
+    ctx.depthFunc(LEQUAL);
+    ctx.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+    ctx.blendEquation(FUNC_REVERSE_SUBTRACT);
+    ctx.stencilFunc(ALWAYS, 7, 15);
+    ctx.stencilOp(REPLACE, INCR, DECR);
+    // Act
+    const depth = ctx.getParameter(DEPTH_FUNC_PNAME);
+    const srcRgb = ctx.getParameter(BLEND_SRC_RGB);
+    const dstRgb = ctx.getParameter(BLEND_DST_RGB);
+    const srcAlpha = ctx.getParameter(BLEND_SRC_ALPHA);
+    const dstAlpha = ctx.getParameter(BLEND_DST_ALPHA);
+    const eq = ctx.getParameter(BLEND_EQUATION);
+    const eqRgb = ctx.getParameter(BLEND_EQUATION_RGB);
+    const eqAlpha = ctx.getParameter(BLEND_EQUATION_ALPHA);
+    const sfunc = ctx.getParameter(STENCIL_FUNC);
+    const sref = ctx.getParameter(STENCIL_REF);
+    const smask = ctx.getParameter(STENCIL_VALUE_MASK);
+    const sfail = ctx.getParameter(STENCIL_FAIL);
+    const szfail = ctx.getParameter(STENCIL_PASS_DEPTH_FAIL);
+    const szpass = ctx.getParameter(STENCIL_PASS_DEPTH_PASS);
+    // Assert
+    expect(depth).toBe(LEQUAL);
+    expect(srcRgb).toBe(SRC_ALPHA);
+    expect(dstRgb).toBe(ONE_MINUS_SRC_ALPHA);
+    expect(srcAlpha).toBe(SRC_ALPHA);
+    expect(dstAlpha).toBe(ONE_MINUS_SRC_ALPHA);
+    expect(eq).toBe(FUNC_REVERSE_SUBTRACT);
+    expect(eqRgb).toBe(FUNC_REVERSE_SUBTRACT);
+    expect(eqAlpha).toBe(FUNC_REVERSE_SUBTRACT);
+    expect(sfunc).toBe(ALWAYS);
+    expect(sref).toBe(7);
+    expect(smask).toBe(15);
+    expect(sfail).toBe(REPLACE);
+    expect(szfail).toBe(INCR);
+    expect(szpass).toBe(DECR);
+  });
+
+  it("blend alias pnames mirror unified base values", () => {
+    // Arrange
+    const ctx = freshContext();
+    ctx.blendFunc(ONE, ZERO);
+    ctx.blendEquation(FUNC_SUBTRACT);
+    // Act
+    const srcRgb = ctx.getParameter(BLEND_SRC_RGB);
+    const srcAlpha = ctx.getParameter(BLEND_SRC_ALPHA);
+    const dstRgb = ctx.getParameter(BLEND_DST_RGB);
+    const dstAlpha = ctx.getParameter(BLEND_DST_ALPHA);
+    const eq = ctx.getParameter(BLEND_EQUATION);
+    const eqRgb = ctx.getParameter(BLEND_EQUATION_RGB);
+    const eqAlpha = ctx.getParameter(BLEND_EQUATION_ALPHA);
+    // Assert
+    expect(srcAlpha).toBe(srcRgb);
+    expect(dstAlpha).toBe(dstRgb);
+    expect(eqRgb).toBe(eq);
+    expect(eqAlpha).toBe(eq);
+    expect(srcAlpha).toBe(ONE);
+    expect(dstAlpha).toBe(ZERO);
+    expect(eqAlpha).toBe(FUNC_SUBTRACT);
+  });
+
+  it("pipeline defaults for all 11 pnames", () => {
+    // Arrange
+    const ctx = freshContext();
+    // Act
+    const depth = ctx.getParameter(DEPTH_FUNC_PNAME);
+    const srcRgb = ctx.getParameter(BLEND_SRC_RGB);
+    const dstRgb = ctx.getParameter(BLEND_DST_RGB);
+    const srcAlpha = ctx.getParameter(BLEND_SRC_ALPHA);
+    const dstAlpha = ctx.getParameter(BLEND_DST_ALPHA);
+    const eq = ctx.getParameter(BLEND_EQUATION);
+    const eqRgb = ctx.getParameter(BLEND_EQUATION_RGB);
+    const eqAlpha = ctx.getParameter(BLEND_EQUATION_ALPHA);
+    const sfunc = ctx.getParameter(STENCIL_FUNC);
+    const sref = ctx.getParameter(STENCIL_REF);
+    const smask = ctx.getParameter(STENCIL_VALUE_MASK);
+    const sfail = ctx.getParameter(STENCIL_FAIL);
+    const szfail = ctx.getParameter(STENCIL_PASS_DEPTH_FAIL);
+    const szpass = ctx.getParameter(STENCIL_PASS_DEPTH_PASS);
+    // Assert
+    expect(depth).toBe(LESS);
+    expect(srcRgb).toBe(ONE);
+    expect(dstRgb).toBe(ZERO);
+    expect(srcAlpha).toBe(ONE);
+    expect(dstAlpha).toBe(ZERO);
+    expect(eq).toBe(FUNC_ADD);
+    expect(eqRgb).toBe(FUNC_ADD);
+    expect(eqAlpha).toBe(FUNC_ADD);
+    expect(sfunc).toBe(ALWAYS);
+    expect(sref).toBe(0);
+    expect(smask).toBe(0xff);
+    expect(sfail).toBe(KEEP);
+    expect(szfail).toBe(KEEP);
+    expect(szpass).toBe(KEEP);
   });
 });
