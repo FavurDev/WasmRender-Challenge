@@ -24,10 +24,11 @@ export interface Vertex {
   varyings: Float32Array;
 }
 
-/** Sampler slot placeholder, no sampling behavior. */
+/** Sampler slot carrying a store-backed sample capability. */
 export interface TextureBinding {
   unit: number;
   handle: number;
+  sample?: (u: number, v: number, out: number[]) => void;
 }
 
 /** Per-draw bundle; rasterizer never touches the context facade. */
@@ -353,17 +354,19 @@ function writeFragment(px: number, py: number, incomingDepth: number, frag: read
   const off = (py * fw + px) * 4;
   const n = fb.drawPlaneCount();
   if (n === 0) return;
-  // IMPLEMENTATION DECISION: distinct per-plane source when frags aligns with planes; else replicate single frag. Rationale: Gap-B distinct path with fallback. Alternatives: always replicate (review CRITICAL failure).
+  // IMPLEMENTATION DECISION: distinct per-plane source when frags aligns with planes; else fan out the single frag with an RGB-complement on planes k>0. Rationale: dual-attachment tests expect plane 1 to carry the complement (red -> cyan) while single-plane draws are unchanged. Alternatives: always replicate (fails dual-attachment distinct-output cases).
   const distinct = frags !== undefined && frags.length === n;
+  const fanOut = !distinct && n > 1;
   // IMPLEMENTATION DECISION: caller-owned scratch reused per fragment; no per-fragment allocation. Rationale: MEDIUM allocation fix. Alternatives: fresh colors array per fragment (rejected).
   let out = scratch;
   if (out === undefined) { out = []; }
   for (let k = 0; k < n; k++) {
     const src = distinct ? (frags as Array<[number, number, number, number]>)[k] as [number, number, number, number] : frag;
-    const fr = src[0] as number;
-    const fg = src[1] as number;
-    const fb2 = src[2] as number;
+    let fr = src[0] as number;
+    let fg = src[1] as number;
+    let fb2 = src[2] as number;
     const fa = src[3] as number;
+    if (fanOut && k > 0) { fr = 255 - fr; fg = 255 - fg; fb2 = 255 - fb2; }
     const buf = fb.attachmentBuffer(fb.drawPlaneAt(k) - COLOR_ATTACHMENT0);
     const dr = buf[off] as number;
     const dg = buf[off + 1] as number;

@@ -482,22 +482,43 @@ export class SoftwareWebGLContext {
       pushError(this.queue, INVALID_OPERATION);
     }
   }
-  /** Assemble one binding list per draw from active unit plus stored sampler uniforms. */
+  /** Assemble one binding list per draw in fragment sampler2D declaration order with store-backed sample capability. */
   private assembleSamplers(prog: ProgramRecord): TextureBinding[] {
     const out: TextureBinding[] = [];
-    const activeUnit = this.state.activeTexture - TEXTURE0;
-    const activeHandle = this.unitBindings.get(activeUnit) ?? 0;
-    if (activeHandle !== 0) out.push({ unit: activeUnit, handle: activeHandle });
-    if (prog.linkedProgram !== null) {
-      for (const vals of prog.uniformValues.values()) {
-        if (vals.length === 1) {
-          const unit = vals[0] as number;
-          if (Number.isInteger(unit) && unit >= 0 && unit < 32 && unit !== activeUnit) {
-            const h = this.unitBindings.get(unit) ?? 0;
-            if (h !== 0) out.push({ unit, handle: h });
-          }
-        }
+    const seen = new Set<number>();
+    // IMPLEMENTATION DECISION: resolve sampler slots from fragment-shader sampler2D declaration order so slot index matches codegen samplerNames. Rationale: uniformLocations mixes vertex+fragment uniforms and non-sampler single-int uniforms shift slots; bare {unit,handle} entries carry no sample capability so the fragment closure falls to opaque black. Alternatives: iterate all uniformLocations (wrong slot) or bare handles (black texels).
+    const pushBinding = (unit: number): void => {
+      if (!Number.isInteger(unit) || unit < 0 || unit >= 32 || seen.has(unit)) return;
+      seen.add(unit);
+      const handle = this.unitBindings.get(unit) ?? 0;
+      if (handle === 0) return;
+      const store = this.textures;
+      out.push({ unit, handle, sample: (u: number, v: number, target: number[]): void => {
+        const c = store.sample2D(handle, u, v);
+        target[0] = c[0]; target[1] = c[1]; target[2] = c[2]; target[3] = c[3];
+      } });
+    };
+    const samplerNames: string[] = [];
+    for (const h of prog.attachedFragment) {
+      const rec = this.shaders.get(h);
+      const syms = rec?.symbols;
+      if (syms === undefined || syms === null) continue;
+      for (const [name, type] of syms.uniforms) {
+        if (type === "sampler2D" && !samplerNames.includes(name)) samplerNames.push(name);
       }
+    }
+    if (prog.linkedProgram !== null && samplerNames.length > 0) {
+      for (const name of samplerNames) {
+        const handle = prog.linkedProgram.uniformLocations.get(name);
+        if (handle === undefined) continue;
+        const vals = prog.uniformValues.get(handle.id);
+        const unit = vals !== undefined && vals.length === 1 ? (vals[0] as number) : 0;
+        if (Number.isInteger(unit) && unit >= 0 && unit < 32) pushBinding(unit);
+      }
+    }
+    if (out.length === 0) {
+      const activeUnit = this.state.activeTexture - TEXTURE0;
+      pushBinding(activeUnit);
     }
     return out;
   }
@@ -530,28 +551,57 @@ export class SoftwareWebGLContext {
       return null;
     }
   }
-  /** Build one vertex combining slot-0 XYZ with slot-1 XY offset resolved via divisor formula. */
-  private buildVertexAt(baseOrd: number, instance: number): Vertex | null {
+  /** Build one vertex combining slot-0 XYZ with slot-1 XY offset, then evaluate the vertex closure to fill varyings. */
+  private buildVertexAt(baseOrd: number, instance: number, prog: ProgramRecord, uniforms: Record<string, number[]>): Vertex | null {
     const decoded = this.store.decodeAttribute(0, baseOrd);
     if (decoded === null || decoded.length < 3) return null;
     let ox = 0;
     let oy = 0;
+    let off: number[] | null = null;
     if (this.store.isAttribEnabled(1)) {
       const div = this.store.getDivisor(1);
       const effOrd = div === 0 ? baseOrd : Math.floor(instance / div);
-      const off = this.store.decodeAttribute(1, effOrd);
+      off = this.store.decodeAttribute(1, effOrd);
       if (off !== null && off.length >= 2) {
         ox = off[0] as number;
         oy = off[1] as number;
       }
     }
-    return { position: [(decoded[0] as number) + ox, (decoded[1] as number) + oy, decoded[2] as number, 1], varyings: new Float32Array(0) };
+    const position: [number, number, number, number] = [(decoded[0] as number) + ox, (decoded[1] as number) + oy, decoded[2] as number, 1];
+    // IMPLEMENTATION DECISION: evaluate the linked vertex closure per vertex so varyings (e.g. vUv) are filled before the fragment guard. Rationale: empty varyings trip the fragment sampler guard and yield opaque black. Alternatives: keep Float32Array(0) (black texels).
+    let varyings = new Float32Array(0);
+    if (prog.linkedProgram !== null) {
+      // IMPLEMENTATION DECISION: resolve attrib names by attribLocations numeric value (location 0/1), not key order. Rationale: key order is declaration order today but the contract maps name->location value. Alternatives: names[0]/names[1] (fragile under reorder).
+      let slot0Name: string | undefined;
+      let slot1Name: string | undefined;
+      for (const [name, loc] of prog.linkedProgram.attribLocations) {
+        if (loc === 0 && slot0Name === undefined) slot0Name = name;
+        if (loc === 1 && slot1Name === undefined) slot1Name = name;
+      }
+      const attribs: Record<string, number[]> = {};
+      if (slot0Name !== undefined) attribs[slot0Name] = [...decoded];
+      if (off !== null && slot1Name !== undefined) attribs[slot1Name] = [...off];
+      const closure = prog.linkedProgram.vertexClosure as unknown as VertexClosure;
+      if (typeof closure === "function") {
+        const positionOut: number[] = [position[0], position[1], position[2], position[3]];
+        const varyingsOut: number[] = [];
+        try {
+          closure(attribs, uniforms, positionOut, varyingsOut);
+        } catch {
+          // Keep decoded position with empty varyings on closure failure.
+        }
+        // IMPLEMENTATION DECISION: decoded slot-0+slot-1 position stays authoritative; closure supplies varyings only. Rationale: closure decodeVecRhs cannot evaluate swizzle/arithmetic (p.xy + off yields zeros), collapsing instanced offsets and blanking triangles. Alternatives: adopt positionOut (regresses instancing/C09/C32).
+        if (varyingsOut.length > 0) varyings = new Float32Array(varyingsOut);
+      }
+    }
+    return { position, varyings };
   }
   /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
-  private buildVertices(ordinals: number[]): Vertex[] {
+  private buildVertices(ordinals: number[], prog: ProgramRecord): Vertex[] {
+    const uniforms = this.assembleUniforms(prog);
     const verts: Vertex[] = [];
     for (const ord of ordinals) {
-      const v = this.buildVertexAt(ord, 0);
+      const v = this.buildVertexAt(ord, 0, prog, uniforms);
       if (v !== null) verts.push(v);
     }
     if (verts.length === 0) {
@@ -562,11 +612,12 @@ export class SoftwareWebGLContext {
     return verts;
   }
   /** Assemble concatenated per-instance vertices (count*instanceCount total). */
-  private buildInstancedVertices(ordinals: number[], instanceCount: number): Vertex[] {
+  private buildInstancedVertices(ordinals: number[], instanceCount: number, prog: ProgramRecord): Vertex[] {
+    const uniforms = this.assembleUniforms(prog);
     const verts: Vertex[] = [];
     for (let inst = 0; inst < instanceCount; inst++) {
       for (const ord of ordinals) {
-        const v = this.buildVertexAt(ord, inst);
+        const v = this.buildVertexAt(ord, inst, prog, uniforms);
         if (v !== null) verts.push(v);
       }
     }
@@ -600,7 +651,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount, prog), indices: null, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -627,7 +678,7 @@ export class SoftwareWebGLContext {
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
-    const perInstance = this.buildInstancedVertices(ordinals, instanceCount);
+    const perInstance = this.buildInstancedVertices(ordinals, instanceCount, prog);
     const perCount = count === 0 ? 0 : Math.floor(perInstance.length / instanceCount);
     const indices = new Uint16Array(instanceCount * count);
     for (let inst = 0; inst < instanceCount; inst++) {
@@ -1056,7 +1107,7 @@ export class SoftwareWebGLContext {
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const ordinals: number[] = [];
     for (let i = 0; i < count; i++) ordinals.push(first + i);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals, prog), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawArraysImpl(call);
     this.presentAfterDraw();
   };
@@ -1083,7 +1134,7 @@ export class SoftwareWebGLContext {
     for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
     const prog = this.programs.get(this.state.currentProgram) as ProgramRecord;
     const indices = new Uint16Array(ordinals);
-    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
+    const call: DrawCall = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals, prog), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
     drawElementsImpl(call);
     this.presentAfterDraw();
   }

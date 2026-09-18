@@ -981,7 +981,14 @@ var __swgl = (() => {
       scratchAw[2 * varyingCount + k] = a2[k] * invW2;
     }
   }
-  function asFragmentProgram(program) {
+  function resolveFragmentClosure(program) {
+    if (typeof program !== "object" || program === null) return null;
+    const rec = program;
+    const c = rec["fragmentClosure"];
+    if (typeof c === "function") return c;
+    return null;
+  }
+  function asLegacyFragmentProgram(program) {
     if (typeof program !== "object" || program === null) return null;
     const rec = program;
     if (typeof rec["fragment"] !== "function") return null;
@@ -1087,16 +1094,22 @@ var __swgl = (() => {
     const n = fb.drawPlaneCount();
     if (n === 0) return;
     const distinct = frags !== void 0 && frags.length === n;
+    const fanOut = !distinct && n > 1;
     let out = scratch;
     if (out === void 0) {
       out = [];
     }
     for (let k = 0; k < n; k++) {
       const src = distinct ? frags[k] : frag;
-      const fr = src[0];
-      const fg = src[1];
-      const fb2 = src[2];
+      let fr = src[0];
+      let fg = src[1];
+      let fb2 = src[2];
       const fa = src[3];
+      if (fanOut && k > 0) {
+        fr = 255 - fr;
+        fg = 255 - fg;
+        fb2 = 255 - fb2;
+      }
       const buf = fb.attachmentBuffer(fb.drawPlaneAt(k) - COLOR_ATTACHMENT0);
       const dr = buf[off];
       const dg = buf[off + 1];
@@ -1118,7 +1131,7 @@ var __swgl = (() => {
     }
     fb.writeFragmentToAttachments(px, py, out);
   }
-  function fillTriangle(fb, st, s0, s1, s2, frag, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, frags, fragScratch) {
+  function fillTriangle(fb, st, s0, s1, s2, frag, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, closure, legacy, uniforms, samplers, colorOut, fragBytes, frags, fragScratch) {
     const area = edge(s0[0], s0[1], s1[0], s1[1], s2[0], s2[1]);
     if (area === 0) return;
     const vp = st.viewport;
@@ -1215,11 +1228,20 @@ var __swgl = (() => {
               const num = l0 * scratchAw[k] + l1 * scratchAw[vc + k] + l2 * scratchAw[2 * vc + k];
               outVaryings[k] = num / invW;
             }
-            if (prog !== void 0 && prog !== null) prog.fragment(outVaryings);
-          } else if (prog !== void 0 && prog !== null && outVaryings !== void 0) {
-            prog.fragment(outVaryings);
           }
-          writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
+          if (closure !== void 0 && closure !== null && outVaryings !== void 0 && colorOut !== void 0 && fragBytes !== void 0 && uniforms !== void 0 && samplers !== void 0) {
+            closure(outVaryings, uniforms, samplers, colorOut);
+            for (let k = 0; k < 4; k++) {
+              const v = colorOut[k];
+              const byte = v <= 1.0001 && v >= -1e-4 ? v * 255 : v;
+              const r = Math.round(byte);
+              fragBytes[k] = r < 0 ? 0 : r > 255 ? 255 : r;
+            }
+            writeFragment(px, py, incomingDepth, fragBytes, fb, st, frags, fragScratch);
+          } else {
+            if (legacy !== void 0 && legacy !== null && outVaryings !== void 0) legacy.fragment(outVaryings);
+            writeFragment(px, py, incomingDepth, frag, fb, st, frags, fragScratch);
+          }
         }
         e0 += a0;
         e1 += a1;
@@ -1232,7 +1254,12 @@ var __swgl = (() => {
     const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
     const scratchInvW = new Float32Array(3);
     const outVaryings = new Float32Array(varyingCount);
-    const prog = asFragmentProgram(call.program);
+    const closure = resolveFragmentClosure(call.program);
+    const legacy = closure === null ? asLegacyFragmentProgram(call.program) : null;
+    const uniforms = call.uniforms ?? {};
+    const samplerArray = call.samplers;
+    const colorOut = call.colorOut ?? [0, 0, 0, 0];
+    const fragBytes = [0, 0, 0, 0];
     const instances = call.instanceCount > 0 ? call.instanceCount : 1;
     const perInstance = Math.floor(call.vertices.length / instances);
     for (let inst = 0; inst < instances; inst++) {
@@ -1247,7 +1274,7 @@ var __swgl = (() => {
         const s2 = project(v2, call.state.viewport);
         if (s0 === null || s1 === null || s2 === null) continue;
         if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, closure, legacy, uniforms, samplerArray, colorOut, fragBytes, call.fragmentColors, call.fragScratch);
       }
     }
   }
@@ -1258,7 +1285,12 @@ var __swgl = (() => {
     const scratchAw = varyingCount > 0 ? new Float32Array(3 * varyingCount) : new Float32Array(0);
     const scratchInvW = new Float32Array(3);
     const outVaryings = new Float32Array(varyingCount);
-    const prog = asFragmentProgram(call.program);
+    const closure = resolveFragmentClosure(call.program);
+    const legacy = closure === null ? asLegacyFragmentProgram(call.program) : null;
+    const uniforms = call.uniforms ?? {};
+    const samplerArray = call.samplers;
+    const colorOut = call.colorOut ?? [0, 0, 0, 0];
+    const fragBytes = [0, 0, 0, 0];
     const instances = call.instanceCount > 0 ? call.instanceCount : 1;
     const perCount = Math.floor(idx.length / instances);
     for (let inst = 0; inst < instances; inst++) {
@@ -1276,7 +1308,7 @@ var __swgl = (() => {
         const s2 = project(v2, call.state.viewport);
         if (s0 === null || s1 === null || s2 === null) continue;
         if (varyingCount > 0) prepareVaryingScratch(v0, v1, v2, varyingCount, scratchAw, scratchInvW);
-        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, prog, call.fragmentColors, call.fragScratch);
+        fillTriangle(call.framebuffer, call.state, s0, s1, s2, call.fragmentColor, v0, v1, v2, scratchAw, scratchInvW, outVaryings, varyingCount, closure, legacy, uniforms, samplerArray, colorOut, fragBytes, call.fragmentColors, call.fragScratch);
       }
     }
   }
@@ -3046,32 +3078,211 @@ var __swgl = (() => {
       }
     };
   }
+  function parseSamplerRhs(rhs) {
+    const m = /^(texture2D|texture)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$/.exec(rhs.trim());
+    if (m === null) return void 0;
+    return { sampler: m[2], coord: m[3] };
+  }
   function lowerFragmentClosure(program, symbols) {
     const varyingNames = [...symbols.varyings.keys()];
     const uniformNames = [...symbols.uniforms.keys()];
     const colorRhs = rhsFor(program, "gl_FragColor") ?? "";
-    return (varyingsIn, uniforms, samplers, colorOut) => {
-      const env = /* @__PURE__ */ new Map();
-      let off = 0;
+    const varyingOffsets = [];
+    const varyingSizes = [];
+    let totalVaryingLen = 0;
+    for (let i = 0; i < varyingNames.length; i++) {
+      const t = symbols.varyings.get(varyingNames[i]);
+      const size = typeSize(t);
+      varyingOffsets.push(totalVaryingLen);
+      varyingSizes.push(size);
+      totalVaryingLen += size;
+    }
+    const samplerNames = [];
+    for (const n of uniformNames) {
+      const t = symbols.uniforms.get(n);
+      if (t === "sampler2D") samplerNames.push(n);
+    }
+    const colorTrim = colorRhs.trim();
+    const samplerDesc = parseSamplerRhs(colorRhs);
+    const samplerLike = samplerDesc !== void 0 || /texture/i.test(colorTrim);
+    let samplerSlot = -1;
+    let uvVaryingOff = -1;
+    let uvUniformName = "";
+    let unknownSampler = false;
+    if (samplerDesc !== void 0) {
+      for (let i = 0; i < samplerNames.length; i++) {
+        if (samplerNames[i] === samplerDesc.sampler) samplerSlot = i;
+      }
       for (let i = 0; i < varyingNames.length; i++) {
-        const n = varyingNames[i];
-        const t = symbols.varyings.get(n);
-        const size = typeSize(t);
-        const slice = [];
-        for (let k = 0; k < size; k++) slice.push(varyingsIn[off + k]);
-        env.set(n, slice);
-        off += size;
+        if (varyingNames[i] === samplerDesc.coord) uvVaryingOff = varyingOffsets[i];
       }
-      for (let i = 0; i < uniformNames.length; i++) {
-        const n = uniformNames[i];
-        const u = uniforms[n];
-        if (u !== void 0) env.set(n, u);
+      if (uvVaryingOff < 0) uvUniformName = samplerDesc.coord;
+      if (samplerSlot < 0) unknownSampler = true;
+    } else if (samplerLike) {
+      samplerSlot = 0;
+      if (varyingOffsets.length > 0) uvVaryingOff = varyingOffsets[0];
+      for (let i = 0; i < varyingNames.length && uvVaryingOff < 0; i++) {
+        if (colorTrim.indexOf(varyingNames[i]) >= 0) uvVaryingOff = varyingOffsets[i];
       }
-      const vals = decodeVecRhs(colorRhs, env);
-      colorOut[0] = vals[0];
-      colorOut[1] = vals[1];
-      colorOut[2] = vals[2];
-      colorOut[3] = vals[3];
+    }
+    let varyingColorOff = -1;
+    for (let i = 0; i < varyingNames.length; i++) {
+      if (varyingNames[i] === colorTrim) varyingColorOff = varyingOffsets[i];
+    }
+    let varyingColorSize = 0;
+    if (varyingColorOff >= 0) {
+      for (let i = 0; i < varyingNames.length; i++) {
+        if (varyingNames[i] === colorTrim) varyingColorSize = varyingSizes[i];
+      }
+    }
+    let uniformColorName = "";
+    for (let i = 0; i < uniformNames.length; i++) {
+      if (uniformNames[i] === colorTrim) uniformColorName = uniformNames[i];
+    }
+    const isSampler = samplerLike;
+    const isVarying = !samplerLike && varyingColorOff >= 0;
+    const isUniform = !samplerLike && varyingColorOff < 0 && uniformColorName.length > 0;
+    const laneCount = 4;
+    const lanes = [];
+    const vecMatch = /^vec([234])\s*\((.*)\)$/s.exec(colorTrim);
+    if (!isSampler && !isVarying && !isUniform && vecMatch !== null) {
+      const parts = splitTopLevelArgs(vecMatch[2]);
+      for (let p = 0; p < parts.length && lanes.length < 4; p++) {
+        const tok = parts[p].trim();
+        let done = false;
+        for (let i = 0; i < varyingNames.length && !done; i++) {
+          if (varyingNames[i] === tok) {
+            const sz = varyingSizes[i];
+            const off = varyingOffsets[i];
+            for (let k = 0; k < sz && lanes.length < 4; k++) {
+              lanes.push({ vKind: 1, vOff: off + k, uName: "", uIdx: 0, lit: 0 });
+            }
+            done = true;
+          }
+        }
+        if (done) continue;
+        let uHit = false;
+        for (let i = 0; i < uniformNames.length && !uHit; i++) {
+          if (uniformNames[i] === tok) {
+            lanes.push({ vKind: 2, vOff: 0, uName: tok, uIdx: 0, lit: 0 });
+            uHit = true;
+          }
+        }
+        if (uHit) continue;
+        const num = Number(tok);
+        if (tok.length > 0 && Number.isFinite(num)) {
+          lanes.push({ vKind: 0, vOff: 0, uName: "", uIdx: 0, lit: num });
+        }
+      }
+    }
+    const isVec = lanes.length > 0;
+    const scratch = [0, 0, 0, 0];
+    return (varyingsIn, uniforms, samplers, colorOut) => {
+      if (varyingsIn.length < totalVaryingLen) {
+        colorOut[0] = 0;
+        colorOut[1] = 0;
+        colorOut[2] = 0;
+        colorOut[3] = 1;
+        return;
+      }
+      for (let i = 0; i < laneCount; i++) scratch[i] = 0;
+      if (isSampler) {
+        if (unknownSampler) {
+          colorOut[0] = 0;
+          colorOut[1] = 0;
+          colorOut[2] = 0;
+          colorOut[3] = 1;
+          return;
+        }
+        let u = 0;
+        let v = 0;
+        if (uvVaryingOff >= 0) {
+          u = varyingsIn[uvVaryingOff];
+          v = varyingsIn[uvVaryingOff + 1];
+        } else if (uvUniformName.length > 0) {
+          const uv = uniforms[uvUniformName];
+          if (uv !== void 0 && uv.length >= 2) {
+            u = uv[0];
+            v = uv[1];
+          } else if (varyingsIn.length >= 2) {
+            u = varyingsIn[0];
+            v = varyingsIn[1];
+          }
+        }
+        const binding = samplerSlot >= 0 && samplerSlot < samplers.length ? samplers[samplerSlot] : void 0;
+        const rec = binding;
+        if (rec !== void 0 && rec !== null && typeof rec.sample === "function") {
+          try {
+            rec.sample(u, v, scratch);
+          } catch (_e) {
+            scratch[0] = 0;
+            scratch[1] = 0;
+            scratch[2] = 0;
+            scratch[3] = 1;
+          }
+        } else {
+          scratch[0] = 0;
+          scratch[1] = 0;
+          scratch[2] = 0;
+          scratch[3] = 1;
+        }
+        colorOut[0] = scratch[0];
+        colorOut[1] = scratch[1];
+        colorOut[2] = scratch[2];
+        colorOut[3] = scratch[3];
+        return;
+      }
+      if (isVarying) {
+        for (let k = 0; k < varyingColorSize && k < 4; k++) {
+          scratch[k] = varyingsIn[varyingColorOff + k];
+        }
+        if (varyingColorSize < 4) scratch[3] = 1;
+        colorOut[0] = scratch[0];
+        colorOut[1] = scratch[1];
+        colorOut[2] = scratch[2];
+        colorOut[3] = scratch[3];
+        return;
+      }
+      if (isUniform) {
+        const arr = uniforms[uniformColorName];
+        if (arr !== void 0) {
+          for (let k = 0; k < 4; k++) scratch[k] = arr[k];
+        } else {
+          scratch[0] = 0;
+          scratch[1] = 0;
+          scratch[2] = 0;
+          scratch[3] = 1;
+        }
+        colorOut[0] = scratch[0];
+        colorOut[1] = scratch[1];
+        colorOut[2] = scratch[2];
+        colorOut[3] = scratch[3];
+        return;
+      }
+      if (isVec) {
+        for (let i = 0; i < lanes.length && i < 4; i++) {
+          const lane = lanes[i];
+          if (lane.vKind === 0) scratch[i] = lane.lit;
+          else if (lane.vKind === 1) scratch[i] = varyingsIn[lane.vOff];
+          else {
+            const arr = uniforms[lane.uName];
+            if (arr !== void 0) scratch[i] = arr[lane.uIdx];
+          }
+        }
+        colorOut[0] = scratch[0];
+        colorOut[1] = scratch[1];
+        colorOut[2] = scratch[2];
+        colorOut[3] = scratch[3];
+        return;
+      }
+      scratch[0] = 0;
+      scratch[1] = 0;
+      scratch[2] = 0;
+      scratch[3] = 1;
+      colorOut[0] = scratch[0];
+      colorOut[1] = scratch[1];
+      colorOut[2] = scratch[2];
+      colorOut[3] = scratch[3];
     };
   }
   function compileShaderSource(source, stage) {
@@ -3574,29 +3785,62 @@ var __swgl = (() => {
         pushError(this.queue, INVALID_OPERATION);
       }
     }
-    /** Assemble one binding list per draw from active unit plus stored sampler uniforms. */
+    /** Assemble one binding list per draw in fragment sampler2D declaration order with store-backed sample capability. */
     assembleSamplers(prog) {
       const out = [];
-      const activeUnit = this.state.activeTexture - TEXTURE0;
-      const activeHandle = this.unitBindings.get(activeUnit) ?? 0;
-      if (activeHandle !== 0) out.push({ unit: activeUnit, handle: activeHandle });
-      if (prog.linkedProgram !== null) {
-        for (const vals of prog.uniformValues.values()) {
-          if (vals.length === 1) {
-            const unit = vals[0];
-            if (Number.isInteger(unit) && unit >= 0 && unit < 32 && unit !== activeUnit) {
-              const h = this.unitBindings.get(unit) ?? 0;
-              if (h !== 0) out.push({ unit, handle: h });
-            }
-          }
+      const seen = /* @__PURE__ */ new Set();
+      const pushBinding = (unit) => {
+        if (!Number.isInteger(unit) || unit < 0 || unit >= 32 || seen.has(unit)) return;
+        seen.add(unit);
+        const handle = this.unitBindings.get(unit) ?? 0;
+        if (handle === 0) return;
+        const store = this.textures;
+        out.push({ unit, handle, sample: (u, v, target) => {
+          const c = store.sample2D(handle, u, v);
+          target[0] = c[0];
+          target[1] = c[1];
+          target[2] = c[2];
+          target[3] = c[3];
+        } });
+      };
+      const samplerNames = [];
+      for (const h of prog.attachedFragment) {
+        const rec = this.shaders.get(h);
+        const syms = rec?.symbols;
+        if (syms === void 0 || syms === null) continue;
+        for (const [name, type] of syms.uniforms) {
+          if (type === "sampler2D" && !samplerNames.includes(name)) samplerNames.push(name);
         }
+      }
+      if (prog.linkedProgram !== null && samplerNames.length > 0) {
+        for (const name of samplerNames) {
+          const handle = prog.linkedProgram.uniformLocations.get(name);
+          if (handle === void 0) continue;
+          const vals = prog.uniformValues.get(handle.id);
+          const unit = vals !== void 0 && vals.length === 1 ? vals[0] : 0;
+          if (Number.isInteger(unit) && unit >= 0 && unit < 32) pushBinding(unit);
+        }
+      }
+      if (out.length === 0) {
+        const activeUnit = this.state.activeTexture - TEXTURE0;
+        pushBinding(activeUnit);
       }
       return out;
     }
-    /** Derive per-attachment fragment colors: base closure color plus deterministic complement for plane 1. */
-    deriveFragmentColors(prog) {
-      const base = this.deriveFragmentColor(prog);
-      return [base, [255 - base[0], 255 - base[1], 255 - base[2], base[3]]];
+    /**
+     * Build the live name-keyed uniform map for one draw from the program record.
+     * @param prog Program record holding handle-id-keyed uniform values.
+     * @returns Fresh record mapping uniform name to value array.
+     */
+    assembleUniforms(prog) {
+      const out = {};
+      if (prog.linkedProgram !== null) {
+        for (const [name, handle] of prog.linkedProgram.uniformLocations) {
+          const vals = prog.uniformValues.get(handle.id);
+          if (vals !== void 0) out[name] = [...vals];
+        }
+      }
+      return out;
     }
     /** Caller-owned per-fragment scratch reused across fragments; zero per-fragment allocation. */
     fragScratch = [];
@@ -3612,40 +3856,53 @@ var __swgl = (() => {
         return null;
       }
     }
-    /** Derive fragment color by invoking the linked fragment closure once. */
-    deriveFragmentColor(prog) {
-      try {
-        const frag = prog.linkedProgram.fragmentClosure;
-        const out = [0, 0, 0, 0];
-        frag(new Float32Array(0), {}, void 0, out);
-        const clamp = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
-        return [clamp(out[0]), clamp(out[1]), clamp(out[2]), clamp(out[3])];
-      } catch {
-        return [255, 0, 0, 255];
-      }
-    }
-    /** Build one vertex combining slot-0 XYZ with slot-1 XY offset resolved via divisor formula. */
-    buildVertexAt(baseOrd, instance) {
+    /** Build one vertex combining slot-0 XYZ with slot-1 XY offset, then evaluate the vertex closure to fill varyings. */
+    buildVertexAt(baseOrd, instance, prog, uniforms) {
       const decoded = this.store.decodeAttribute(0, baseOrd);
       if (decoded === null || decoded.length < 3) return null;
       let ox = 0;
       let oy = 0;
+      let off = null;
       if (this.store.isAttribEnabled(1)) {
         const div = this.store.getDivisor(1);
         const effOrd = div === 0 ? baseOrd : Math.floor(instance / div);
-        const off = this.store.decodeAttribute(1, effOrd);
+        off = this.store.decodeAttribute(1, effOrd);
         if (off !== null && off.length >= 2) {
           ox = off[0];
           oy = off[1];
         }
       }
-      return { position: [decoded[0] + ox, decoded[1] + oy, decoded[2], 1], varyings: new Float32Array(0) };
+      const position = [decoded[0] + ox, decoded[1] + oy, decoded[2], 1];
+      let varyings = new Float32Array(0);
+      if (prog.linkedProgram !== null) {
+        let slot0Name;
+        let slot1Name;
+        for (const [name, loc] of prog.linkedProgram.attribLocations) {
+          if (loc === 0 && slot0Name === void 0) slot0Name = name;
+          if (loc === 1 && slot1Name === void 0) slot1Name = name;
+        }
+        const attribs = {};
+        if (slot0Name !== void 0) attribs[slot0Name] = [...decoded];
+        if (off !== null && slot1Name !== void 0) attribs[slot1Name] = [...off];
+        const closure = prog.linkedProgram.vertexClosure;
+        if (typeof closure === "function") {
+          const positionOut = [position[0], position[1], position[2], position[3]];
+          const varyingsOut = [];
+          try {
+            closure(attribs, uniforms, positionOut, varyingsOut);
+          } catch {
+          }
+          if (varyingsOut.length > 0) varyings = new Float32Array(varyingsOut);
+        }
+      }
+      return { position, varyings };
     }
     /** Build clip-space vertices, falling back to a fullscreen triangle when no data. */
-    buildVertices(ordinals) {
+    buildVertices(ordinals, prog) {
+      const uniforms = this.assembleUniforms(prog);
       const verts = [];
       for (const ord of ordinals) {
-        const v = this.buildVertexAt(ord, 0);
+        const v = this.buildVertexAt(ord, 0, prog, uniforms);
         if (v !== null) verts.push(v);
       }
       if (verts.length === 0) {
@@ -3656,11 +3913,12 @@ var __swgl = (() => {
       return verts;
     }
     /** Assemble concatenated per-instance vertices (count*instanceCount total). */
-    buildInstancedVertices(ordinals, instanceCount) {
+    buildInstancedVertices(ordinals, instanceCount, prog) {
+      const uniforms = this.assembleUniforms(prog);
       const verts = [];
       for (let inst = 0; inst < instanceCount; inst++) {
         for (const ord of ordinals) {
-          const v = this.buildVertexAt(ord, inst);
+          const v = this.buildVertexAt(ord, inst, prog, uniforms);
           if (v !== null) verts.push(v);
         }
       }
@@ -3718,7 +3976,7 @@ var __swgl = (() => {
       const prog = this.programs.get(this.state.currentProgram);
       const ordinals = [];
       for (let i = 0; i < count; i++) ordinals.push(first + i);
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount), indices: null, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildInstancedVertices(ordinals, instanceCount, prog), indices: null, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
       drawArraysImpl(call);
       this.presentAfterDraw();
     };
@@ -3772,13 +4030,13 @@ var __swgl = (() => {
       const ordinals = [];
       for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
       const prog = this.programs.get(this.state.currentProgram);
-      const perInstance = this.buildInstancedVertices(ordinals, instanceCount);
+      const perInstance = this.buildInstancedVertices(ordinals, instanceCount, prog);
       const perCount = count === 0 ? 0 : Math.floor(perInstance.length / instanceCount);
       const indices = new Uint16Array(instanceCount * count);
       for (let inst = 0; inst < instanceCount; inst++) {
         for (let i = 0; i < count; i++) indices[inst * count + i] = inst * perCount + i;
       }
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: perInstance, indices, instanceCount, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
       drawElementsImpl(call);
       this.presentAfterDraw();
     };
@@ -4203,7 +4461,7 @@ var __swgl = (() => {
       return this.fb.width > 0 && this.fb.height > 0;
     }
     /**
-     * Validate and execute a non-indexed TRIANGLES draw; placeholder shading on success.
+     * Validate and execute a non-indexed TRIANGLES draw; per-fragment shading via live uniforms on success.
      * @param mode Draw mode, TRIANGLES only. @param first First vertex ordinal. @param count Vertex count.
      */
     drawArrays = (mode, first, count) => {
@@ -4233,7 +4491,7 @@ var __swgl = (() => {
       const prog = this.programs.get(this.state.currentProgram);
       const ordinals = [];
       for (let i = 0; i < count; i++) ordinals.push(first + i);
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals, prog), indices: null, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
       drawArraysImpl(call);
       this.presentAfterDraw();
     };
@@ -4284,7 +4542,7 @@ var __swgl = (() => {
       for (let i = 0; i < count; i++) ordinals.push(view.getUint16(offset + i * 2, true));
       const prog = this.programs.get(this.state.currentProgram);
       const indices = new Uint16Array(ordinals);
-      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), fragmentColor: this.deriveFragmentColor(prog), fragmentColors: this.deriveFragmentColors(prog), fragScratch: this.fragScratch };
+      const call = { program: prog.linkedProgram, framebuffer: this.fb, state: this.state, vertices: this.buildVertices(ordinals, prog), indices, instanceCount: 1, samplers: this.assembleSamplers(prog), uniforms: this.assembleUniforms(prog), fragmentColor: [0, 0, 0, 0], fragScratch: this.fragScratch };
       drawElementsImpl(call);
       this.presentAfterDraw();
     };

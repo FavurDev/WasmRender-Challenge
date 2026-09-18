@@ -265,11 +265,8 @@ export function lowerFragmentClosure(program: ASTProgram, symbols: SymbolTable):
     for (let i = 0; i < samplerNames.length; i++) {
       if (samplerNames[i] === samplerDesc.sampler) samplerSlot = i;
     }
-    if (samplerSlot < 0) {
-      for (let i = 0; i < uniformNames.length; i++) {
-        if (uniformNames[i] === samplerDesc.sampler) samplerSlot = i;
-      }
-    }
+    // Sampler slots index samplerNames (declaration order of sampler2D uniforms).
+    // A non-sampler uniform sharing the name must NOT alias a sampler slot.
     for (let i = 0; i < varyingNames.length; i++) {
       if (varyingNames[i] === samplerDesc.coord) uvVaryingOff = varyingOffsets[i] as number;
     }
