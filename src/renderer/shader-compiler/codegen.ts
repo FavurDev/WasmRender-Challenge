@@ -209,13 +209,6 @@ export function lowerVertexClosure(program: ASTProgram, symbols: SymbolTable): V
 }
 
 /**
- * Lower a validated fragment unit into an allocation-free closure.
- *
- * @param program Validated translation unit.
- * @param symbols Assembled symbol table.
- * @returns Invocable fragment closure writing caller-owned color out.
- */
-/**
  * One precomputed color lane feeding the allocation-free fragment closure.
  *
  * vKind selects the lane source: 0 = literal in lit, 1 = varying scalar at
@@ -236,6 +229,13 @@ function parseSamplerRhs(rhs: string): { sampler: string; coord: string } | unde
   return { sampler: m[2] as string, coord: m[3] as string };
 }
 
+/**
+ * Lower a validated fragment unit into an allocation-free closure.
+ *
+ * @param program Validated translation unit.
+ * @param symbols Assembled symbol table.
+ * @returns Invocable fragment closure writing caller-owned color out.
+ */
 export function lowerFragmentClosure(program: ASTProgram, symbols: SymbolTable): FragmentClosure {
   const varyingNames: string[] = [...symbols.varyings.keys()];
   const uniformNames: string[] = [...symbols.uniforms.keys()];
