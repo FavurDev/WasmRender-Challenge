@@ -33,7 +33,7 @@ import type { VertexClosure, FragmentClosure } from "./shader-compiler/codegen";
 import type { SymbolTable } from "./shader-compiler/typechecker";
 import { linkProgram as linkProgramValidator, getAttribLocation as resolveAttribLocation, getUniformLocation as resolveUniformLocation } from "./program";
 import type { GLProgram, UniformHandle, CompiledShader } from "./program";
-import { ARRAY_BUFFER, BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_ATTACHMENT0, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CONTEXT_LOST_WEBGL, CULL_FACE, DEPTH24_STENCIL8, DEPTH_CLEAR_VALUE, DEPTH_COMPONENT16, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, ELEMENT_ARRAY_BUFFER, FLOAT, FRAGMENT_SHADER, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, LINK_STATUS, MAX_COLOR_ATTACHMENTS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NO_ERROR, OUT_OF_MEMORY, RENDERBUFFER, RGBA, SCISSOR_BOX, SCISSOR_TEST, STENCIL_CLEAR_VALUE, STENCIL_TEST, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT } from "./gl-constants";
+import { ALWAYS, ARRAY_BUFFER, BLEND, BLEND_DST_RGB, BLEND_EQUATION, BLEND_SRC_RGB, COLOR_ATTACHMENT0, COLOR_CLEAR_VALUE, COLOR_WRITEMASK, COMPILE_STATUS, CONSTANT_ALPHA, CONSTANT_COLOR, CONTEXT_LOST_WEBGL, CULL_FACE, DECR, DECR_WRAP, DEPTH24_STENCIL8, DEPTH_CLEAR_VALUE, DEPTH_COMPONENT16, DEPTH_FUNC, DEPTH_TEST, DEPTH_WRITEMASK, DST_ALPHA, DST_COLOR, ELEMENT_ARRAY_BUFFER, EQUAL, FLOAT, FRAGMENT_SHADER, FUNC_ADD, FUNC_REVERSE_SUBTRACT, FUNC_SUBTRACT, GEQUAL, GREATER, INCR, INCR_WRAP, INVALID_ENUM, INVALID_OPERATION, INVALID_VALUE, INVERT, KEEP, LEQUAL, LESS, LINK_STATUS, MAX_COLOR_ATTACHMENTS, MAX_CUBE_MAP_TEXTURE_SIZE, MAX_CUBE_MAP_TEXTURE_SIZE_PNAME, MAX_RENDERBUFFER_SIZE, MAX_RENDERBUFFER_SIZE_PNAME, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_IMAGE_UNITS_PNAME, MAX_TEXTURE_SIZE, MAX_TEXTURE_SIZE_PNAME, MAX_VERTEX_ATTRIBS, MAX_VERTEX_ATTRIBS_PNAME, MAX_VIEWPORT_DIMS, MAX_VIEWPORT_DIMS_PNAME, NEVER, NOTEQUAL, NO_ERROR, ONE, ONE_MINUS_CONSTANT_ALPHA, ONE_MINUS_CONSTANT_COLOR, ONE_MINUS_DST_ALPHA, ONE_MINUS_DST_COLOR, ONE_MINUS_SRC_ALPHA, ONE_MINUS_SRC_COLOR, OUT_OF_MEMORY, RENDERBUFFER, REPLACE, RGBA, SCISSOR_BOX, SCISSOR_TEST, SRC_ALPHA, SRC_ALPHA_SATURATE, SRC_COLOR, STENCIL_CLEAR_VALUE, STENCIL_FAIL, STENCIL_FUNC, STENCIL_PASS_DEPTH_FAIL, STENCIL_PASS_DEPTH_PASS, STENCIL_REF, STENCIL_TEST, STENCIL_VALUE_MASK, STENCIL_WRITEMASK, TEXTURE0, TRIANGLES, UNSIGNED_BYTE, UNSIGNED_SHORT, VERTEX_SHADER, VIEWPORT, ZERO } from "./gl-constants";
 type ShaderRecord = {
   id: number;
   type: number;
@@ -257,6 +257,47 @@ export class SoftwareWebGLContext {
     this.fb.setStencilMask(mask);
   }
   /**
+   * Set stencil comparison func plus 8-bit ref and mask; validate-then-commit, never throws.
+   * @param func Comparison enum (NEVER..ALWAYS). @param ref Reference value, clamped to 8 bits. @param mask Value mask, clamped to 8 bits.
+   */
+  stencilFunc(func: number, ref: number, mask: number): void {
+    if (this.guardIfLost()) return;
+    switch (func) {
+      case NEVER: case LESS: case EQUAL: case LEQUAL: case GREATER: case NOTEQUAL: case GEQUAL: case ALWAYS:
+        break;
+      default:
+        pushError(this.queue, INVALID_ENUM);
+        return;
+    }
+    const clampedRef = (Math.trunc(Number(ref)) & 0xff) >>> 0;
+    const clampedMask = (Math.trunc(Number(mask)) & 0xff) >>> 0;
+    this.state.stencilFunc = func;
+    this.state.stencilRef = clampedRef;
+    this.state.stencilValueMask = clampedMask;
+  }
+  /**
+   * Set stencil fail/zfail/zpass ops; all three validated before any commit, never throws.
+   * @param fail Fail op. @param zfail Depth-fail op. @param zpass Depth-pass op.
+   */
+  stencilOp(fail: number, zfail: number, zpass: number): void {
+    if (this.guardIfLost()) return;
+    const valid = (op: number): boolean => {
+      switch (op) {
+        case KEEP: case ZERO: case REPLACE: case INCR: case DECR: case INVERT: case INCR_WRAP: case DECR_WRAP:
+          return true;
+        default:
+          return false;
+      }
+    };
+    if (!valid(fail) || !valid(zfail) || !valid(zpass)) {
+      pushError(this.queue, INVALID_ENUM);
+      return;
+    }
+    this.state.stencilFail = fail;
+    this.state.stencilPassDepthFail = zfail;
+    this.state.stencilPassDepthPass = zpass;
+  }
+  /**
    * Replace scissor box; negative size pushes one code with no state change.
    * @param x Left origin. @param y Bottom origin. @param w Width. @param h Height.
    */
@@ -354,6 +395,12 @@ export class SoftwareWebGLContext {
     if (pname === COLOR_WRITEMASK) return [...this.state.colorMask];
     if (pname === DEPTH_WRITEMASK) return this.state.depthMask;
     if (pname === STENCIL_WRITEMASK) return this.state.stencilMask;
+    if (pname === STENCIL_FUNC) return this.state.stencilFunc;
+    if (pname === STENCIL_REF) return this.state.stencilRef;
+    if (pname === STENCIL_VALUE_MASK) return this.state.stencilValueMask;
+    if (pname === STENCIL_FAIL) return this.state.stencilFail;
+    if (pname === STENCIL_PASS_DEPTH_FAIL) return this.state.stencilPassDepthFail;
+    if (pname === STENCIL_PASS_DEPTH_PASS) return this.state.stencilPassDepthPass;
     if (pname === VIEWPORT) return [...this.state.viewport];
     if (pname === SCISSOR_BOX) return [...this.state.scissorBox];
     if (pname === DEPTH_FUNC) return this.state.depthFunc;
@@ -414,6 +461,83 @@ export class SoftwareWebGLContext {
       return;
     }
     this.state.activeTexture = texture;
+  }
+  /**
+   * Set depth comparison function; unknown enum pushes one INVALID_ENUM with no commit.
+   * @param func Comparison enum (NEVER..ALWAYS).
+   * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+   */
+  depthFunc(func: number): void {
+    if (this.guardIfLost()) return;
+    switch (func) {
+      case NEVER:
+      case LESS:
+      case EQUAL:
+      case LEQUAL:
+      case GREATER:
+      case NOTEQUAL:
+      case GEQUAL:
+      case ALWAYS:
+        break;
+      default:
+        pushError(this.queue, INVALID_ENUM);
+        return;
+    }
+    this.state.depthFunc = func;
+  }
+  /**
+   * Set blend factors with all-or-nothing semantics; either invalid pushes one INVALID_ENUM, neither commits.
+   * @param sfactor Source factor enum. @param dfactor Destination factor enum.
+   * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+   */
+  blendFunc(sfactor: number, dfactor: number): void {
+    if (this.guardIfLost()) return;
+    const valid = (v: number): boolean => {
+      switch (v) {
+        case ZERO:
+        case ONE:
+        case SRC_COLOR:
+        case ONE_MINUS_SRC_COLOR:
+        case SRC_ALPHA:
+        case ONE_MINUS_SRC_ALPHA:
+        case DST_ALPHA:
+        case ONE_MINUS_DST_ALPHA:
+        case DST_COLOR:
+        case ONE_MINUS_DST_COLOR:
+        case SRC_ALPHA_SATURATE:
+        case CONSTANT_COLOR:
+        case ONE_MINUS_CONSTANT_COLOR:
+        case CONSTANT_ALPHA:
+        case ONE_MINUS_CONSTANT_ALPHA:
+          return true;
+        default:
+          return false;
+      }
+    };
+    if (!valid(sfactor) || !valid(dfactor)) {
+      pushError(this.queue, INVALID_ENUM);
+      return;
+    }
+    this.state.blendSrcRGB = sfactor;
+    this.state.blendDstRGB = dfactor;
+  }
+  /**
+   * Set blend equation; unknown mode pushes one INVALID_ENUM with no commit.
+   * @param mode Equation enum (FUNC_ADD, FUNC_SUBTRACT, FUNC_REVERSE_SUBTRACT).
+   * @throws Never throws; rejections push INVALID_ENUM to the error queue.
+   */
+  blendEquation(mode: number): void {
+    if (this.guardIfLost()) return;
+    switch (mode) {
+      case FUNC_ADD:
+      case FUNC_SUBTRACT:
+      case FUNC_REVERSE_SUBTRACT:
+        break;
+      default:
+        pushError(this.queue, INVALID_ENUM);
+        return;
+    }
+    this.state.blendEquation = mode;
   }
   /**
    * Create a texture handle via the owned store.
