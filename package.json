@@ -9,7 +9,8 @@
     "test:watch": "vitest",
     "test:conformance": "vitest run tests/conformance",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'no linter configured'"
+    "lint": "echo 'no linter configured'",
+    "smoke": "tsx scripts/glsl-smoke.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
