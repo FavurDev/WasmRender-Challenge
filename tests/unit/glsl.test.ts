@@ -559,3 +559,64 @@ describe('GLSL Front-End Pipeline Integration - M2 tests (AC-4..AC-9)', () => {
     expect(failLog(res)).toContain('custom_abort_signal');
   });
 });
+
+describe('GLSL ES 3.00 reserved-word misuse (Sprint 4 TD-007 TEST 5)', () => {
+  it.each(['image2D', 'atomic_uint', 'coherent', 'subroutine', 'buffer', 'shared'])(
+    'rejects reserved word %s as identifier with line-accurate diagnostic',
+    (word) => {
+      // Arrange:
+      const src = '#version 300 es\nvoid main() {\n  int ' + word + ' = 1;\n}\n';
+      // Act:
+      const res = fullPipeline(src, 'fragment', 300);
+      // Assert:
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error('expected failure');
+      expect(res.log).toMatch(/^ERROR: 0:3: /);
+      expect(res.log).toContain("Reserved word '" + word + "' cannot be used as identifier");
+    },
+  );
+});
+
+describe('GLSL struct reserved-word member (Sprint 4 TD-007 TEST 6)', () => {
+  it('reserved word in struct declaration rejected with line-accurate diagnostic', () => {
+    // Arrange:
+    const src = '#version 300 es\nstruct MyStruct {\n  int readonly;\n};\nvoid main() {}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error('expected failure');
+    expect(res.log).toMatch(/ERROR: 0:3: Reserved word 'readonly' cannot be used as identifier/);
+  });
+});
+
+describe('GLSL #version single-owner (Sprint 4 TD-008 TEST 7)', () => {
+  it('#version on line 1 accepted and on line 2 rejected', () => {
+    // Arrange:
+    const validSrc = '#version 300 es\nvoid main() {}\n';
+    const invalidSrc = '\n#version 300 es\nvoid main() {}\n';
+    // Act:
+    const validRes = fullPipeline(validSrc, 'vertex', 300);
+    const invalidRes = fullPipeline(invalidSrc, 'vertex', 300);
+    // Assert:
+    expect(validRes.ok).toBe(true);
+    expect(invalidRes.ok).toBe(false);
+    if (invalidRes.ok) throw new Error('expected failure');
+    expect(invalidRes.log).toContain('ERROR: 0:2:');
+    expect(invalidRes.log).toContain('#version directive must occur on the first line');
+  });
+});
+
+describe('GLSL __VERSION__ reseeding (Sprint 4 TD-008 TEST 8)', () => {
+  it('__VERSION__ expands to 100 in ES 1.00 and 300 in ES 3.00', () => {
+    // Arrange:
+    const src100 = '#if __VERSION__ == 100\nfloat v = 1.0;\n#else\nfloat v = 2.0;\n#endif\nvoid main() {}\n';
+    const src300 = '#version 300 es\n#if __VERSION__ == 300\nfloat v = 1.0;\n#else\nfloat v = 2.0;\n#endif\nvoid main() {}\n';
+    // Act:
+    const res100 = fullPipeline(src100, 'vertex', 100);
+    const res300 = fullPipeline(src300, 'vertex', 300);
+    // Assert:
+    expect(res100.ok).toBe(true);
+    expect(res300.ok).toBe(true);
+  });
+});

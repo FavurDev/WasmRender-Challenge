@@ -78,12 +78,32 @@ const V100_ONLY_KEYWORDS: ReadonlySet<string> = new Set([
   'texture2D', 'textureCube', 'texture2DProj',
 ]);
 
+// SPEC_AUDIT_LOG (TD-007 closure, 2026-09-20): audited GLSL ES 3.00 spec
+// Sections 3.3/3.7 against tokenizer tables. Result: COMMON_KEYWORDS and
+// V100_ONLY_KEYWORDS already complete; V300_ONLY_KEYWORDS was missing the
+// non-square matrix family (mat2x2..mat4x4), integer/array samplers
+// (isampler3D, isamplerCube, isampler2DArray, usampler3D, usamplerCube,
+// usampler2DArray, sampler2DArrayShadow) — added below. samplerCubeShadow
+// remains in COMMON_KEYWORDS per ES 1.00 spec (not a 300-only addition).
+// RESERVED_WORDS was missing the Section 3.7 future-reserved family
+// (buffer/shared/coherent/readonly/writeonly/atomic_uint/precise/subroutine/
+// common/partition/active/resource/filter, image/iimage/uimage/imageBuffer
+// families, sampler1DArray/sampler2DMS/sampler2DMSArray/samplerBuffer
+// families) — added below. TD-008 audit: tokenizer '#' handling is generic
+// pass-through emitting raw 'preprocessor' tokens with no #version parsing or
+// version-state mutation; src/glsl/preprocessor.ts parseDirective 'version'
+// branch is the single owner of line-1 enforcement, activeVersion mutation,
+// and __VERSION__ reseeding. tokenize(source, version?, _sink?) signature
+// retained: version is classification-only, never directive interpretation.
 // ES 3.00-only keywords (IDENTIFIER or RESERVED in 100).
 const V300_ONLY_KEYWORDS: ReadonlySet<string> = new Set([
   'layout', 'switch', 'case', 'default',
   'uint', 'uvec2', 'uvec3', 'uvec4',
+  'mat2x2', 'mat2x3', 'mat2x4', 'mat3x2', 'mat3x3', 'mat3x4', 'mat4x2', 'mat4x3', 'mat4x4',
   'flat', 'smooth', 'in', 'out',
-  'sampler3D', 'sampler2DArray', 'isampler2D', 'usampler2D',
+  'sampler3D', 'sampler2DArray', 'isampler2D', 'isampler3D', 'isamplerCube', 'isampler2DArray',
+  'usampler2D', 'usampler3D', 'usamplerCube', 'usampler2DArray',
+  'sampler2DArrayShadow',
   'noperspective', 'patch', 'sample',
 ]);
 
@@ -95,8 +115,22 @@ const RESERVED_WORDS: ReadonlySet<string> = new Set([
   'superp', 'input', 'output', 'hvec2', 'hvec3', 'hvec4',
   'dvec2', 'dvec3', 'dvec4', 'fvec2', 'fvec3', 'fvec4',
   'sampler1D', 'sampler1DShadow', 'sampler2DRect', 'sampler2DRectShadow',
-  'sizeof', 'cast', 'namespace', 'using', 'row_major',
+  'cast', 'namespace', 'using', 'row_major',
   'this', 'class', 'template', 'typename',
+  'buffer', 'shared', 'coherent', 'readonly', 'writeonly', 'atomic_uint',
+  'precise', 'subroutine', 'common', 'partition', 'active', 'resource', 'filter',
+  'image1D', 'image2D', 'image3D', 'imageCube',
+  'iimage1D', 'iimage2D', 'iimage3D', 'iimageCube',
+  'uimage1D', 'uimage2D', 'uimage3D', 'uimageCube',
+  'image1DArray', 'image2DArray',
+  'iimage1DArray', 'iimage2DArray', 'uimage1DArray', 'uimage2DArray',
+  'image1DShadow', 'image2DShadow', 'image1DArrayShadow', 'image2DArrayShadow',
+  'imageBuffer', 'iimageBuffer', 'uimageBuffer',
+  'sampler1DArray', 'sampler1DArrayShadow', 'isampler1D', 'isampler1DArray',
+  'usampler1D', 'usampler1DArray',
+  'sampler2DMS', 'isampler2DMS', 'usampler2DMS',
+  'sampler2DMSArray', 'isampler2DMSArray', 'usampler2DMSArray',
+  'samplerBuffer', 'isamplerBuffer', 'usamplerBuffer',
 ]);
 
 function isKeyword(word: string, activeVersion: number): boolean {
@@ -152,7 +186,9 @@ export function tokenize(
     const ch = source[pos] as string;
     const tokenCol = pos - lineStartPos + 1;
 
-    // 2.0 preprocessor line detection
+    // 2.0 preprocessor line detection (TD-008: generic pass-through only —
+    // no #version parsing or version-state mutation here; the preprocessor
+    // owns all directive semantics).
     if (ch === '#') {
       let isLineStart = true;
       let checkIdx = pos - 1;
