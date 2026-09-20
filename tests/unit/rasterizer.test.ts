@@ -542,3 +542,255 @@ describe('Clipper - Sutherland-Hodgman frustum clip', () => {
     expect(found).toBe(true);
   });
 });
+
+import { mapClipToScreen, rasterizeTriangle } from '../../src/raster/rasterizer';
+import type { ScreenVertex } from '../../src/raster/rasterizer';
+import { BACK, CCW, CULL_FACE, CW, FRONT, FRONT_AND_BACK, SCISSOR_TEST } from '../../src/gl/constants';
+
+function sv(x: number, y: number, z = 0.5, color: [number, number, number, number] = [1, 0, 0, 1]): ScreenVertex {
+  return { x: Math.round(x * 16), y: Math.round(y * 16), z, invW: 1.0, varyings: new Float32Array(color) };
+}
+
+function pxColor(buf: DrawingBuffer, w: number, x: number, y: number): [number, number, number, number] {
+  const c = buf.getColorBuffer();
+  const o = (y * w + x) * 4;
+  return [c[o] as number, c[o + 1] as number, c[o + 2] as number, c[o + 3] as number];
+}
+
+describe('Rasterizer - shared-edge quad single coverage (Group 7, SOW-REQ-008)', () => {
+  it('shared-edge quad coverage is exactly one per pixel', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setViewport(0, 0, 10, 10);
+    const state = glState.snapshot();
+    const red = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const green = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const t1a = sv(2, 2, 0.5, [1, 0, 0, 1]);
+    const t1b = sv(8, 2, 0.5, [1, 0, 0, 1]);
+    const t1c = sv(8, 8, 0.5, [1, 0, 0, 1]);
+    const t2a = sv(2, 2, 0.5, [0, 1, 0, 1]);
+    const t2b = sv(8, 8, 0.5, [0, 1, 0, 1]);
+    const t2c = sv(2, 8, 0.5, [0, 1, 0, 1]);
+    // Act:
+    rasterizeTriangle(t1a, t1b, t1c, state, red);
+    rasterizeTriangle(t2a, t2b, t2c, state, green);
+    // Assert:
+    let redCount = 0;
+    let greenCount = 0;
+    let overlap = 0;
+    for (let y = 2; y < 8; y++) {
+      for (let x = 2; x < 8; x++) {
+        const r = pxColor(red, 10, x, y);
+        const g = pxColor(green, 10, x, y);
+        const rHit = r[0] === 255 && r[1] === 0;
+        const gHit = g[1] === 255 && g[0] === 0;
+        if (rHit) redCount++;
+        if (gHit) greenCount++;
+        if (rHit && gHit) overlap++;
+        expect(rHit || gHit).toBe(true);
+      }
+    }
+    expect(overlap).toBe(0);
+    expect(redCount + greenCount).toBe(36);
+  });
+});
+
+describe('Rasterizer - degenerate rejection (Group 8)', () => {
+  it('zero-area collinear triangle emits no fragments', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const before = Array.from(buf.getColorBuffer());
+    const beforeDS = Array.from(buf.getDepthStencilBuffer());
+    // Act:
+    rasterizeTriangle(sv(2, 2), sv(4, 4), sv(6, 6), state, buf);
+    // Assert:
+    expect(Array.from(buf.getColorBuffer())).toEqual(before);
+    expect(Array.from(buf.getDepthStencilBuffer())).toEqual(beforeDS);
+  });
+
+  it('identical vertices triangle emits no fragments', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const before = Array.from(buf.getColorBuffer());
+    // Act:
+    rasterizeTriangle(sv(3, 3), sv(3, 3), sv(3, 3), state, buf);
+    // Assert:
+    expect(Array.from(buf.getColorBuffer())).toEqual(before);
+  });
+});
+
+describe('Rasterizer - back-face culling (Group 9)', () => {
+  it('cullFaceMode BACK with frontFace CCW rejects CW triangle', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setEnable(CULL_FACE, true);
+    glState.setFrontFace(CCW);
+    glState.setCullFace(BACK);
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const before = Array.from(buf.getColorBuffer());
+    // Act: CW triangle (2,2),(2,8),(8,2)
+    rasterizeTriangle(sv(2, 2), sv(2, 8), sv(8, 2), state, buf);
+    // Assert:
+    expect(Array.from(buf.getColorBuffer())).toEqual(before);
+  });
+
+  it('disabling cullFace renders CW triangle', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    // Act:
+    rasterizeTriangle(sv(2, 2), sv(2, 8), sv(8, 2), state, buf);
+    // Assert:
+    const c = pxColor(buf, 10, 4, 4);
+    expect(c).toEqual([255, 0, 0, 255]);
+  });
+
+  it('cullFaceMode FRONT with frontFace CCW rejects CCW triangle', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setEnable(CULL_FACE, true);
+    glState.setFrontFace(CCW);
+    glState.setCullFace(FRONT);
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const before = Array.from(buf.getColorBuffer());
+    // Act: CCW triangle (2,2),(8,2),(8,8)
+    rasterizeTriangle(sv(2, 2), sv(8, 2), sv(8, 8), state, buf);
+    // Assert:
+    expect(Array.from(buf.getColorBuffer())).toEqual(before);
+  });
+
+  it('cullFaceMode FRONT_AND_BACK rejects both CW and CCW triangles', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setEnable(CULL_FACE, true);
+    glState.setFrontFace(CCW);
+    glState.setCullFace(FRONT_AND_BACK);
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const before = Array.from(buf.getColorBuffer());
+    // Act:
+    rasterizeTriangle(sv(2, 2), sv(8, 2), sv(8, 8), state, buf);
+    rasterizeTriangle(sv(2, 2), sv(2, 8), sv(8, 2), state, buf);
+    // Assert:
+    expect(Array.from(buf.getColorBuffer())).toEqual(before);
+  });
+});
+
+describe('Rasterizer - viewport bounds clamping (Group 10)', () => {
+  it('triangle crossing viewport boundary clamps traversal', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setViewport(0, 0, 10, 10);
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    // Act:
+    const act = (): void => rasterizeTriangle(sv(-5, 2), sv(15, 2), sv(5, 12), state, buf);
+    // Assert:
+    expect(act).not.toThrow();
+    act();
+    let written = 0;
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) {
+      const c = pxColor(buf, 10, x, y);
+      if (c[0] !== 0 || c[1] !== 0 || c[2] !== 0) written++;
+    }
+    expect(written).toBeGreaterThan(0);
+  });
+});
+
+describe('Rasterizer - scissor box clamping (Group 11)', () => {
+  it('scissor box restricts rasterization to scissorBox intersection', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 20, height: 20 });
+    glState.setViewport(0, 0, 20, 20);
+    glState.setScissor(5, 5, 6, 6);
+    glState.setEnable(SCISSOR_TEST, true);
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 20, height: 20 });
+    // Act:
+    rasterizeTriangle(sv(2, 2), sv(18, 2), sv(2, 18), state, buf);
+    // Assert:
+    expect(pxColor(buf, 20, 3, 3)).toEqual([0, 0, 0, 0]);
+    expect(pxColor(buf, 20, 15, 15)).toEqual([0, 0, 0, 0]);
+    let inside = 0;
+    for (let y = 5; y <= 10; y++) for (let x = 5; x <= 10; x++) {
+      const c = pxColor(buf, 20, x, y);
+      if (c[0] !== 0 || c[1] !== 0 || c[2] !== 0) inside++;
+    }
+    expect(inside).toBeGreaterThan(0);
+  });
+});
+
+describe('Rasterizer - fragment depth writes (Group 12)', () => {
+  it('interpolateDepth writes correct depth values into depthStencilBuffer', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    const state = glState.snapshot();
+    const buf = new DrawingBuffer(sink, { width: 10, height: 10 });
+    // Act:
+    rasterizeTriangle(sv(2, 2, 0.2), sv(8, 2, 0.6), sv(2, 8, 0.8), state, buf);
+    // Assert:
+    const ds = buf.getDepthStencilBuffer();
+    let touched = 0;
+    for (let i = 0; i < ds.length; i++) {
+      const depth = (ds[i] as number) >>> 8;
+      if (depth !== 0x00ffffff) {
+        touched++;
+        expect(depth).toBeGreaterThanOrEqual(Math.round(0.2 * 16777215));
+        expect(depth).toBeLessThanOrEqual(Math.round(0.8 * 16777215));
+        expect((ds[i] as number) & 0xff).toBe(0);
+      }
+    }
+    expect(touched).toBeGreaterThan(0);
+  });
+});
+
+describe('Rasterizer - determinism regression (Group 13)', () => {
+  it('identical triangle rasterized into two fresh buffers produces byte-identical output', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 32, height: 32 });
+    const state = glState.snapshot();
+    const b1 = new DrawingBuffer(sink, { width: 32, height: 32 });
+    const b2 = new DrawingBuffer(sink, { width: 32, height: 32 });
+    // Act:
+    rasterizeTriangle(sv(4, 4, 0.3), sv(28, 6, 0.6), sv(10, 28, 0.9), state, b1);
+    rasterizeTriangle(sv(4, 4, 0.3), sv(28, 6, 0.6), sv(10, 28, 0.9), state, b2);
+    // Assert:
+    expect(Array.from(b1.getColorBuffer())).toEqual(Array.from(b2.getColorBuffer()));
+    expect(Array.from(b1.getDepthStencilBuffer())).toEqual(Array.from(b2.getDepthStencilBuffer()));
+  });
+});
+
+describe('Rasterizer - mapClipToScreen (AC-1)', () => {
+  it('mapClipToScreen converts clip coordinates to 1/16th subpixels and depth', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setViewport(0, 0, 10, 10);
+    const state = glState.snapshot();
+    // Act:
+    const s = mapClipToScreen({ clip: [0, 0, 0, 1], pointSize: 1, varyings: new Float32Array([1, 0, 0, 1]) }, state);
+    // Assert:
+    expect(s.x).toBe(Math.round(5 * 16));
+    expect(s.y).toBe(Math.round(5 * 16));
+    expect(s.z).toBeCloseTo(0.5, 5);
+    expect(s.invW).toBeCloseTo(1.0, 5);
+  });
+});
