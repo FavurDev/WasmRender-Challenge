@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T4 minimal WebGL1 context facade composition root
 /** WebGL1Context — minimal WebGL 1.0 facade; composition root (ADR-013). */
 import {
   COLOR_BUFFER_BIT,

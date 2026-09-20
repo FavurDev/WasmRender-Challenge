@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T2 Sutherland-Hodgman frustum clipper with clip-space varying interpolation
 /** Sutherland-Hodgman frustum clipper (L4 raster, ADR-012 float32). */
 
 export interface ClipVertex {

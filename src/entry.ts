@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T4 software WebGL context factory entry dispatch
 /** Entry point — software WebGL context factory (composition-root dispatcher). */
 import { WebGL1Context } from './gl/webgl1-context';
 import type { WebGLContextAttributes } from './gl/context-attributes';
