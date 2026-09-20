@@ -1,7 +1,11 @@
-/** GLSL ES tokenizer red-phase tests (Sprint 3 Task 1) — written against the blueprint; fail until src/glsl/tokenizer.ts exists. */
+/** GLSL front-end consolidated suite (Sprint 3 Task 5) — restored committed unit tests + pipeline integration (TDD red phase). */
 import { describe, expect, it } from 'vitest';
 import { formatDiagnostic, tokenize } from '../../src/glsl/tokenizer';
-import type { Token } from '../../src/glsl/tokenizer';
+import type { CompileResult, Token } from '../../src/glsl/tokenizer';
+import { runPreprocessor } from '../../src/glsl/preprocessor';
+import { parse } from '../../src/glsl/parser';
+import { check } from '../../src/glsl/checker';
+import type { CheckedShader } from '../../src/glsl/checker';
 import { ErrorSink } from '../../src/gl/errors';
 import { NO_ERROR } from '../../src/gl/constants';
 
@@ -192,170 +196,156 @@ describe('Tokenizer - boolean constants (TEST 10, AC-1)', () => {
   });
 });
 
-import { describe as describePre, expect as expectPre, it as itPre } from 'vitest';
-import { runPreprocessor } from '../../src/glsl/preprocessor';
-
-function preprocessOk(source: string, version?: number) {
-  // Arrange helper: tokenize then preprocess, unwrap success branch.
-  const tres = tokenize(source, version);
-  expectPre(tres.ok).toBe(true);
-  if (!tres.ok) throw new Error('tokenize failed');
-  const pres = runPreprocessor(tres.tokens, version);
-  expectPre(pres.ok).toBe(true);
-  if (!pres.ok) throw new Error('expected ok');
-  return pres.tokens;
-}
-
-describePre('Preprocessor - object macro (TEST 1, AC-1)', () => {
-  itPre('object macro #define A 2 expands to 2 at use site', () => {
+describe('Preprocessor - object macro (TEST 1, AC-1)', () => {
+  it('object macro #define A 2 expands to 2 at use site', () => {
     // Arrange:
     const source = '#define A 2\nint x = A;';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
     const hit = pres.tokens.find((t) => t.text === '2' && t.line === 2);
-    expectPre(hit).toBeDefined();
-    expectPre(hit).toMatchObject({ kind: 'INT_CONSTANT', text: '2', line: 2 });
+    expect(hit).toBeDefined();
+    expect(hit).toMatchObject({ kind: 'INT_CONSTANT', text: '2', line: 2 });
   });
 });
 
-describePre('Preprocessor - undef diagnostic (TEST 2, AC-2)', () => {
-  itPre('#undef A then use of A yields ok:false with line-3 diagnostic', () => {
+describe('Preprocessor - undef diagnostic (TEST 2, AC-2)', () => {
+  it('#undef A then use of A yields ok:false with line-3 diagnostic', () => {
     // Arrange:
     const source = '#define A 2\n#undef A\nint x = A;';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(false);
+    expect(pres.ok).toBe(false);
     if (pres.ok) throw new Error('expected failure');
-    expectPre(pres.log).toMatch(/^ERROR: 0:3: /);
+    expect(pres.log).toMatch(/^ERROR: 0:3: /);
   });
 });
 
-describePre('Preprocessor - function macro (TEST 3, AC-3)', () => {
-  itPre('MUL(1+2) substitutes textually to ((1+2)*(1+2))', () => {
+describe('Preprocessor - function macro (TEST 3, AC-3)', () => {
+  it('MUL(1+2) substitutes textually to ((1+2)*(1+2))', () => {
     // Arrange:
     const source = '#define MUL(x) ((x)*(x))\nint y = MUL(1+2);';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
     const seq = pres.tokens.filter((t) => t.line === 2).map((t) => t.text).join('');
-    expectPre(seq).toContain('((1+2)*(1+2))');
+    expect(seq).toContain('((1+2)*(1+2))');
   });
 });
 
-describePre('Preprocessor - recursion termination (TEST 4-5, AC-4)', () => {
-  itPre('self-recursive #define R R terminates with R unexpanded', () => {
+describe('Preprocessor - recursion termination (TEST 4-5, AC-4)', () => {
+  it('self-recursive #define R R terminates with R unexpanded', () => {
     // Arrange:
     const source = '#define R R\nint x = R;';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
-    expectPre(pres.tokens.some((t) => t.text === 'R' && t.kind === 'IDENTIFIER')).toBe(true);
+    expect(pres.tokens.some((t) => t.text === 'R' && t.kind === 'IDENTIFIER')).toBe(true);
   });
 
-  itPre('mutually recursive X/Y terminates cleanly', () => {
+  it('mutually recursive X/Y terminates cleanly', () => {
     // Arrange:
     const source = '#define X Y\n#define Y X\nint a = X;';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
   });
 });
 
-describePre('Preprocessor - caps (TEST 6-7, AC-5)', () => {
-  itPre('expansion depth beyond 64 yields depth-limit diagnostic', () => {
+describe('Preprocessor - caps (TEST 6-7, AC-5)', () => {
+  it('expansion depth beyond 64 yields depth-limit diagnostic', () => {
     // Arrange:
     let src = '#define M0 1\n';
     for (let i = 1; i <= 65; i++) src += '#define M' + i + ' M' + (i - 1) + '\n';
     src += 'int val = M65;';
     const tres = tokenize(src);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(false);
+    expect(pres.ok).toBe(false);
     if (pres.ok) throw new Error('expected failure');
-    expectPre(pres.log).toMatch(/^ERROR: 0:\d+: /);
-    expectPre(pres.log.toLowerCase()).toContain('depth');
+    expect(pres.log).toMatch(/^ERROR: 0:\d+: /);
+    expect(pres.log.toLowerCase()).toContain('depth');
   });
 
-  itPre('exponential growth beyond 65536 tokens yields token-cap diagnostic', () => {
+  it('exponential growth beyond 65536 tokens yields token-cap diagnostic', () => {
     // Arrange:
     let src = '#define D0 1 1\n';
     for (let i = 1; i <= 16; i++) src += '#define D' + i + ' D' + (i - 1) + ' D' + (i - 1) + '\n';
     src += 'int v = D16;';
     const tres = tokenize(src);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(false);
+    expect(pres.ok).toBe(false);
     if (pres.ok) throw new Error('expected failure');
-    expectPre(pres.log).toMatch(/^ERROR: 0:\d+: /);
-    expectPre(pres.log.toLowerCase()).toContain('token');
+    expect(pres.log).toMatch(/^ERROR: 0:\d+: /);
+    expect(pres.log.toLowerCase()).toContain('token');
   });
 });
 
-describePre('Preprocessor - stringify and paste (TEST 8-9, AC-6)', () => {
-  itPre('# stringifies argument to quoted text', () => {
+describe('Preprocessor - stringify and paste (TEST 8-9, AC-6)', () => {
+  it('# stringifies argument to quoted text', () => {
     // Arrange:
     const source = '#define STR(x) #x\nSTR(hello world)';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
-    expectPre(pres.tokens.some((t) => t.text === '"hello world"')).toBe(true);
+    expect(pres.tokens.some((t) => t.text === '"hello world"')).toBe(true);
   });
 
-  itPre('## pastes to single composite token my_var', () => {
+  it('## pastes to single composite token my_var', () => {
     // Arrange:
     const source = '#define GLUE(a, b) a##b\nint GLUE(my_, var) = 5;';
     const tres = tokenize(source);
-    expectPre(tres.ok).toBe(true);
+    expect(tres.ok).toBe(true);
     if (!tres.ok) throw new Error('tokenize failed');
     // Act:
     const pres = runPreprocessor(tres.tokens);
     // Assert:
-    expectPre(pres.ok).toBe(true);
+    expect(pres.ok).toBe(true);
     if (!pres.ok) throw new Error('expected ok');
     const hit = pres.tokens.find((t) => t.text === 'my_var');
-    expectPre(hit).toBeDefined();
-    expectPre(hit).toMatchObject({ kind: 'IDENTIFIER', text: 'my_var' });
+    expect(hit).toBeDefined();
+    expect(hit).toMatchObject({ kind: 'IDENTIFIER', text: 'my_var' });
   });
 });
 
-describePre('Preprocessor - never throws and ErrorSink isolation (TEST 10)', () => {
-  itPre('hostile inputs return ok:false, never throw, sink stays NO_ERROR', () => {
+describe('Preprocessor - never throws and ErrorSink isolation (TEST 10)', () => {
+  it('hostile inputs return ok:false, never throw, sink stays NO_ERROR', () => {
     // Arrange:
     const sink = new ErrorSink();
     const inputs = ['#define\n', '#undef\n', '#define F( 1 2\n', '#define B\nint x = B(1,2);'];
@@ -364,11 +354,208 @@ describePre('Preprocessor - never throws and ErrorSink isolation (TEST 10)', () 
       const tres = tokenize(input);
       if (!tres.ok) continue;
       let pres: ReturnType<typeof runPreprocessor> | undefined;
-      expectPre(() => {
+      expect(() => {
         pres = runPreprocessor(tres.tokens);
       }).not.toThrow();
-      expectPre(typeof pres!.ok).toBe('boolean');
-      expectPre(sink.getError()).toBe(NO_ERROR);
+      expect(typeof pres!.ok).toBe('boolean');
+      expect(sink.getError()).toBe(NO_ERROR);
     }
+  });
+});
+
+const DIAG_RE = /^ERROR: 0:\d+: /;
+
+type Stage = 'vertex' | 'fragment';
+
+function fullPipeline(source: string, stage: Stage, version?: number): CompileResult<CheckedShader> {
+  const v: 100 | 300 = version === 300 ? 300 : 100;
+  // Step 1: Tokenize
+  const tres = tokenize(source, v);
+  if (!tres.ok) return tres;
+  // Step 2: Preprocess
+  const pres = runPreprocessor(tres.tokens, v);
+  if (!pres.ok) return pres;
+  // Step 3: Parse
+  const pares = parse(pres.tokens, v);
+  if (!pares.ok) return pares;
+  // Step 4: Check
+  return check(pares.tokens, stage, v);
+}
+
+function failLog(res: CompileResult<CheckedShader>): string {
+  if (res.ok) throw new Error('expected failure result');
+  return res.log;
+}
+
+describe('GLSL Front-End Pipeline Integration - smoke (AC-1)', () => {
+  it('ES 1.00 vertex shader clean compilation', () => {
+    // Arrange:
+    const vsrc = 'attribute vec4 aPos;\nuniform mat4 uM;\nvoid main() {\n gl_Position = uM * aPos;\n}\n';
+    // Act:
+    const res = fullPipeline(vsrc, 'vertex', 100);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+
+  it('ES 1.00 fragment shader clean compilation', () => {
+    // Arrange:
+    const fsrc = 'precision mediump float;\nvarying vec4 vC;\nvoid main() {\n gl_FragColor = vC;\n}\n';
+    // Act:
+    const res = fullPipeline(fsrc, 'fragment', 100);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+
+  it('ES 3.00 vertex shader clean compilation', () => {
+    // Arrange:
+    const vsrc = 'layout(location = 0) in vec4 aPos;\nout vec4 vC;\nvoid main() {\n vC = aPos;\n}\n';
+    // Act:
+    const res = fullPipeline(vsrc, 'vertex', 300);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+
+  it('ES 3.00 fragment shader clean compilation', () => {
+    // Arrange:
+    const fsrc = 'precision mediump float;\nin vec4 vC;\nout vec4 fragColor;\nvoid main() {\n fragColor = vC;\n}\n';
+    // Act:
+    const res = fullPipeline(fsrc, 'fragment', 300);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe('GLSL Front-End Pipeline Integration - ES 3.00 gating (AC-2)', () => {
+  it('ES 3.00 rejects attribute keyword with line diagnostic', () => {
+    // Arrange:
+    const src = 'attribute vec4 aPos;\nvoid main() {\n gl_Position = aPos;\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(DIAG_RE);
+    expect(failLog(res)).toContain('ERROR: 0:');
+  });
+
+  it('ES 3.00 rejects varying keyword with line diagnostic', () => {
+    // Arrange:
+    const src = 'varying vec4 vColor;\nvoid main() {\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(DIAG_RE);
+  });
+
+  it('ES 3.00 rejects gl_FragColor assignment', () => {
+    // Arrange:
+    const src = 'precision mediump float;\nvoid main() {\n gl_FragColor = vec4(1.0);\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'fragment', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(DIAG_RE);
+    expect(failLog(res)).toContain('gl_FragColor');
+  });
+
+  it('ES 3.00 rejects texture2D builtin function', () => {
+    // Arrange:
+    const src =
+      'precision mediump float;\nuniform sampler2D uSampler;\nin vec2 vUV;\nout vec4 fragColor;\nvoid main() {\n fragColor = texture2D(uSampler, vUV);\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'fragment', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(DIAG_RE);
+    expect(failLog(res).toLowerCase()).toContain('texture2d');
+  });
+
+  it('ES 3.00 rejects textureCube builtin function', () => {
+    // Arrange:
+    const src =
+      'precision mediump float;\nuniform samplerCube uCube;\nin vec3 vDir;\nout vec4 fragColor;\nvoid main() {\n fragColor = textureCube(uCube, vDir);\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'fragment', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(DIAG_RE);
+    expect(failLog(res).toLowerCase()).toContain('texturecube');
+  });
+});
+
+describe('GLSL Front-End Pipeline Integration - ES 1.00 acceptance (AC-3)', () => {
+  it('ES 1.00 accepts texture2D and textureCube', () => {
+    // Arrange:
+    const src =
+      'precision mediump float;\nuniform sampler2D uS;\nuniform samplerCube uC;\nvarying vec2 vUV;\nvarying vec3 vDir;\nvoid main() {\n vec4 a = texture2D(uS, vUV);\n vec4 b = textureCube(uC, vDir);\n gl_FragColor = a + b;\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'fragment', 100);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe('GLSL Front-End Pipeline Integration - M2 tests (AC-4..AC-9)', () => {
+  it('M2-1: #define expands value and #undef triggers undeclared identifier', () => {
+    // Arrange:
+    const src =
+      '#define A 2\nvoid main() {\n float x = float(A);\n}\n#undef A\nvoid helper() {\n float y = float(A);\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 100);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(/ERROR: 0:\d+: Undeclared identifier 'A'/);
+  });
+
+  it('M2-2: #if defined(X) branch selection', () => {
+    // Arrange:
+    const src =
+      '#define X\n#if defined(X)\nfloat val = 1.0;\n#else\nfloat val = 2.0;\n#endif\nvoid main() {\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 100);
+    // Assert:
+    expect(res.ok).toBe(true);
+  });
+
+  it('M2-3: __VERSION__ expands to 100 in ES 1.00 and 300 in ES 3.00', () => {
+    // Arrange:
+    const src100 = '#if __VERSION__ == 100\nfloat v = 1.0;\n#else\nfloat v = 2.0;\n#endif\nvoid main() {\n}\n';
+    const src300 = '#if __VERSION__ == 300\nfloat v = 1.0;\n#else\nfloat v = 2.0;\n#endif\nvoid main() {\n}\n';
+    // Act:
+    const r100 = fullPipeline(src100, 'vertex', 100);
+    const r300 = fullPipeline(src300, 'vertex', 300);
+    // Assert:
+    expect(r100.ok).toBe(true);
+    expect(r300.ok).toBe(true);
+  });
+
+  it('M2-4: #version on line 2 produces line-accurate diagnostic', () => {
+    // Arrange:
+    const src = '\n#version 300 es\nvoid main() {\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 300);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toContain('ERROR: 0:2:');
+  });
+
+  it('M2-8: Undeclared identifier produces line-accurate diagnostic', () => {
+    // Arrange:
+    const src = 'void main() {\n float x = 1.0;\n y = 2.0;\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 100);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toMatch(/ERROR: 0:3: Undeclared identifier/);
+  });
+
+  it('M2-11: #error aborts compilation with message in info log', () => {
+    // Arrange:
+    const src = '#error custom_abort_signal\nvoid main() {\n}\n';
+    // Act:
+    const res = fullPipeline(src, 'vertex', 100);
+    // Assert:
+    expect(res.ok).toBe(false);
+    expect(failLog(res)).toContain('custom_abort_signal');
   });
 });

@@ -33,6 +33,191 @@ interface PreprocessorState {
   activeVersion: number;
   definedEver: Set<string>;
   undefSet: Set<string>;
+  condStack: Array<{ active: boolean; hasElse: boolean; branchTaken: boolean }>;
+  sawNonDirectiveToken: boolean;
+  firstDirectiveSeen: boolean;
+}
+
+function isCurrentlyActive(state: PreprocessorState): boolean {
+  for (const entry of state.condStack) {
+    if (!entry.active) return false;
+  }
+  return true;
+}
+
+/** Evaluate a #if/#elif constant expression. Supports defined(), macro expansion, ==, !=, <, <=, >, >=, &&, ||, !. */
+function evalConstExpr(exprText: string, state: PreprocessorState, line: number): boolean {
+  void line;
+  let text = exprText;
+  // 1. defined(NAME) and defined NAME -> 1/0
+  text = text.replace(/defined\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, (_m, name: string) =>
+    state.macroTable.has(name) ? '1' : '0',
+  );
+  text = text.replace(/defined\s+([A-Za-z_][A-Za-z0-9_]*)/g, (_m, name: string) =>
+    state.macroTable.has(name) ? '1' : '0',
+  );
+  // 2. Expand object macros (e.g. __VERSION__)
+  text = text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (name: string) => {
+    if (/^[0-9]/.test(name)) return name;
+    const def = state.macroTable.get(name);
+    if (def !== undefined && def.kind === 'object') {
+      const flat = def.replacement.map((t) => t.text).join(' ');
+      if (/^[0-9+\-*/%<>=!&|^~()\s]+$/.test(flat) || /^[0-9]+$/.test(flat.trim())) return '(' + flat + ')';
+      const n = Number(flat.trim());
+      if (!Number.isNaN(n)) return String(Math.trunc(n));
+      return '(' + flat + ')';
+    }
+    if (def !== undefined) return name;
+    // Remaining identifiers -> 0 per GLSL spec
+    if (name === 'true') return '1';
+    if (name === 'false') return '0';
+    return '0';
+  });
+  // 3. Safe evaluation of integer/boolean expression
+  try {
+    let pos = 0;
+    const s = text;
+    const skipWs = (): void => {
+      while (pos < s.length && /\s/.test(s[pos] as string)) pos++;
+    };
+    const parseOr = (): number => {
+      let v = parseAnd();
+      for (;;) {
+        skipWs();
+        if (s.startsWith('||', pos)) {
+          pos += 2;
+          const r = parseAnd();
+          v = v !== 0 || r !== 0 ? 1 : 0;
+        } else break;
+      }
+      return v;
+    };
+    const parseAnd = (): number => {
+      let v = parseEquality();
+      for (;;) {
+        skipWs();
+        if (s.startsWith('&&', pos)) {
+          pos += 2;
+          const r = parseEquality();
+          v = v !== 0 && r !== 0 ? 1 : 0;
+        } else break;
+      }
+      return v;
+    };
+    const parseEquality = (): number => {
+      let v = parseRel();
+      for (;;) {
+        skipWs();
+        if (s.startsWith('==', pos)) {
+          pos += 2;
+          const r = parseRel();
+          v = v === r ? 1 : 0;
+        } else if (s.startsWith('!=', pos)) {
+          pos += 2;
+          const r = parseRel();
+          v = v !== r ? 1 : 0;
+        } else break;
+      }
+      return v;
+    };
+    const parseRel = (): number => {
+      let v = parseAdd();
+      for (;;) {
+        skipWs();
+        if (s.startsWith('<=', pos)) {
+          pos += 2;
+          const r = parseAdd();
+          v = v <= r ? 1 : 0;
+        } else if (s.startsWith('>=', pos)) {
+          pos += 2;
+          const r = parseAdd();
+          v = v >= r ? 1 : 0;
+        } else if (s[pos] === '<') {
+          pos += 1;
+          const r = parseAdd();
+          v = v < r ? 1 : 0;
+        } else if (s[pos] === '>') {
+          pos += 1;
+          const r = parseAdd();
+          v = v > r ? 1 : 0;
+        } else break;
+      }
+      return v;
+    };
+    const parseAdd = (): number => {
+      let v = parseMul();
+      for (;;) {
+        skipWs();
+        if (s[pos] === '+') {
+          pos += 1;
+          v += parseMul();
+        } else if (s[pos] === '-') {
+          pos += 1;
+          v -= parseMul();
+        } else break;
+      }
+      return v;
+    };
+    const parseMul = (): number => {
+      let v = parseUnary();
+      for (;;) {
+        skipWs();
+        if (s[pos] === '*') {
+          pos += 1;
+          v *= parseUnary();
+        } else if (s[pos] === '/') {
+          pos += 1;
+          const r = parseUnary();
+          v = r === 0 ? 0 : Math.trunc(v / r);
+        } else if (s[pos] === '%') {
+          pos += 1;
+          const r = parseUnary();
+          v = r === 0 ? 0 : v % r;
+        } else break;
+      }
+      return v;
+    };
+    const parseUnary = (): number => {
+      skipWs();
+      if (s[pos] === '!') {
+        if (s.startsWith('!=', pos)) return parsePrimary();
+        pos += 1;
+        const v = parseUnary();
+        return v === 0 ? 1 : 0;
+      }
+      if (s[pos] === '-') {
+        pos += 1;
+        return -parseUnary();
+      }
+      if (s[pos] === '+') {
+        pos += 1;
+        return parseUnary();
+      }
+      return parsePrimary();
+    };
+    const parsePrimary = (): number => {
+      skipWs();
+      if (s[pos] === '(') {
+        pos += 1;
+        const v = parseOr();
+        skipWs();
+        if (s[pos] === ')') pos += 1;
+        return v;
+      }
+      const m = /^[0-9]+/.exec(s.slice(pos));
+      if (m) {
+        pos += m[0].length;
+        return Number(m[0]);
+      }
+      // Unknown token -> treat as 0 and advance
+      if (pos < s.length) pos += 1;
+      return 0;
+    };
+    const result = parseOr();
+    return result !== 0;
+  } catch {
+    return false;
+  }
 }
 
 type DirectiveResult = { ok: true } | { ok: false; errorMessage: string };
@@ -91,6 +276,10 @@ function parseDirective(lineText: string, line: number, state: PreprocessorState
   const rest = trimmed.slice(1).trimStart();
   const directiveName = firstWord(rest);
   const directiveArgs = rest.slice(directiveName.length).trimStart();
+  const isConditional = directiveName === 'if' || directiveName === 'ifdef' || directiveName === 'ifndef' || directiveName === 'elif' || directiveName === 'else' || directiveName === 'endif';
+  if (!isConditional && !isCurrentlyActive(state)) {
+    return { ok: true };
+  }
   if (directiveName === 'define') {
     if (directiveArgs === '') {
       return { ok: false, errorMessage: formatDiagnostic(line, 'Missing macro name in #define', 0) };
@@ -144,7 +333,89 @@ function parseDirective(lineText: string, line: number, state: PreprocessorState
     if (state.definedEver.has(name)) state.undefSet.add(name);
     return { ok: true };
   }
-  // Task 3 directives (#if/#version/#error/...) pass through harmlessly.
+  if (directiveName === 'version') {
+    if (line !== 1 || state.sawNonDirectiveToken) {
+      return { ok: false, errorMessage: formatDiagnostic(line, '#version directive must occur on the first line', 0) };
+    }
+    const verMatch = /^\s*(\d+)/.exec(directiveArgs);
+    if (verMatch) {
+      const ver = Number(verMatch[1]);
+      if (ver === 300) {
+        state.activeVersion = 300;
+        const seed = tokenize('300', 300);
+        const rep = seed.ok ? seed.tokens.filter((t) => t.kind !== 'EOF') : [];
+        state.macroTable.set('__VERSION__', { kind: 'object', name: '__VERSION__', replacement: rep });
+      } else {
+        state.activeVersion = 100;
+        const seed = tokenize('100', 100);
+        const rep = seed.ok ? seed.tokens.filter((t) => t.kind !== 'EOF') : [];
+        state.macroTable.set('__VERSION__', { kind: 'object', name: '__VERSION__', replacement: rep });
+      }
+    }
+    return { ok: true };
+  }
+  if (directiveName === 'ifdef') {
+    const parentActive = isCurrentlyActive(state);
+    const cond = state.macroTable.has(directiveArgs.trim().split(/\s/)[0] as string);
+    state.condStack.push({ active: parentActive && cond, hasElse: false, branchTaken: cond });
+    return { ok: true };
+  }
+  if (directiveName === 'ifndef') {
+    const parentActive = isCurrentlyActive(state);
+    const cond = !state.macroTable.has(directiveArgs.trim().split(/\s/)[0] as string);
+    state.condStack.push({ active: parentActive && cond, hasElse: false, branchTaken: cond });
+    return { ok: true };
+  }
+  if (directiveName === 'if') {
+    const parentActive = isCurrentlyActive(state);
+    const cond = evalConstExpr(directiveArgs, state, line);
+    state.condStack.push({ active: parentActive && cond, hasElse: false, branchTaken: cond });
+    return { ok: true };
+  }
+  if (directiveName === 'elif') {
+    const top = state.condStack[state.condStack.length - 1];
+    if (top === undefined || top.hasElse) {
+      return { ok: false, errorMessage: formatDiagnostic(line, 'Mismatched #elif', 0) };
+    }
+    state.condStack.pop();
+    const parentActive = isCurrentlyActive(state);
+    if (top.branchTaken) {
+      state.condStack.push({ active: false, hasElse: false, branchTaken: true });
+    } else {
+      const cond = evalConstExpr(directiveArgs, state, line);
+      state.condStack.push({ active: parentActive && cond, hasElse: false, branchTaken: cond });
+    }
+    return { ok: true };
+  }
+  if (directiveName === 'else') {
+    const top = state.condStack[state.condStack.length - 1];
+    if (top === undefined || top.hasElse) {
+      return { ok: false, errorMessage: formatDiagnostic(line, 'Mismatched #else', 0) };
+    }
+    state.condStack.pop();
+    const parentActive = isCurrentlyActive(state);
+    state.condStack.push({ active: parentActive && !top.branchTaken, hasElse: true, branchTaken: true });
+    return { ok: true };
+  }
+  if (directiveName === 'endif') {
+    if (state.condStack.length === 0) {
+      return { ok: false, errorMessage: formatDiagnostic(line, 'Unmatched #endif', 0) };
+    }
+    state.condStack.pop();
+    return { ok: true };
+  }
+  // Inactive branch: skip side effects of non-conditional directives.
+  if (!isCurrentlyActive(state)) {
+    return { ok: true };
+  }
+  if (directiveName === 'error') {
+    const msg = directiveArgs.trim() !== '' ? directiveArgs.trim() : 'Directive #error encountered';
+    return { ok: false, errorMessage: formatDiagnostic(line, '#error ' + msg, 0) };
+  }
+  if (directiveName === 'define') {
+    // Redefinition on active branch handled above; fall through harmlessly.
+    return { ok: true };
+  }
   return { ok: true };
 }
 
@@ -334,6 +605,9 @@ export function runPreprocessor(tokens: Token[], version?: number): CompileResul
     activeVersion: version === 300 ? 300 : 100,
     definedEver: new Set(),
     undefSet: new Set(),
+    condStack: [],
+    sawNonDirectiveToken: false,
+    firstDirectiveSeen: false,
   };
   const verText = state.activeVersion === 300 ? '300' : '100';
   const seed = (text: string): Token[] => {
@@ -353,7 +627,13 @@ export function runPreprocessor(tokens: Token[], version?: number): CompileResul
       if (!pr.ok) return { ok: false, log: (pr as ExpandFail).errorMessage };
       continue;
     }
+    if (!isCurrentlyActive(state)) continue;
+    if (tok.kind !== 'EOF') state.sawNonDirectiveToken = true;
     body.push(tok);
+  }
+  if (state.condStack.length !== 0) {
+    const lastLine = tokens.length > 0 ? (tokens[tokens.length - 1] as Token).line : 1;
+    return { ok: false, log: formatDiagnostic(lastLine, 'Unterminated conditional directive block', 0) };
   }
   const expanded = expandList(body, state, new Set(), 1);
   if (!expanded.ok) return { ok: false, log: (expanded as ExpandFail).errorMessage };

@@ -317,7 +317,12 @@ function exprType(e: unknown, ctx: Ctx): string | null {
           if (f.callee === 'float' || f.callee === 'int' || f.callee === 'uint' || f.callee === 'bool') return f.callee;
           return f.callee;
         }
-        if (TEXTURE_FNS.has(f.callee)) return 'vec4';
+        if (TEXTURE_FNS.has(f.callee)) {
+          if (ctx.version === 300 && (f.callee === 'texture2D' || f.callee === 'textureCube')) {
+            return ctx.fail(line, "Builtin function '" + f.callee + "' is not supported in GLSL ES 3.00 (use 'texture' instead)");
+          }
+          return 'vec4';
+        }
         const overloads = ctx.funcs.get(f.callee);
         if (overloads === undefined || overloads.length === 0) {
           return ctx.fail(line, "Undeclared function '" + f.callee + "'");
