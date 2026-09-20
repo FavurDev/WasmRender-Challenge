@@ -209,3 +209,275 @@ describe('Builtins - Edge cases', () => {
     expect(Array.from(v4)).toEqual([0.0, 0.0, 0.0, 0.0]);
   });
 });
+
+/* Sprint 4 Task 3 — sampling red-phase tests (TEST 1-10). Appended; existing 16 tests untouched. */
+import type { Value } from '../../src/glsl/builtins';
+
+const T2D = 0x0de1;
+const TCUBE = 0x8513;
+const NEAREST = 0x2600;
+const LINEAR = 0x2601;
+const CLAMP = 0x812f;
+const REPEAT = 0x2901;
+const LMML = 0x2703;
+
+function tex2x2(filterMode: number) {
+  // Arrange helper: 2x2 fixture — (0,0) Red, (1,0) Green, (0,1) Blue, (1,1) Yellow.
+  const data = new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1]);
+  return {
+    id: 101,
+    alive: true,
+    target: T2D,
+    levels: [{ width: 2, height: 2, data }],
+    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: filterMode, magFilter: filterMode },
+    isNPOT: false,
+  } as unknown as Value;
+}
+
+function texMipped() {
+  // Arrange helper: L0 4x4 Red, L1 2x2 Green, L2 1x1 Blue.
+  const red = new Float32Array(4 * 4 * 4).fill(0);
+  for (let i = 0; i < 16; i++) {
+    red[i * 4] = 1;
+    red[i * 4 + 3] = 1;
+  }
+  const green = new Float32Array(2 * 2 * 4).fill(0);
+  for (let i = 0; i < 4; i++) {
+    green[i * 4 + 1] = 1;
+    green[i * 4 + 3] = 1;
+  }
+  const blue = new Float32Array([0, 0, 1, 1]);
+  return {
+    id: 102,
+    alive: true,
+    target: T2D,
+    levels: [
+      { width: 4, height: 4, data: red },
+      { width: 2, height: 2, data: green },
+      { width: 1, height: 1, data: blue },
+    ],
+    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: 0x2703, magFilter: LINEAR },
+    isNPOT: false,
+  } as unknown as Value;
+}
+
+function texCube() {
+  // Arrange helper: 6 1x1 faces — +X Red, -X Green, +Y Blue, -Y Yellow, +Z Magenta, -Z Cyan.
+  const colors: number[][] = [
+    [1, 0, 0, 1],
+    [0, 1, 0, 1],
+    [0, 0, 1, 1],
+    [1, 1, 0, 1],
+    [1, 0, 1, 1],
+    [0, 1, 1, 1],
+  ];
+  const faces = colors.map((c) => [{ width: 1, height: 1, data: new Float32Array(c) }]);
+  return {
+    id: 103,
+    alive: true,
+    target: TCUBE,
+    levels: faces,
+    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: NEAREST, magFilter: NEAREST },
+    isNPOT: false,
+  } as unknown as Value;
+}
+
+describe('Builtins - Sampling: NEAREST exact texel on 2x2 fixture', () => {
+  it('texture2D at texel center returns exact texel RGBA', () => {
+    // Arrange:
+    const tex = tex2x2(NEAREST);
+    const coord = new Float32Array([0.25, 0.25]);
+    // Act:
+    const res = evaluateBuiltin('texture2D', [tex, coord], 100) as Float32Array;
+    // Assert:
+    expect(res).toBeInstanceOf(Float32Array);
+    expect(res[0]).toBe(Math.fround(1.0));
+    expect(res[1]).toBe(Math.fround(0.0));
+    expect(res[2]).toBe(Math.fround(0.0));
+    expect(res[3]).toBe(Math.fround(1.0));
+  });
+});
+
+describe('Builtins - Sampling: LINEAR fround-normalized average of two texels', () => {
+  it('texture2D at horizontal midpoint averages Red and Green', () => {
+    // Arrange:
+    const tex = tex2x2(LINEAR);
+    const coord = new Float32Array([0.5, 0.25]);
+    // Act:
+    const res = evaluateBuiltin('texture2D', [tex, coord], 100) as Float32Array;
+    // Assert:
+    expect(res).toBeInstanceOf(Float32Array);
+    expect(res[0]).toBe(Math.fround(0.5));
+    expect(res[1]).toBe(Math.fround(0.5));
+    expect(res[2]).toBe(Math.fround(0.0));
+    expect(res[3]).toBe(Math.fround(1.0));
+  });
+});
+
+describe('Builtins - Sampling: Incomplete texture [0,0,0,1] no-throw rule', () => {
+  it('missing base level, NPOT-mipmap-REPEAT, and 1-face cube all yield opaque black', () => {
+    // Arrange:
+    const t1 = { id: 1, alive: true, target: T2D, levels: [] } as unknown as Value;
+    const t2 = {
+      id: 2,
+      alive: true,
+      target: T2D,
+      levels: [{ width: 3, height: 3, data: new Float32Array(36) }],
+      isNPOT: true,
+      sampler: { minFilter: LMML, magFilter: LINEAR, wrapS: REPEAT, wrapT: REPEAT },
+    } as unknown as Value;
+    const t3 = {
+      id: 3,
+      alive: true,
+      target: TCUBE,
+      levels: [[{ width: 2, height: 2, data: new Float32Array(16) }]],
+    } as unknown as Value;
+    const coord = new Float32Array([0.5, 0.5]);
+    // Act:
+    const r1 = evaluateBuiltin('texture2D', [t1, coord], 100) as Float32Array;
+    const r2 = evaluateBuiltin('texture2D', [t2, coord], 100) as Float32Array;
+    const r3 = evaluateBuiltin('textureCube', [t3, new Float32Array([1, 0, 0])], 100) as Float32Array;
+    // Assert:
+    for (const r of [r1, r2, r3]) {
+      expect(r).toBeInstanceOf(Float32Array);
+      expect(Array.from(r as Float32Array)).toEqual([0, 0, 0, 1]);
+    }
+  });
+});
+
+describe('Builtins - Sampling: Version gating dialect isolation in both directions', () => {
+  it('texture2D/textureCube only in V100; texture/textureProj/textureLod/textureGrad/texelFetch only in V300', () => {
+    // Arrange: (dispatch tables only — evaluateBuiltin fallback would mask absence)
+    // Act:
+    const hasTex2DV100 = BUILTINS_V100.has('texture2D');
+    const hasTex2DV300 = BUILTINS_V300.has('texture2D');
+    const hasCubeV100 = BUILTINS_V100.has('textureCube');
+    const hasCubeV300 = BUILTINS_V300.has('textureCube');
+    const hasTexV100 = BUILTINS_V100.has('texture');
+    const hasTexV300 = BUILTINS_V300.has('texture');
+    const hasProjV100 = BUILTINS_V100.has('textureProj');
+    const hasProjV300 = BUILTINS_V300.has('textureProj');
+    const hasLodV100 = BUILTINS_V100.has('textureLod');
+    const hasLodV300 = BUILTINS_V300.has('textureLod');
+    const hasGradV100 = BUILTINS_V100.has('textureGrad');
+    const hasGradV300 = BUILTINS_V300.has('textureGrad');
+    const hasFetchV100 = BUILTINS_V100.has('texelFetch');
+    const hasFetchV300 = BUILTINS_V300.has('texelFetch');
+    // Assert:
+    expect(hasTex2DV100).toBe(true);
+    expect(hasTex2DV300).toBe(false);
+    expect(hasCubeV100).toBe(true);
+    expect(hasCubeV300).toBe(false);
+    expect(hasTexV100).toBe(false);
+    expect(hasTexV300).toBe(true);
+    expect(hasProjV100).toBe(false);
+    expect(hasProjV300).toBe(true);
+    expect(hasLodV100).toBe(false);
+    expect(hasLodV300).toBe(true);
+    expect(hasGradV100).toBe(false);
+    expect(hasGradV300).toBe(true);
+    expect(hasFetchV100).toBe(false);
+    expect(hasFetchV300).toBe(true);
+  });
+});
+
+describe('Builtins - Sampling: Hostile input never throws on sampling paths', () => {
+  it('malformed sampling calls return opaque-black Float32Array without throwing', () => {
+    // Arrange:
+    const tex = tex2x2(NEAREST);
+    const calls: Array<() => unknown> = [
+      () => evaluateBuiltin('texture2D', [], 100),
+      () => evaluateBuiltin('texture2D', [null as unknown as Value, undefined as unknown as Value], 100),
+      () => evaluateBuiltin('texture2D', ['notAnObject' as unknown as Value, 123 as unknown as Value], 100),
+      () => evaluateBuiltin('texture', [tex, new Float32Array([NaN, Infinity])], 300),
+      () => evaluateBuiltin('textureProj', [tex, new Float32Array([1.0, 1.0, 0.0])], 300),
+      () => evaluateBuiltin('texelFetch', [tex, new Int32Array([-10, 100]), 0], 300),
+    ];
+    // Act & Assert:
+    for (const call of calls) {
+      let out: unknown;
+      expect(() => {
+        out = call();
+      }).not.toThrow();
+      expect(out).toBeInstanceOf(Float32Array);
+      expect(Array.from(out as Float32Array)).toEqual([0, 0, 0, 1]);
+    }
+  });
+});
+
+describe('Builtins - Sampling: textureCube face selection and normalization', () => {
+  it('+X selects Red and -Y selects Yellow', () => {
+    // Arrange:
+    const cube = texCube();
+    const dirX = new Float32Array([5.0, 0.0, 0.0]);
+    const dirNegY = new Float32Array([0.0, -10.0, 0.0]);
+    // Act:
+    const rx = evaluateBuiltin('textureCube', [cube, dirX], 100) as Float32Array;
+    const ry = evaluateBuiltin('textureCube', [cube, dirNegY], 100) as Float32Array;
+    // Assert:
+    expect(Array.from(rx)).toEqual([1, 0, 0, 1]);
+    expect(Array.from(ry)).toEqual([1, 1, 0, 1]);
+  });
+});
+
+describe('Builtins - Sampling: textureLod explicit mip-level selection', () => {
+  it('lod 0/1/2 selects Red/Green/Blue levels', () => {
+    // Arrange:
+    const mip = texMipped();
+    const coord = new Float32Array([0.5, 0.5]);
+    // Act:
+    const r0 = evaluateBuiltin('textureLod', [mip, coord, 0.0], 300) as Float32Array;
+    const r1 = evaluateBuiltin('textureLod', [mip, coord, 1.0], 300) as Float32Array;
+    const r2 = evaluateBuiltin('textureLod', [mip, coord, 2.0], 300) as Float32Array;
+    // Assert:
+    expect(Array.from(r0)).toEqual([1, 0, 0, 1]);
+    expect(Array.from(r1)).toEqual([0, 1, 0, 1]);
+    expect(Array.from(r2)).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe('Builtins - Sampling: textureProj coordinate perspective division', () => {
+  it('[0.5,0.5,2.0] projects to texel (0,0) Red', () => {
+    // Arrange:
+    const tex = tex2x2(NEAREST);
+    const coordProj = new Float32Array([0.5, 0.5, 2.0]);
+    // Act:
+    const res = evaluateBuiltin('textureProj', [tex, coordProj], 300) as Float32Array;
+    // Assert:
+    expect(res).toBeInstanceOf(Float32Array);
+    expect(Array.from(res)).toEqual([1, 0, 0, 1]);
+  });
+});
+
+describe('Builtins - Sampling: texelFetch integer texel retrieval', () => {
+  it('integer coords fetch exact texels; out-of-bounds yields fallback', () => {
+    // Arrange:
+    const tex = tex2x2(NEAREST);
+    const p00 = new Int32Array([0, 0]);
+    const p10 = new Int32Array([1, 0]);
+    const pOut = new Int32Array([5, 5]);
+    // Act:
+    const r00 = evaluateBuiltin('texelFetch', [tex, p00, 0], 300) as Float32Array;
+    const r10 = evaluateBuiltin('texelFetch', [tex, p10, 0], 300) as Float32Array;
+    const rOut = evaluateBuiltin('texelFetch', [tex, pOut, 0], 300) as Float32Array;
+    // Assert:
+    expect(Array.from(r00)).toEqual([1, 0, 0, 1]);
+    expect(Array.from(r10)).toEqual([0, 1, 0, 1]);
+    expect(Array.from(rOut)).toEqual([0, 0, 0, 1]);
+  });
+});
+
+describe('Builtins - Sampling: Math.fround float32 precision normalization', () => {
+  it('LINEAR sample components are fround-exact', () => {
+    // Arrange:
+    const tex = tex2x2(LINEAR);
+    const coord = new Float32Array([0.33333333, 0.33333333]);
+    // Act:
+    const res = evaluateBuiltin('texture', [tex, coord], 300) as Float32Array;
+    // Assert:
+    expect(res).toBeInstanceOf(Float32Array);
+    for (let i = 0; i < 4; i++) {
+      expect((res as Float32Array)[i]).toBe(Math.fround((res as Float32Array)[i] as number));
+    }
+  });
+});

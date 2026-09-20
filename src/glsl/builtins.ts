@@ -833,6 +833,500 @@ function evalIsinf(...args: Value[]): Value {
   }
 }
 
+// --- Sprint 4 Task 3: texture sampling subsystem (local placeholders, M2 Must Not Build). ---
+interface MipLevel {
+  width: number;
+  height: number;
+  data: Float32Array | Uint8Array | Uint8ClampedArray;
+  internalFormat?: number;
+}
+interface SamplerParams {
+  wrapS: number;
+  wrapT: number;
+  wrapR?: number;
+  minFilter: number;
+  magFilter: number;
+}
+interface TextureObject {
+  id: number;
+  alive: boolean;
+  target: number;
+  levels: MipLevel[] | MipLevel[][];
+  sampler: SamplerParams;
+  isNPOT?: boolean;
+  completeness?: boolean;
+}
+interface DerivativeContext {
+  dFdx: (baseWidth: number, baseHeight: number) => number;
+  dFdy: (baseWidth: number, baseHeight: number) => number;
+  computeRho: (baseWidth: number, baseHeight: number) => number;
+}
+const T2D_T = 0x0de1;
+const TCUBE_T = 0x8513;
+const F_NEAREST = 0x2600;
+const F_LINEAR = 0x2601;
+const F_NMN = 0x2700;
+const F_LMN = 0x2701;
+const F_NML = 0x2702;
+const F_LML = 0x2703;
+const W_REPEAT = 0x2901;
+const W_CLAMP = 0x812f;
+const W_MIRROR = 0x8370;
+function black(): Float32Array {
+  return new Float32Array([0.0, 0.0, 0.0, 1.0]);
+}
+function isPow2(n: number): boolean {
+  return n > 0 && (n & (n - 1)) === 0;
+}
+function isMipFilter(minF: number): boolean {
+  return minF === F_NMN || minF === F_LMN || minF === F_NML || minF === F_LML;
+}
+function asTex(v: Value): TextureObject | null {
+  try {
+    if (v === null || v === undefined || typeof v !== 'object') return null;
+    const t = v as unknown as Record<string, unknown>;
+    if (typeof t['target'] !== 'number' || !Array.isArray(t['levels'])) return null;
+    return v as unknown as TextureObject;
+  } catch (_e) {
+    return null;
+  }
+}
+function samplerOf(tex: TextureObject): SamplerParams {
+  try {
+    const s = (tex as unknown as Record<string, unknown>)['sampler'] as SamplerParams | undefined;
+    if (s !== null && s !== undefined && typeof s === 'object') return s;
+  } catch (_e) {
+    // fall through
+  }
+  return { wrapS: W_CLAMP, wrapT: W_CLAMP, minFilter: F_NEAREST, magFilter: F_NEAREST };
+}
+function isTextureComplete(texture: TextureObject, contextVersion: 1 | 2): boolean {
+  try {
+    if (texture === null || texture === undefined || typeof texture !== 'object') return false;
+    const t = texture as unknown as Record<string, unknown>;
+    if (t['alive'] === false) return false;
+    if (!Array.isArray(t['levels'])) return false;
+    if (texture.target === T2D_T) {
+      const levels = texture.levels as MipLevel[];
+      if (levels.length === 0 || levels[0] === null || levels[0] === undefined) return false;
+      const base = levels[0] as MipLevel;
+      if (base.width <= 0 || base.height <= 0) return false;
+      if (base.data === null || base.data === undefined) return false;
+      const sampler = samplerOf(texture);
+      const minFilter = sampler.minFilter ?? F_NEAREST;
+      const mip = isMipFilter(minFilter);
+      if (contextVersion === 1) {
+        const npot = texture.isNPOT === true || !isPow2(base.width) || !isPow2(base.height);
+        if (npot) {
+          if (mip) return false;
+          if (sampler.wrapS !== W_CLAMP || sampler.wrapT !== W_CLAMP) return false;
+        }
+      }
+      if (mip) {
+        const expected = Math.floor(Math.log2(Math.max(base.width, base.height))) + 1;
+        if (levels.length < expected) return false;
+        let cw = base.width;
+        let ch = base.height;
+        for (let i = 1; i < expected; i++) {
+          cw = Math.max(1, Math.floor(cw / 2));
+          ch = Math.max(1, Math.floor(ch / 2));
+          const lvl = levels[i] as MipLevel | null | undefined;
+          if (lvl === null || lvl === undefined) return false;
+          if (lvl.width !== cw || lvl.height !== ch) return false;
+          if (lvl.data === null || lvl.data === undefined) return false;
+        }
+      }
+      return true;
+    }
+    if (texture.target === TCUBE_T) {
+      const faces = texture.levels as MipLevel[][];
+      if (faces.length !== 6) return false;
+      for (let fi = 0; fi < 6; fi++) {
+        const lv = faces[fi] as MipLevel[] | null | undefined;
+        if (lv === null || lv === undefined || lv.length === 0 || lv[0] === null || lv[0] === undefined) return false;
+      }
+      const ref = (faces[0] as MipLevel[])[0] as MipLevel;
+      if (ref.width <= 0 || ref.height <= 0) return false;
+      if (ref.width !== ref.height) return false;
+      for (let fi = 1; fi < 6; fi++) {
+        const fb = (faces[fi] as MipLevel[])[0] as MipLevel;
+        if (fb.width !== ref.width || fb.height !== ref.height) return false;
+        if (fb.data === null || fb.data === undefined) return false;
+      }
+      const sampler = samplerOf(texture);
+      if (isMipFilter(sampler.minFilter ?? F_NEAREST)) {
+        const expected = Math.floor(Math.log2(ref.width)) + 1;
+        for (let fi = 0; fi < 6; fi++) {
+          const lv = faces[fi] as MipLevel[];
+          if (lv.length < expected) return false;
+          let cs = ref.width;
+          for (let i = 1; i < expected; i++) {
+            cs = Math.max(1, Math.floor(cs / 2));
+            const lvl = lv[i] as MipLevel | null | undefined;
+            if (lvl === null || lvl === undefined) return false;
+            if (lvl.width !== cs || lvl.height !== cs) return false;
+            if (lvl.data === null || lvl.data === undefined) return false;
+          }
+        }
+      }
+      return true;
+    }
+    return false;
+  } catch (_e) {
+    return false;
+  }
+}
+function applyWrap(coord: number, wrapMode: number): number {
+  try {
+    const u = Math.fround(coord);
+    if (wrapMode === W_CLAMP) {
+      if (u < 0.0) return Math.fround(0.0);
+      if (u > 1.0) return Math.fround(1.0);
+      return u;
+    }
+    if (wrapMode === W_REPEAT) {
+      let rem = Math.fround(u - Math.fround(Math.floor(u)));
+      if (rem < 0.0) rem = Math.fround(rem + 1.0);
+      return rem;
+    }
+    if (wrapMode === W_MIRROR) {
+      const t = Math.fround(Math.abs(u));
+      const fl = Math.floor(t);
+      const frac = Math.fround(t - Math.fround(fl));
+      if (fl % 2 === 0) return frac;
+      return Math.fround(1.0 - frac);
+    }
+    return u;
+  } catch (_e) {
+    return Math.fround(0.0);
+  }
+}
+function fetchTexel(level: MipLevel, x: number, y: number): Float32Array {
+  try {
+    const clX = Math.max(0, Math.min(level.width - 1, Math.trunc(x)));
+    const clY = Math.max(0, Math.min(level.height - 1, Math.trunc(y)));
+    const idx = (clY * level.width + clX) * 4;
+    const out = new Float32Array(4);
+    const d = level.data as unknown;
+    if (d instanceof Uint8Array || d instanceof Uint8ClampedArray) {
+      const a = d as unknown as ArrayLike<number>;
+      out[0] = Math.fround((a[idx + 0] as number) / 255.0);
+      out[1] = Math.fround((a[idx + 1] as number) / 255.0);
+      out[2] = Math.fround((a[idx + 2] as number) / 255.0);
+      out[3] = Math.fround((a[idx + 3] as number) / 255.0);
+      return out;
+    }
+    if (d instanceof Float32Array) {
+      out[0] = Math.fround(d[idx + 0] as number);
+      out[1] = Math.fround(d[idx + 1] as number);
+      out[2] = Math.fround(d[idx + 2] as number);
+      out[3] = Math.fround(d[idx + 3] as number);
+      return out;
+    }
+    out[0] = Math.fround(0.0);
+    out[1] = Math.fround(0.0);
+    out[2] = Math.fround(0.0);
+    out[3] = Math.fround(1.0);
+    return out;
+  } catch (_e) {
+    return black();
+  }
+}
+function sampleMipLevel(level: MipLevel, u: number, v: number, filter: number, wrapS: number, wrapT: number): Float32Array {
+  try {
+    const wu = applyWrap(u, wrapS);
+    const wv = applyWrap(v, wrapT);
+    if (filter === F_NEAREST) {
+      const tx = Math.floor(wu * level.width);
+      const ty = Math.floor(wv * level.height);
+      return fetchTexel(level, tx, ty);
+    }
+    if (filter === F_LINEAR) {
+      const uC = Math.fround(wu * level.width - 0.5);
+      const vC = Math.fround(wv * level.height - 0.5);
+      const x0 = Math.floor(uC);
+      const y0 = Math.floor(vC);
+      const x1 = x0 + 1;
+      const y1 = y0 + 1;
+      const wx = Math.fround(uC - Math.fround(x0));
+      const wy = Math.fround(vC - Math.fround(y0));
+      const omwx = Math.fround(1.0 - wx);
+      const omwy = Math.fround(1.0 - wy);
+      const c00 = fetchTexel(level, x0, y0);
+      const c10 = fetchTexel(level, x1, y0);
+      const c01 = fetchTexel(level, x0, y1);
+      const c11 = fetchTexel(level, x1, y1);
+      const out = new Float32Array(4);
+      for (let i = 0; i < 4; i++) {
+        const top = Math.fround(Math.fround((c00[i] as number) * omwx) + Math.fround((c10[i] as number) * wx));
+        const bot = Math.fround(Math.fround((c01[i] as number) * omwx) + Math.fround((c11[i] as number) * wx));
+        out[i] = Math.fround(Math.fround(top * omwy) + Math.fround(bot * wy));
+      }
+      return out;
+    }
+    return fetchTexel(level, 0, 0);
+  } catch (_e) {
+    return black();
+  }
+}
+function selectCubeFace(dir: Float32Array): { faceIndex: number; u: number; v: number } {
+  try {
+    const rx = Math.fround(dir[0] as number);
+    const ry = Math.fround(dir[1] as number);
+    const rz = Math.fround(dir[2] as number);
+    const ax = Math.abs(rx);
+    const ay = Math.abs(ry);
+    const az = Math.abs(rz);
+    let faceIndex = 0;
+    let sc = 0.0;
+    let tc = 0.0;
+    let ma = 1.0;
+    if (ax >= ay && ax >= az) {
+      if (rx > 0) {
+        faceIndex = 0; sc = -rz; tc = -ry; ma = ax;
+      } else {
+        faceIndex = 1; sc = rz; tc = -ry; ma = ax;
+      }
+    } else if (ay >= ax && ay >= az) {
+      if (ry > 0) {
+        faceIndex = 2; sc = rx; tc = rz; ma = ay;
+      } else {
+        faceIndex = 3; sc = rx; tc = -rz; ma = ay;
+      }
+    } else {
+      if (rz > 0) {
+        faceIndex = 4; sc = rx; tc = -ry; ma = az;
+      } else {
+        faceIndex = 5; sc = -rx; tc = -ry; ma = az;
+      }
+    }
+    if (!(ma > 0) || !Number.isFinite(ma)) {
+      return { faceIndex: 0, u: Math.fround(0.5), v: Math.fround(0.5) };
+    }
+    const u = Math.fround(Math.fround(Math.fround(sc / ma) + 1.0) * 0.5);
+    const v = Math.fround(Math.fround(Math.fround(tc / ma) + 1.0) * 0.5);
+    return { faceIndex, u, v };
+  } catch (_e) {
+    return { faceIndex: 0, u: Math.fround(0.5), v: Math.fround(0.5) };
+  }
+}
+function computeLod(
+  explicitLod: number | null,
+  derivCtx: DerivativeContext | null,
+  dPdx: Float32Array | null,
+  dPdy: Float32Array | null,
+  baseWidth: number,
+  baseHeight: number,
+): number {
+  try {
+    if (explicitLod !== null && explicitLod !== undefined) return Math.fround(explicitLod);
+    if (dPdx !== null && dPdx !== undefined && dPdy !== null && dPdy !== undefined) {
+      const duDx = Math.fround((dPdx[0] as number) * baseWidth);
+      const dvDx = Math.fround((dPdx[1] as number) * baseHeight);
+      const duDy = Math.fround((dPdy[0] as number) * baseWidth);
+      const dvDy = Math.fround((dPdy[1] as number) * baseHeight);
+      const lenX = Math.fround(Math.sqrt(Math.fround(duDx * duDx + dvDx * dvDx)));
+      const lenY = Math.fround(Math.sqrt(Math.fround(duDy * duDy + dvDy * dvDy)));
+      const rho = Math.max(lenX, lenY);
+      if (!(rho > 0) || !Number.isFinite(rho)) return Math.fround(0.0);
+      return Math.fround(Math.log2(rho));
+    }
+    if (derivCtx !== null && derivCtx !== undefined) {
+      try {
+        const dc = derivCtx as unknown as Record<string, unknown>;
+        if (typeof dc['dFdx'] === 'function' && typeof dc['dFdy'] === 'function') {
+          const rho = (derivCtx as DerivativeContext).computeRho(baseWidth, baseHeight);
+          if (!(rho > 0) || !Number.isFinite(rho)) return Math.fround(0.0);
+          return Math.fround(Math.log2(rho));
+        }
+      } catch (_e) {
+        return Math.fround(0.0);
+      }
+    }
+    return Math.fround(0.0);
+  } catch (_e) {
+    return Math.fround(0.0);
+  }
+}
+function sample(
+  texture: TextureObject,
+  sampler: SamplerParams,
+  coords: Float32Array,
+  lod: number | null,
+  contextVersion: 1 | 2,
+  derivCtx?: DerivativeContext,
+  dPdx?: Float32Array,
+  dPdy?: Float32Array,
+): Float32Array {
+  try {
+    if (!isTextureComplete(texture, contextVersion)) return black();
+    const target = texture.target;
+    let u = 0.0;
+    let v = 0.0;
+    let levels: MipLevel[] = [];
+    if (target === T2D_T) {
+      if (!(coords instanceof Float32Array) || coords.length < 2) return black();
+      u = coords[0] as number;
+      v = coords[1] as number;
+      if (!Number.isFinite(u) || !Number.isFinite(v)) return black();
+      levels = texture.levels as MipLevel[];
+    } else if (target === TCUBE_T) {
+      if (!(coords instanceof Float32Array) || coords.length < 3) return black();
+      const cr = selectCubeFace(coords);
+      u = cr.u;
+      v = cr.v;
+      if (!Number.isFinite(u) || !Number.isFinite(v)) return black();
+      levels = ((texture.levels as MipLevel[][])[cr.faceIndex] as MipLevel[]);
+    } else {
+      return black();
+    }
+    if (!Array.isArray(levels) || levels.length === 0) return black();
+    const base = levels[0] as MipLevel;
+    const lodV = computeLod(lod ?? null, derivCtx ?? null, dPdx ?? null, dPdy ?? null, base.width, base.height);
+    const maxLod = levels.length - 1;
+    const clamped = Math.fround(Math.max(0.0, Math.min(maxLod, lodV)));
+    if (!Number.isFinite(clamped)) return sampleMipLevel(levels[0] as MipLevel, u, v, sampler.magFilter ?? F_NEAREST, sampler.wrapS ?? W_CLAMP, sampler.wrapT ?? W_CLAMP);
+    const minFilter = sampler.minFilter ?? F_NEAREST;
+    const magFilter = sampler.magFilter ?? F_NEAREST;
+    const wrapS = sampler.wrapS ?? W_CLAMP;
+    const wrapT = sampler.wrapT ?? W_CLAMP;
+    if (clamped <= 0.0) return sampleMipLevel(levels[0] as MipLevel, u, v, magFilter, wrapS, wrapT);
+    if (minFilter === F_NEAREST) return sampleMipLevel(levels[0] as MipLevel, u, v, F_NEAREST, wrapS, wrapT);
+    if (minFilter === F_LINEAR) return sampleMipLevel(levels[0] as MipLevel, u, v, F_LINEAR, wrapS, wrapT);
+    if (minFilter === F_NMN) {
+      const d = Math.min(maxLod, Math.max(0, Math.round(clamped)));
+      return sampleMipLevel(levels[d] as MipLevel, u, v, F_NEAREST, wrapS, wrapT);
+    }
+    if (minFilter === F_LMN) {
+      const d = Math.min(maxLod, Math.max(0, Math.round(clamped)));
+      return sampleMipLevel(levels[d] as MipLevel, u, v, F_LINEAR, wrapS, wrapT);
+    }
+    if (minFilter === F_NML || minFilter === F_LML) {
+      const intra = minFilter === F_NML ? F_NEAREST : F_LINEAR;
+      const d0 = Math.floor(clamped);
+      const d1 = Math.min(maxLod, d0 + 1);
+      const frac = Math.fround(clamped - d0);
+      const om = Math.fround(1.0 - frac);
+      const c0 = sampleMipLevel(levels[d0] as MipLevel, u, v, intra, wrapS, wrapT);
+      const c1 = sampleMipLevel(levels[d1] as MipLevel, u, v, intra, wrapS, wrapT);
+      const out = new Float32Array(4);
+      for (let i = 0; i < 4; i++) {
+        out[i] = Math.fround(Math.fround((c0[i] as number) * om) + Math.fround((c1[i] as number) * frac));
+      }
+      return out;
+    }
+    return sampleMipLevel(levels[0] as MipLevel, u, v, F_NEAREST, wrapS, wrapT);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTexture2D(...args: Value[]): Value {
+  try {
+    if (args.length < 2) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array) || coords.length < 2) return black();
+    const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : 0.0;
+    return sample(tex, samplerOf(tex), coords, bias, 1);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTextureCube(...args: Value[]): Value {
+  try {
+    if (args.length < 2) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array) || coords.length < 3) return black();
+    const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : 0.0;
+    return sample(tex, samplerOf(tex), coords, bias, 1);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTexture(...args: Value[]): Value {
+  try {
+    if (args.length < 2) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array) || coords.length < 2) return black();
+    const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
+    return sample(tex, samplerOf(tex), coords, bias, 2);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTextureProj(...args: Value[]): Value {
+  try {
+    if (args.length < 2) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array) || coords.length < 3) return black();
+    const q = Math.fround(coords[coords.length - 1] as number);
+    if (q === 0.0 || !Number.isFinite(q)) return black();
+    const proj = new Float32Array(coords.length - 1);
+    for (let i = 0; i < coords.length - 1; i++) proj[i] = Math.fround((coords[i] as number) / q);
+    const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
+    return sample(tex, samplerOf(tex), proj, bias, 2);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTextureLod(...args: Value[]): Value {
+  try {
+    if (args.length < 3) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array)) return black();
+    const lod = isNum(args[2] as Value) ? (args[2] as number) : 0.0;
+    return sample(tex, samplerOf(tex), coords, lod, 2);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTextureGrad(...args: Value[]): Value {
+  try {
+    if (args.length < 4) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Float32Array)) return black();
+    const dPdx = args[2] as Value;
+    const dPdy = args[3] as Value;
+    const gx = dPdx instanceof Float32Array ? dPdx : null;
+    const gy = dPdy instanceof Float32Array ? dPdy : null;
+    if (gx === null || gy === null) return sample(tex, samplerOf(tex), coords, null, 2);
+    return sample(tex, samplerOf(tex), coords, null, 2, undefined, gx, gy);
+  } catch (_e) {
+    return black();
+  }
+}
+function evalTexelFetch(...args: Value[]): Value {
+  try {
+    if (args.length < 3) return black();
+    const tex = asTex(args[0] as Value);
+    if (tex === null) return black();
+    if (!isTextureComplete(tex, 2)) return black();
+    const coords = args[1] as Value;
+    if (!(coords instanceof Int32Array) && !(coords instanceof Float32Array) && !(coords instanceof Uint32Array)) return black();
+    const lod = isNum(args[2] as Value) ? Math.trunc(args[2] as number) : 0;
+    const levels = tex.levels as MipLevel[];
+    if (!Array.isArray(levels) || lod < 0 || lod >= levels.length) return black();
+    const lvl = levels[lod] as MipLevel;
+    const x = Math.trunc((coords as unknown as ArrayLike<number>)[0] as number);
+    const y = Math.trunc((coords as unknown as ArrayLike<number>)[1] as number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return black();
+    if (x < 0 || x >= lvl.width || y < 0 || y >= lvl.height) return black();
+    return fetchTexel(lvl, x, y);
+  } catch (_e) {
+    return black();
+  }
+}
 function buildV100(): Map<string, BuiltinFn> {
   const m = new Map<string, BuiltinFn>();
   m.set('abs', evalAbs);
@@ -889,6 +1383,8 @@ function buildV100(): Map<string, BuiltinFn> {
   m.set('any', evalAny);
   m.set('all', evalAll);
   m.set('not', evalNot);
+  m.set('texture2D', evalTexture2D);
+  m.set('textureCube', evalTextureCube);
   return m;
 }
 
@@ -915,6 +1411,13 @@ function buildV300(): Map<string, BuiltinFn> {
   m.set('mat4x2', makeMatCtor(4, 2));
   m.set('mat4x3', makeMatCtor(4, 3));
   m.set('mat4x4', makeMatCtor(4, 4));
+  m.delete('texture2D');
+  m.delete('textureCube');
+  m.set('texture', evalTexture);
+  m.set('textureProj', evalTextureProj);
+  m.set('textureLod', evalTextureLod);
+  m.set('textureGrad', evalTextureGrad);
+  m.set('texelFetch', evalTexelFetch);
   return m;
 }
 
