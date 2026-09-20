@@ -409,3 +409,136 @@ describe('Interpolator - degenerate zero-denominator (TEST 10, AC-5)', () => {
     expect(out[0]).toBe(0.0);
   });
 });
+
+import type { ClipVertex } from '../../src/raster/clipper';
+import { clipTriangle } from '../../src/raster/clipper';
+
+function makeVertex(x: number, y: number, z: number, w: number, varyings: number[] = [0, 0]): ClipVertex {
+  return {
+    clip: [Math.fround(x), Math.fround(y), Math.fround(z), Math.fround(w)],
+    pointSize: 1.0,
+    varyings: new Float32Array(varyings.map((v) => Math.fround(v))),
+  };
+}
+
+describe('Clipper - Sutherland-Hodgman frustum clip', () => {
+  it('TEST 1: fully-inside passthrough returns original 3 vertices unchanged', () => {
+    // Arrange:
+    const v0 = makeVertex(-0.5, -0.5, 0.0, 1.0, [1.0, 2.0]);
+    const v1 = makeVertex(0.5, -0.5, 0.0, 1.0, [3.0, 4.0]);
+    const v2 = makeVertex(0.0, 0.5, 0.0, 1.0, [5.0, 6.0]);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBe(3);
+    expect(Array.from(result[0]!.clip)).toEqual([-0.5, -0.5, 0.0, 1.0]);
+    expect(Array.from(result[1]!.clip)).toEqual([0.5, -0.5, 0.0, 1.0]);
+    expect(Array.from(result[2]!.clip)).toEqual([0.0, 0.5, 0.0, 1.0]);
+    expect(Array.from(result[0]!.varyings)).toEqual([1.0, 2.0]);
+    expect(Array.from(result[1]!.varyings)).toEqual([3.0, 4.0]);
+    expect(Array.from(result[2]!.varyings)).toEqual([5.0, 6.0]);
+  });
+
+  it('TEST 2: fully-outside triangle rejected with empty array', () => {
+    // Arrange:
+    const v0 = makeVertex(2.0, 0.0, 0.0, 1.0);
+    const v1 = makeVertex(3.0, 0.0, 0.0, 1.0);
+    const v2 = makeVertex(2.5, 1.0, 0.0, 1.0);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBe(0);
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it('TEST 3: degenerate identical vertices returns empty array', () => {
+    // Arrange:
+    const vSame = makeVertex(0.1, 0.2, 0.3, 1.0, [1.0]);
+    // Act:
+    const res = clipTriangle(vSame, vSame, vSame);
+    // Assert:
+    expect(res.length).toBe(0);
+  });
+
+  it('TEST 4: degenerate collinear triangle returns empty array', () => {
+    // Arrange:
+    const v0Col = makeVertex(0.0, 0.0, 0.0, 1.0);
+    const v1Col = makeVertex(0.2, 0.2, 0.0, 1.0);
+    const v2Col = makeVertex(0.4, 0.4, 0.0, 1.0);
+    // Act:
+    const res = clipTriangle(v0Col, v1Col, v2Col);
+    // Assert:
+    expect(res.length).toBe(0);
+  });
+
+  it('TEST 5: plane-straddling edge interpolates position and varyings linearly', () => {
+    // Arrange:
+    const v0 = makeVertex(0.0, 0.0, 0.0, 1.0, [10.0, 20.0]);
+    const v1 = makeVertex(2.0, 0.0, 0.0, 1.0, [30.0, 40.0]);
+    const v2 = makeVertex(0.0, 1.0, 0.0, 1.0, [50.0, 60.0]);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBe(4);
+    expect(Array.from(result[0]!.clip)).toEqual([0.0, 0.0, 0.0, 1.0]);
+    expect(Array.from(result[1]!.clip)).toEqual([1.0, 0.0, 0.0, 1.0]);
+    expect(Array.from(result[1]!.varyings)).toEqual([20.0, 30.0]);
+    expect(Array.from(result[2]!.clip)).toEqual([1.0, 0.5, 0.0, 1.0]);
+    expect(Array.from(result[2]!.varyings)).toEqual([40.0, 50.0]);
+    expect(Array.from(result[3]!.clip)).toEqual([0.0, 1.0, 0.0, 1.0]);
+  });
+
+  it('TEST 6: triangle crossing two planes yields fan within 3-9 vertices', () => {
+    // Arrange:
+    const v0 = makeVertex(0.0, 0.0, 0.0, 1.0);
+    const v1 = makeVertex(2.0, 0.0, 0.0, 1.0);
+    const v2 = makeVertex(0.0, 2.0, 0.0, 1.0);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    expect(result.length).toBeLessThanOrEqual(9);
+    for (const v of result) {
+      const [x, y, z, w] = v.clip;
+      expect(x!).toBeLessThanOrEqual(w!);
+      expect(x!).toBeGreaterThanOrEqual(-(w as number));
+      expect(y!).toBeLessThanOrEqual(w!);
+      expect(y!).toBeGreaterThanOrEqual(-(w as number));
+      expect(z!).toBeLessThanOrEqual(w!);
+      expect(z!).toBeGreaterThanOrEqual(-(w as number));
+    }
+  });
+
+  it('TEST 7: near-w guard rejects vertices behind w <= epsilon', () => {
+    // Arrange:
+    const v0 = makeVertex(0.0, 0.0, 0.0, 0.0);
+    const v1 = makeVertex(0.1, 0.0, 0.0, -1.0);
+    const v2 = makeVertex(0.0, 0.1, 0.0, 1e-7);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBe(0);
+  });
+
+  it('TEST 8: bottom-plane crossing interpolates negative coordinate edge correctly', () => {
+    // Arrange:
+    const v0 = makeVertex(0.0, 0.0, 0.0, 1.0, [100.0]);
+    const v1 = makeVertex(0.0, -2.0, 0.0, 1.0, [200.0]);
+    const v2 = makeVertex(0.5, 0.0, 0.0, 1.0, [300.0]);
+    // Act:
+    const result = clipTriangle(v0, v1, v2);
+    // Assert:
+    expect(result.length).toBe(4);
+    for (const v of result) {
+      const [, y, , w] = v.clip;
+      expect((y as number) + (w as number)).toBeGreaterThanOrEqual(0);
+    }
+    const found = result.some(
+      (v) =>
+        v.clip[1] === Math.fround(-1.0) &&
+        v.clip[3] === Math.fround(1.0) &&
+        v.varyings[0] === Math.fround(150.0),
+    );
+    expect(found).toBe(true);
+  });
+});
