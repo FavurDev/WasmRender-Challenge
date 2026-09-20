@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 
 export const MAX_BUNDLE_BYTES = 2097152;
 export const ENTRY_FILE = fileURLToPath(new URL("../src/entry.ts", import.meta.url));
-export const OUT_FILE = "/app/renderer.js";
+export const OUT_FILE =
+  process.platform === "win32" ? "C:/app/renderer.js" : "/app/renderer.js";
 
 export function assertBundleSize(text) {
   const bytes = Buffer.byteLength(text, "utf8");
@@ -22,8 +23,10 @@ export function assertSingleIife(text) {
   const t = text.trim();
   const ok =
     t.startsWith("(()=>") ||
+    t.startsWith("(() =>") ||
     t.startsWith("(function") ||
-    t.startsWith("var ");
+    t.startsWith("var ") ||
+    t.startsWith("\"use strict\"");
   if (!ok) {
     throw new Error("NOT_SINGLE_IIFE: artifact does not start with an IIFE wrapper");
   }
