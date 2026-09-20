@@ -1,3 +1,5 @@
+// CHANGELOG:
+// - Sprint 3 (2026-09-20): GLSL ES recursive-descent parser with typed AST, version-gated 100/300.
 /** GLSL ES recursive-descent parser — typed AST, version-gated 100/300, no-throw, L3. */
 import { formatDiagnostic } from './tokenizer';
 import type { CompileResult, Token } from './tokenizer';

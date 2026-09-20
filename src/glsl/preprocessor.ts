@@ -14,6 +14,8 @@
  * Layering (L3): imports only from ../glsl/tokenizer.js sibling (Token, CompileResult,
  * formatDiagnostic, tokenize). No runtime imports from src/gl/*.
  */
+// CHANGELOG:
+// - Sprint 3 (2026-09-20): C-style macro preprocessor with expansion caps and line-accurate diagnostics.
 import { formatDiagnostic, tokenize } from './tokenizer';
 import type { CompileResult, Token } from './tokenizer';
 

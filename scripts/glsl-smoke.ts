@@ -1,3 +1,5 @@
+// CHANGELOG:
+// - Sprint 3 (2026-09-20): Front-end smoke runner wiring tokenize -> preprocess -> parse -> check.
 /** GLSL ES front-end smoke runner (Sprint 3 Task 6) — tokenize -> preprocess -> parse -> check. */
 import { tokenize } from '../src/glsl/tokenizer';
 import { runPreprocessor } from '../src/glsl/preprocessor';

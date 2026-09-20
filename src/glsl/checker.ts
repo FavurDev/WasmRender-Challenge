@@ -11,6 +11,8 @@
  * Sprint 4 boundary: no linker, no location/slot resolution, no packing —
  * CheckedShader carries declaration metadata only.
  */
+// CHANGELOG:
+// - Sprint 3 (2026-09-20): Scoped semantic checker for ES 1.00/3.00 producing CheckedShader metadata.
 import { formatDiagnostic } from './tokenizer';
 import type { CompileResult } from './tokenizer';
 import type {
