@@ -36,6 +36,11 @@ export interface CheckedDeclaration {
   name: string;
   typeName: string;
   storage: string | null;
+  precision?: string | null;
+  arraySize?: number | null;
+  location?: number | null;
+  interpolation?: 'smooth' | 'flat' | null;
+  slot?: number;
 }
 
 export interface CheckedShader {
@@ -45,6 +50,7 @@ export interface CheckedShader {
   declaredOutputs: CheckedDeclaration[];
   uniforms: CheckedDeclaration[];
   functions: string[];
+  uniformBlocks?: Array<{ name: string; members: CheckedDeclaration[] }>;
 }
 
 interface FuncSig {
@@ -591,6 +597,23 @@ function hasCycle(graph: Map<string, Set<string>>): string | null {
   return null;
 }
 
+function evalArraySize(expr: unknown): number | null {
+  if (expr === null || expr === undefined) return null;
+  try {
+    const node = expr as { kind?: unknown };
+    if (node.kind === 'LiteralExpression') {
+      const lit = expr as { literalKind?: unknown; text?: unknown };
+      const n = Number(lit.text);
+      if (Number.isInteger(n) && n > 0) return n;
+      return null;
+    }
+    if (node.kind === 'IdentifierExpression') return null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function check(
   ast: TranslationUnit,
   stage: ShaderStage,
@@ -709,7 +732,15 @@ export function check(
           }
         }
         if (!ctx.declare(v.name, { typeName: v.typeName, readOnly: v.storage === 'const', declLine: line }, line)) break;
-        globalVars.push({ name: v.name, typeName: v.typeName, storage: v.storage ?? null });
+        globalVars.push({
+          name: v.name,
+          typeName: v.typeName,
+          storage: v.storage ?? null,
+          precision: v.precision ?? null,
+          arraySize: evalArraySize(v.arraySize),
+          location: v.layout !== null && v.layout !== undefined ? v.layout.location ?? null : null,
+          interpolation: v.interpolation === 'flat' ? 'flat' : v.interpolation === 'smooth' ? 'smooth' : null,
+        });
       } else if (n.kind === 'PrecisionStatement') {
         const p = d as { typeName?: unknown };
         if (typeof p.typeName === 'string' && p.typeName === 'float') ctx.hasDefaultFloatPrecision = true;
