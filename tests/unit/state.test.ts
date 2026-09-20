@@ -1,5 +1,5 @@
 // CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial/extended state suite
-/** Context-attribute resolution tests (Sprint 1 Task 4, TDD red phase). */
+/** Context-attribute and GLState unit tests (Sprint 1 Tasks 4 and 6 green suite) — verifies attributes, error queue, state setters, and PipelineState snapshots. */
 import { describe, expect, it } from 'vitest';
 import { resolveContextAttributes } from '../../src/gl/context-attributes';
 import { ErrorSink } from '../../src/gl/errors';

@@ -16,10 +16,9 @@ import type { IErrorSink } from './errors';
 const DEFAULT_WIDTH = 300;
 const DEFAULT_HEIGHT = 150;
 const BYTES_PER_PIXEL = 4;
+const BYTE_SCALE = 255;
 const DEPTH_MAX_24 = 16777215;
 const STENCIL_MASK_8 = 255;
-const DEPTH_SHIFT = 8;
-const CHANNEL_COUNT = 4;
 
 function clamp01(v: number): number {
   if (Number.isNaN(v)) return 0;
@@ -46,7 +45,7 @@ export class DrawingBuffer {
     this.height = resolveDim(canvas?.height, DEFAULT_HEIGHT);
     this.colorBuffer = new Uint8Array(this.width * this.height * BYTES_PER_PIXEL);
     this.depthStencilBuffer = new Uint32Array(this.width * this.height);
-    this.depthStencilBuffer.fill((DEPTH_MAX_24 * (DEPTH_SHIFT === 8 ? 256 : 256)) >>> 0);
+    this.depthStencilBuffer.fill((DEPTH_MAX_24 * 256) >>> 0);
   }
 
   getWidth(): number {
@@ -69,15 +68,15 @@ export class DrawingBuffer {
     const count = this.width * this.height;
     if ((mask & COLOR_BUFFER_BIT) !== 0) {
       const cc = state.clearValues.clearColor;
-      const targetR = Math.round(clamp01(cc[0]) * STENCIL_MASK_8);
-      const targetG = Math.round(clamp01(cc[1]) * STENCIL_MASK_8);
-      const targetB = Math.round(clamp01(cc[2]) * STENCIL_MASK_8);
-      const targetA = Math.round(clamp01(cc[3]) * STENCIL_MASK_8);
+      const targetR = Math.round(clamp01(cc[0]) * BYTE_SCALE);
+      const targetG = Math.round(clamp01(cc[1]) * BYTE_SCALE);
+      const targetB = Math.round(clamp01(cc[2]) * BYTE_SCALE);
+      const targetA = Math.round(clamp01(cc[3]) * BYTE_SCALE);
       const cm = state.colorMask;
       const allTrue = cm[0] && cm[1] && cm[2] && cm[3];
       if (allTrue) {
         for (let i = 0; i < count; i++) {
-          const o = i * CHANNEL_COUNT;
+          const o = i * BYTES_PER_PIXEL;
           this.colorBuffer[o] = targetR;
           this.colorBuffer[o + 1] = targetG;
           this.colorBuffer[o + 2] = targetB;
@@ -85,7 +84,7 @@ export class DrawingBuffer {
         }
       } else if (cm[0] || cm[1] || cm[2] || cm[3]) {
         for (let i = 0; i < count; i++) {
-          const o = i * CHANNEL_COUNT;
+          const o = i * BYTES_PER_PIXEL;
           if (cm[0]) this.colorBuffer[o] = targetR;
           if (cm[1]) this.colorBuffer[o + 1] = targetG;
           if (cm[2]) this.colorBuffer[o + 2] = targetB;
