@@ -1,5 +1,5 @@
 // CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial rasterizer suite
-/** DrawingBuffer TDD RED-phase tests (Sprint 1 Task 7). Expects src/gl/framebuffer.ts (absent). */
+/** DrawingBuffer unit tests (Sprint 1 Task 7 green suite) — verifies allocation, clear, and readPixels against src/gl/framebuffer.ts. */
 import { describe, expect, it } from 'vitest';
 import { DrawingBuffer } from '../../src/gl/framebuffer';
 import { ErrorSink } from '../../src/gl/errors';
@@ -259,5 +259,153 @@ describe('DrawingBuffer - resize (Group 6)', () => {
     expect(buf.getDepthStencilBuffer().length).toBe(20 * 30);
     expect((buf.getDepthStencilBuffer()[0] as number) >>> 8).toBe(0x00ffffff);
     expect(sink.getError()).toBe(NO_ERROR);
+  });
+});
+
+import { interpolateDepth, perspectiveCorrect } from '../../src/raster/interpolate';
+
+describe('Interpolator - perspectiveCorrect at triangle center (TEST 1, AC-1)', () => {
+  it('matches analytic values at triangle center (11/7 within 1/255)', () => {
+    // Arrange:
+    const bary: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+    const invW: [number, number, number] = [1.0, 0.5, 0.25];
+    const sources = [new Float32Array([1.0]), new Float32Array([2.0]), new Float32Array([3.0])];
+    const out = new Float32Array(1);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(Math.abs(out[0] as number - 11 / 7)).toBeLessThan(1 / 255);
+    expect(out[0]).toBeCloseTo(11 / 7, 5);
+  });
+});
+
+describe('Interpolator - vertex recovery (TEST 2-4, AC-4)', () => {
+  it('at vertex 0 evaluates to vertex 0 varyings exactly', () => {
+    // Arrange:
+    const bary: [number, number, number] = [1.0, 0.0, 0.0];
+    const invW: [number, number, number] = [0.8, 0.4, 0.2];
+    const sources = [new Float32Array([1.5, 2.5]), new Float32Array([10.0, 20.0]), new Float32Array([100.0, 200.0])];
+    const out = new Float32Array(2);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(out[0]).toBe(Math.fround(1.5));
+    expect(out[1]).toBe(Math.fround(2.5));
+  });
+
+  it('at vertex 1 evaluates to vertex 1 varyings exactly', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.0, 1.0, 0.0];
+    const invW: [number, number, number] = [0.8, 0.4, 0.2];
+    const sources = [new Float32Array([1.5, 2.5]), new Float32Array([10.0, 20.0]), new Float32Array([100.0, 200.0])];
+    const out = new Float32Array(2);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(out[0]).toBe(Math.fround(10.0));
+    expect(out[1]).toBe(Math.fround(20.0));
+  });
+
+  it('at vertex 2 evaluates to vertex 2 varyings exactly', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.0, 0.0, 1.0];
+    const invW: [number, number, number] = [0.8, 0.4, 0.2];
+    const sources = [new Float32Array([1.5, 2.5]), new Float32Array([10.0, 20.0]), new Float32Array([100.0, 200.0])];
+    const out = new Float32Array(2);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(out[0]).toBe(Math.fround(100.0));
+    expect(out[1]).toBe(Math.fround(200.0));
+  });
+});
+
+describe('Interpolator - depth linearity (TEST 5-6, AC-2)', () => {
+  it('computes linear window-space depth at interior point (0.55)', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.25, 0.5, 0.25];
+    const z: [number, number, number] = [0.2, 0.6, 0.8];
+    // Act:
+    const depth = interpolateDepth(bary, z);
+    // Assert:
+    expect(depth).toBe(Math.fround(0.55));
+  });
+
+  it('at triangle vertices returns vertex depths', () => {
+    // Arrange:
+    const z: [number, number, number] = [0.125, 0.5, 0.875];
+    // Act:
+    const d0 = interpolateDepth([1.0, 0.0, 0.0], z);
+    const d1 = interpolateDepth([0.0, 1.0, 0.0], z);
+    const d2 = interpolateDepth([0.0, 0.0, 1.0], z);
+    // Assert:
+    expect(d0).toBe(Math.fround(0.125));
+    expect(d1).toBe(Math.fround(0.5));
+    expect(d2).toBe(Math.fround(0.875));
+  });
+});
+
+describe('Interpolator - flat varyings (TEST 7-8, AC-3)', () => {
+  it('flat varying bypasses interpolation and takes provoking vertex value', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.2, 0.5, 0.3];
+    const invW: [number, number, number] = [1.0, 0.5, 0.25];
+    const sources = [new Float32Array([10.0, 1.0]), new Float32Array([20.0, 2.0]), new Float32Array([30.0, 3.0])];
+    const out = new Float32Array(2);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out, 1, 0);
+    // Assert:
+    expect(out[0]).toBe(Math.fround(10.0));
+    expect(out[1]).not.toBe(Math.fround(1.0));
+  });
+
+  it('flat varying honors provokingIndex', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.2, 0.5, 0.3];
+    const invW: [number, number, number] = [1.0, 0.5, 0.25];
+    const sources = [new Float32Array([10.0, 1.0]), new Float32Array([20.0, 2.0]), new Float32Array([30.0, 3.0])];
+    const out = new Float32Array(2);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out, 1, 2);
+    // Assert:
+    expect(out[0]).toBe(Math.fround(30.0));
+  });
+});
+
+describe('Interpolator - multi-component vectors (TEST 9, AC-1/AC-5)', () => {
+  it('applies perspective correction across 4-element vectors', () => {
+    // Arrange:
+    const bary: [number, number, number] = [1 / 3, 1 / 3, 1 / 3];
+    const invW: [number, number, number] = [1.0, 0.5, 0.25];
+    const sources = [
+      new Float32Array([1.0, 2.0, 3.0, 4.0]),
+      new Float32Array([2.0, 4.0, 6.0, 8.0]),
+      new Float32Array([3.0, 6.0, 9.0, 12.0]),
+    ];
+    const out = new Float32Array(4);
+    // Act:
+    perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(Math.abs((out[0] as number) - ((11 / 7) * 1))).toBeLessThan(1 / 255);
+    expect(Math.abs((out[1] as number) - ((11 / 7) * 2))).toBeLessThan(1 / 255);
+    expect(Math.abs((out[2] as number) - ((11 / 7) * 3))).toBeLessThan(1 / 255);
+    expect(Math.abs((out[3] as number) - ((11 / 7) * 4))).toBeLessThan(1 / 255);
+  });
+});
+
+describe('Interpolator - degenerate zero-denominator (TEST 10, AC-5)', () => {
+  it('handles zero denominator without throwing and writes zero', () => {
+    // Arrange:
+    const bary: [number, number, number] = [0.0, 0.0, 0.0];
+    const invW: [number, number, number] = [0.0, 0.0, 0.0];
+    const sources = [new Float32Array([5.0]), new Float32Array([5.0]), new Float32Array([5.0])];
+    const out = new Float32Array(1);
+    // Act:
+    const act = (): void => perspectiveCorrect(bary, invW, sources, out);
+    // Assert:
+    expect(act).not.toThrow();
+    act();
+    expect(Number.isNaN(out[0] as number)).toBe(false);
+    expect(out[0]).toBe(0.0);
   });
 });
