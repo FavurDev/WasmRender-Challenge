@@ -191,3 +191,184 @@ describe('Tokenizer - boolean constants (TEST 10, AC-1)', () => {
     expect(byText.get('false')!.kind).toBe('BOOL_CONSTANT');
   });
 });
+
+import { describe as describePre, expect as expectPre, it as itPre } from 'vitest';
+import { runPreprocessor } from '../../src/glsl/preprocessor';
+
+function preprocessOk(source: string, version?: number) {
+  // Arrange helper: tokenize then preprocess, unwrap success branch.
+  const tres = tokenize(source, version);
+  expectPre(tres.ok).toBe(true);
+  if (!tres.ok) throw new Error('tokenize failed');
+  const pres = runPreprocessor(tres.tokens, version);
+  expectPre(pres.ok).toBe(true);
+  if (!pres.ok) throw new Error('expected ok');
+  return pres.tokens;
+}
+
+describePre('Preprocessor - object macro (TEST 1, AC-1)', () => {
+  itPre('object macro #define A 2 expands to 2 at use site', () => {
+    // Arrange:
+    const source = '#define A 2\nint x = A;';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+    const hit = pres.tokens.find((t) => t.text === '2' && t.line === 2);
+    expectPre(hit).toBeDefined();
+    expectPre(hit).toMatchObject({ kind: 'INT_CONSTANT', text: '2', line: 2 });
+  });
+});
+
+describePre('Preprocessor - undef diagnostic (TEST 2, AC-2)', () => {
+  itPre('#undef A then use of A yields ok:false with line-3 diagnostic', () => {
+    // Arrange:
+    const source = '#define A 2\n#undef A\nint x = A;';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(false);
+    if (pres.ok) throw new Error('expected failure');
+    expectPre(pres.log).toMatch(/^ERROR: 0:3: /);
+  });
+});
+
+describePre('Preprocessor - function macro (TEST 3, AC-3)', () => {
+  itPre('MUL(1+2) substitutes textually to ((1+2)*(1+2))', () => {
+    // Arrange:
+    const source = '#define MUL(x) ((x)*(x))\nint y = MUL(1+2);';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+    const seq = pres.tokens.filter((t) => t.line === 2).map((t) => t.text).join('');
+    expectPre(seq).toContain('((1+2)*(1+2))');
+  });
+});
+
+describePre('Preprocessor - recursion termination (TEST 4-5, AC-4)', () => {
+  itPre('self-recursive #define R R terminates with R unexpanded', () => {
+    // Arrange:
+    const source = '#define R R\nint x = R;';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+    expectPre(pres.tokens.some((t) => t.text === 'R' && t.kind === 'IDENTIFIER')).toBe(true);
+  });
+
+  itPre('mutually recursive X/Y terminates cleanly', () => {
+    // Arrange:
+    const source = '#define X Y\n#define Y X\nint a = X;';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+  });
+});
+
+describePre('Preprocessor - caps (TEST 6-7, AC-5)', () => {
+  itPre('expansion depth beyond 64 yields depth-limit diagnostic', () => {
+    // Arrange:
+    let src = '#define M0 1\n';
+    for (let i = 1; i <= 65; i++) src += '#define M' + i + ' M' + (i - 1) + '\n';
+    src += 'int val = M65;';
+    const tres = tokenize(src);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(false);
+    if (pres.ok) throw new Error('expected failure');
+    expectPre(pres.log).toMatch(/^ERROR: 0:\d+: /);
+    expectPre(pres.log.toLowerCase()).toContain('depth');
+  });
+
+  itPre('exponential growth beyond 65536 tokens yields token-cap diagnostic', () => {
+    // Arrange:
+    let src = '#define D0 1 1\n';
+    for (let i = 1; i <= 16; i++) src += '#define D' + i + ' D' + (i - 1) + ' D' + (i - 1) + '\n';
+    src += 'int v = D16;';
+    const tres = tokenize(src);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(false);
+    if (pres.ok) throw new Error('expected failure');
+    expectPre(pres.log).toMatch(/^ERROR: 0:\d+: /);
+    expectPre(pres.log.toLowerCase()).toContain('token');
+  });
+});
+
+describePre('Preprocessor - stringify and paste (TEST 8-9, AC-6)', () => {
+  itPre('# stringifies argument to quoted text', () => {
+    // Arrange:
+    const source = '#define STR(x) #x\nSTR(hello world)';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+    expectPre(pres.tokens.some((t) => t.text === '"hello world"')).toBe(true);
+  });
+
+  itPre('## pastes to single composite token my_var', () => {
+    // Arrange:
+    const source = '#define GLUE(a, b) a##b\nint GLUE(my_, var) = 5;';
+    const tres = tokenize(source);
+    expectPre(tres.ok).toBe(true);
+    if (!tres.ok) throw new Error('tokenize failed');
+    // Act:
+    const pres = runPreprocessor(tres.tokens);
+    // Assert:
+    expectPre(pres.ok).toBe(true);
+    if (!pres.ok) throw new Error('expected ok');
+    const hit = pres.tokens.find((t) => t.text === 'my_var');
+    expectPre(hit).toBeDefined();
+    expectPre(hit).toMatchObject({ kind: 'IDENTIFIER', text: 'my_var' });
+  });
+});
+
+describePre('Preprocessor - never throws and ErrorSink isolation (TEST 10)', () => {
+  itPre('hostile inputs return ok:false, never throw, sink stays NO_ERROR', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const inputs = ['#define\n', '#undef\n', '#define F( 1 2\n', '#define B\nint x = B(1,2);'];
+    // Act + Assert:
+    for (const input of inputs) {
+      const tres = tokenize(input);
+      if (!tres.ok) continue;
+      let pres: ReturnType<typeof runPreprocessor> | undefined;
+      expectPre(() => {
+        pres = runPreprocessor(tres.tokens);
+      }).not.toThrow();
+      expectPre(typeof pres!.ok).toBe('boolean');
+      expectPre(sink.getError()).toBe(NO_ERROR);
+    }
+  });
+});
