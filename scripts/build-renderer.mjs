@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial esbuild IIFE build pipeline with bundle assertions
 // Build pipeline for the software WebGL renderer (Sprint 1 Task 5).
 // Bundles src/entry.ts -> /app/renderer.js as a single IIFE via esbuild.
 // While src/entry.ts is absent (Sprint 1), skips loudly with exit 0.

@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial build pipeline suite
 import { describe, expect, it } from "vitest";
 // @ts-ignore - build script is untyped ESM outside tsc include
 import {

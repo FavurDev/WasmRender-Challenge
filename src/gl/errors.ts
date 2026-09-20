@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial sticky error queue
 /** ErrorSink — sticky single-slot WebGL error queue. L1: imports L0 constants only, never throws. */
 import { CONTEXT_LOST_WEBGL, NO_ERROR } from './constants';
 import type { GLenum } from './constants';

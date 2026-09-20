@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial context-attribute resolution
 /** Context-attribute resolution — pure function mapping partial inputs to frozen spec defaults. */
 export type WebGLPowerPreference = 'default' | 'low-power' | 'high-performance';
 

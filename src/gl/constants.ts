@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial GL constants table
 /** GL constants — single definition of every WebGL1/WebGL2 enum. L0: imports nothing, no logic. */
 export type GLenum = number;
 

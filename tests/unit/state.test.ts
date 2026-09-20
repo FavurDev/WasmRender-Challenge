@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial/extended state suite
 /** Context-attribute resolution tests (Sprint 1 Task 4, TDD red phase). */
 import { describe, expect, it } from 'vitest';
 import { resolveContextAttributes } from '../../src/gl/context-attributes';

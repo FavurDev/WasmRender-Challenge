@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial GL state store with snapshot/restore
 /** GLState — mutable WebGL 1.0 state vector with frozen PipelineState snapshots. L1: imports constants + errors only. */
 import {
   ACTIVE_TEXTURE,

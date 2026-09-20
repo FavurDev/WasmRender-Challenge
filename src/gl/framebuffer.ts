@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial drawing buffer with clear/readPixels
 /** DrawingBuffer — default WebGL drawing buffer: RGBA8 color + packed DEPTH24_STENCIL8. L2: imports constants + errors + state only. */
 import {
   COLOR_BUFFER_BIT,
