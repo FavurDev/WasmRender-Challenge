@@ -16,7 +16,9 @@ import {
   FIXED,
   FLOAT,
   FRAGMENT_SHADER,
+  FRAMEBUFFER_COMPLETE,
   INVALID_ENUM,
+  INVALID_FRAMEBUFFER_OPERATION,
   INVALID_OPERATION,
   INVALID_VALUE,
   LINK_STATUS,
@@ -52,7 +54,10 @@ import { parse } from '../glsl/parser';
 import { check, registerCheckedAST } from '../glsl/checker';
 import type { CheckedShader } from '../glsl/checker';
 import { link, ProgramRegistry } from './program';
-import type { ActiveUniformInfo, ProgramHandle } from './program';
+import type { ActiveUniformInfo, LinkedProgram, ProgramHandle } from './program';
+import { createVertexAttribTargetMap, fetchVertexAttributes, validateVertexAttribRange } from './vertex-fetch';
+import { executeFragment, executeVertex } from '../glsl/interpreter';
+import type { InterpreterHost } from '../glsl/interpreter';
 
 export interface DirectVertex {
   readonly position:
@@ -192,7 +197,7 @@ export class WebGL1Context {
    *   mode: Must be TRIANGLES.
    *   first: First vertex index (must be >= 0).
    *   count: Vertex count (must be >= 0, multiple of 3).
-   *   directGeometry: Direct vertex records; omitted means INVALID_OPERATION in M1.
+   *   directGeometry: Direct vertex records; omitted routes to the buffered draw path.
    */
   drawArrays(mode: number, first: number, count: number, directGeometry?: readonly DirectVertex[]): void {
     if (mode !== TRIANGLES) {
@@ -206,11 +211,11 @@ export class WebGL1Context {
     if (count === 0) {
       return;
     }
-    if (count % 3 !== 0) {
-      this.errorSink.recordError(INVALID_OPERATION);
+    if (directGeometry === undefined || directGeometry === null) {
+      this.drawBufferedTriangles(first, count);
       return;
     }
-    if (directGeometry === undefined || directGeometry === null) {
+    if (count % 3 !== 0) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
@@ -241,6 +246,158 @@ export class WebGL1Context {
         rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer);
       }
     }
+  }
+
+  /**
+   * Draw TRIANGLES from bound buffer objects through fetch, vertex execution, clip, and rasterize.
+   *
+   * Precondition matrix (first failing check wins): context loss is silent; a
+   * non-TRIANGLES mode records INVALID_ENUM; negative first/count records
+   * INVALID_VALUE; a missing or unlinked current program records
+   * INVALID_OPERATION; an enabled array with no bound buffer records
+   * INVALID_OPERATION; an out-of-range attribute range records
+   * INVALID_OPERATION; an incomplete framebuffer records
+   * INVALID_FRAMEBUFFER_OPERATION. A zero count is a silent no-op.
+   *
+   * Args:
+   *   first: First vertex index (must be >= 0).
+   *   count: Vertex count (must be >= 0; trailing vertices not forming a full triangle are ignored).
+   */
+  private drawBufferedTriangles(first: number, count: number): void {
+    if (this.errorSink.isContextLost()) return;
+    const prog = this.currentProgram;
+    if (prog === null || prog.handle.linkStatus !== true) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const linked = prog.handle.linkedProgram;
+    if (linked === null) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const descriptors: VertexAttribDescriptor[] = [];
+    for (let index = 0; index < MAX_VERTEX_ATTRIBS; index++) {
+      const desc = this.glState.getVertexAttrib(index);
+      if (desc === null) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      descriptors.push(desc);
+    }
+    for (const desc of descriptors) {
+      if (desc.enabled && (desc.buffer === null || desc.buffer === undefined)) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+    }
+    const bufferLookup = (handle: unknown): BufferObject | null => (handle as BufferObject | null) ?? null;
+    const range = validateVertexAttribRange(descriptors, bufferLookup, first, count, linked.activeAttribs);
+    if (!range.ok) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const fb = this.drawingBuffer as unknown as { checkStatus?: () => number };
+    const fbStatus = typeof fb.checkStatus === 'function' ? fb.checkStatus() : FRAMEBUFFER_COMPLETE;
+    if (fbStatus !== FRAMEBUFFER_COMPLETE) {
+      this.errorSink.recordError(INVALID_FRAMEBUFFER_OPERATION);
+      return;
+    }
+    if (count === 0) {
+      return;
+    }
+    const pipelineState = this.glState.snapshot();
+    const targetMap = createVertexAttribTargetMap(linked.activeAttribs);
+    const host: InterpreterHost = {
+      readUniform: (slot: number) => this.readDrawUniform(linked, slot),
+      sample: () => new Float32Array([0, 0, 0, 1]),
+    };
+    const layout = linked.varyingLayout;
+    const flatWidth = layout.length > 0 ? layout.length * 4 : 4;
+    let flatColor: Float32Array | null = null;
+    if (layout.length === 0) {
+      const frag = executeFragment(linked, new Map<string, Float32Array>(), host);
+      flatColor = new Float32Array([frag.color[0] as number, frag.color[1] as number, frag.color[2] as number, frag.color[3] as number]);
+    }
+    const shells: ClipVertex[] = [0, 1, 2].map(() => ({
+      clip: [0, 0, 0, 1] as [number, number, number, number],
+      pointSize: 1,
+      varyings: new Float32Array(flatWidth),
+    }));
+    const triCount = Math.floor(count / 3);
+    for (let tri = 0; tri < triCount; tri++) {
+      for (let corner = 0; corner < 3; corner++) {
+        const vertexId = first + tri * 3 + corner;
+        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap);
+        const out = executeVertex(linked, vertexId, targetMap, host);
+        const shell = shells[corner] as ClipVertex;
+        shell.clip[0] = out.clipPos[0] as number;
+        shell.clip[1] = out.clipPos[1] as number;
+        shell.clip[2] = out.clipPos[2] as number;
+        shell.clip[3] = out.clipPos[3] as number;
+        shell.pointSize = out.pointSize;
+        const dst = shell.varyings;
+        if (layout.length === 0) {
+          const flat = flatColor as Float32Array;
+          dst[0] = flat[0] as number;
+          dst[1] = flat[1] as number;
+          dst[2] = flat[2] as number;
+          dst[3] = flat[3] as number;
+        } else {
+          for (let slot = 0; slot < layout.length; slot++) {
+            const item = layout[slot] as { name: string };
+            const vec = out.varyings.get(item.name);
+            const o = slot * 4;
+            if (vec !== undefined) {
+              dst[o] = vec[0] as number;
+              dst[o + 1] = vec[1] as number;
+              dst[o + 2] = vec[2] as number;
+              dst[o + 3] = vec[3] as number;
+            } else {
+              dst[o] = 0;
+              dst[o + 1] = 0;
+              dst[o + 2] = 0;
+              dst[o + 3] = 1;
+            }
+          }
+        }
+      }
+      const clippedFan: ClipVertex[] = clipTriangle(shells[0] as ClipVertex, shells[1] as ClipVertex, shells[2] as ClipVertex);
+      if (clippedFan.length < 3) {
+        continue;
+      }
+      for (let fanIdx = 1; fanIdx < clippedFan.length - 1; fanIdx++) {
+        const sv0 = mapClipToScreen(clippedFan[0] as ClipVertex, pipelineState);
+        const sv1 = mapClipToScreen(clippedFan[fanIdx] as ClipVertex, pipelineState);
+        const sv2 = mapClipToScreen(clippedFan[fanIdx + 1] as ClipVertex, pipelineState);
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer);
+      }
+    }
+  }
+
+  /**
+   * Read a uniform slot for the vertex/fragment interpreter host.
+   *
+   * Args:
+   *   linked: Linked program owning the uniform store.
+   *   slot: Per-kind slot assigned at link time.
+   *
+   * Returns:
+   *   Scalar number for single values, otherwise a view into the matching store.
+   */
+  private readDrawUniform(linked: LinkedProgram, slot: number): number | Float32Array | Int32Array | Uint32Array {
+    const info = linked.activeUniforms.find((u) => u.slot === slot) ?? null;
+    if (info === null) return 0;
+    const width = info.size > 1 ? info.size : 1;
+    if (info.typeKind === 'int' || info.typeKind === 'sampler') {
+      if (width <= 1) return linked.uniformStore.i32[slot] as number;
+      return linked.uniformStore.i32.subarray(slot, slot + width);
+    }
+    if (info.typeKind === 'uint') {
+      if (width <= 1) return linked.uniformStore.u32[slot] as number;
+      return linked.uniformStore.u32.subarray(slot, slot + width);
+    }
+    if (width <= 1) return linked.uniformStore.f32[slot] as number;
+    return linked.uniformStore.f32.subarray(slot, slot + width);
   }
 
   /**
@@ -939,6 +1096,55 @@ export class WebGL1Context {
     return (program as WebGLProgram).handle.alive;
   }
 
+  private validateUniform(
+    location: WebGLUniformLocation | null,
+    components: number,
+    rawValues: ArrayLike<number>,
+    expectedKind: 'float' | 'int_or_sampler' | 'matrix_float',
+    transpose?: boolean,
+  ): { values: number[]; uniform: ActiveUniformInfo; linkedProgram: LinkedProgram } | null {
+    if (this.errorSink.isContextLost()) return null;
+    if (location === null || location === undefined) return null;
+    if (expectedKind === 'matrix_float' && transpose !== false) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return null;
+    }
+    let values: number[];
+    try {
+      values = Array.from(rawValues as ArrayLike<number>);
+    } catch {
+      this.errorSink.recordError(INVALID_VALUE);
+      return null;
+    }
+    const uniform = this.resolveUniform(location);
+    if (uniform === null) return null;
+    if (expectedKind === 'float' || expectedKind === 'matrix_float') {
+      if (uniform.typeKind !== 'float') {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return null;
+      }
+    } else {
+      if (uniform.typeKind !== 'int' && uniform.typeKind !== 'sampler' && uniform.typeKind !== 'uint') {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return null;
+      }
+    }
+    if (values.length === 0 || values.length % components !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return null;
+    }
+    if (values.length > uniform.size * components) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return null;
+    }
+    const linkedProgram = (this.currentProgram as WebGLProgram).handle.linkedProgram;
+    if (linkedProgram === null) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return null;
+    }
+    return { values, uniform, linkedProgram };
+  }
+
   private resolveUniform(location: WebGLUniformLocation | null): ActiveUniformInfo | null {
     if (this.currentProgram === null) {
       this.errorSink.recordError(INVALID_OPERATION);
@@ -966,75 +1172,23 @@ export class WebGL1Context {
   }
 
   private writeFloatUniform(location: WebGLUniformLocation | null, components: number, v: ArrayLike<number>): void {
-    if (this.errorSink.isContextLost()) return;
-    if (location === null || location === undefined) return;
-    let values: number[];
-    try {
-      values = Array.from(v as ArrayLike<number>);
-    } catch {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const uniform = this.resolveUniform(location);
-    if (uniform === null) return;
-    if (uniform.typeKind !== 'float') {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    if (values.length === 0 || values.length % components !== 0) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    if (values.length > uniform.size * components) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const linked = (this.currentProgram as WebGLProgram).handle.linkedProgram;
-    if (linked === null) {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    for (let i = 0; i < values.length; i++) {
-      linked.uniformStore.f32[uniform.slot + i] = values[i] as number;
+    const validated = this.validateUniform(location, components, v, 'float');
+    if (validated === null) return;
+    for (let i = 0; i < validated.values.length; i++) {
+      validated.linkedProgram.uniformStore.f32[validated.uniform.slot + i] = validated.values[i] as number;
     }
   }
 
   private writeIntUniform(location: WebGLUniformLocation | null, components: number, v: ArrayLike<number>): void {
-    if (this.errorSink.isContextLost()) return;
-    if (location === null || location === undefined) return;
-    let values: number[];
-    try {
-      values = Array.from(v as ArrayLike<number>);
-    } catch {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const uniform = this.resolveUniform(location);
-    if (uniform === null) return;
-    if (uniform.typeKind !== 'int' && uniform.typeKind !== 'sampler' && uniform.typeKind !== 'uint') {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    if (values.length === 0 || values.length % components !== 0) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    if (values.length > uniform.size * components) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const linked = (this.currentProgram as WebGLProgram).handle.linkedProgram;
-    if (linked === null) {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    const ints = values.map((n) => Math.trunc(Number(n)));
-    if (uniform.typeKind === 'uint') {
-      for (let i = 0; i < ints.length; i++) linked.uniformStore.u32[uniform.slot + i] = ints[i] as number;
-    } else if (uniform.typeKind === 'sampler') {
-      for (let i = 0; i < ints.length; i++) linked.uniformStore.samplerUnits[uniform.slot + i] = ints[i] as number;
+    const validated = this.validateUniform(location, components, v, 'int_or_sampler');
+    if (validated === null) return;
+    const ints = validated.values.map((n) => Math.trunc(Number(n)));
+    if (validated.uniform.typeKind === 'uint') {
+      for (let i = 0; i < ints.length; i++) validated.linkedProgram.uniformStore.u32[validated.uniform.slot + i] = ints[i] as number;
+    } else if (validated.uniform.typeKind === 'sampler') {
+      for (let i = 0; i < ints.length; i++) validated.linkedProgram.uniformStore.samplerUnits[validated.uniform.slot + i] = ints[i] as number;
     } else {
-      for (let i = 0; i < ints.length; i++) linked.uniformStore.i32[uniform.slot + i] = ints[i] as number;
+      for (let i = 0; i < ints.length; i++) validated.linkedProgram.uniformStore.i32[validated.uniform.slot + i] = ints[i] as number;
     }
   }
 
@@ -1044,40 +1198,10 @@ export class WebGL1Context {
     value: ArrayLike<number>,
     components: number,
   ): void {
-    if (this.errorSink.isContextLost()) return;
-    if (location === null || location === undefined) return;
-    if (transpose !== false) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    let values: number[];
-    try {
-      values = Array.from(value as ArrayLike<number>);
-    } catch {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const uniform = this.resolveUniform(location);
-    if (uniform === null) return;
-    if (uniform.typeKind !== 'float') {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    if (values.length === 0 || values.length % components !== 0) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    if (values.length > uniform.size * components) {
-      this.errorSink.recordError(INVALID_VALUE);
-      return;
-    }
-    const linked = (this.currentProgram as WebGLProgram).handle.linkedProgram;
-    if (linked === null) {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
-    }
-    for (let i = 0; i < values.length; i++) {
-      linked.uniformStore.f32[uniform.slot + i] = values[i] as number;
+    const validated = this.validateUniform(location, components, value, 'matrix_float', transpose);
+    if (validated === null) return;
+    for (let i = 0; i < validated.values.length; i++) {
+      validated.linkedProgram.uniformStore.f32[validated.uniform.slot + i] = validated.values[i] as number;
     }
   }
 }

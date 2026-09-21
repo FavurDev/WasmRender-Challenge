@@ -271,3 +271,385 @@ describe('Group 4: Component defaulting, generic fallback, and purity', () => {
     expect(v1).toEqual([4, 5, 6, 1]);
   });
 });
+/** Sprint 5 Task 5 TDD RED-phase tests — drawArrays orchestrator precondition matrix, happy-path TRIANGLES draw, TD-009 uniform regressions. Appended; lines 1-273 untouched. */
+import { createSoftwareWebGLContext } from '../../src/entry';
+import { WebGL1Context } from '../../src/gl/webgl1-context';
+import { DrawingBuffer } from '../../src/gl/framebuffer';
+import {
+  ARRAY_BUFFER,
+  COLOR_BUFFER_BIT,
+  COMPILE_STATUS,
+  FRAGMENT_SHADER,
+  FRAMEBUFFER_COMPLETE,
+  FRAMEBUFFER_INCOMPLETE_ATTACHMENT,
+  INVALID_ENUM,
+  INVALID_FRAMEBUFFER_OPERATION,
+  INVALID_OPERATION,
+  INVALID_VALUE,
+  LINK_STATUS,
+  NO_ERROR,
+  POINTS,
+  RGBA,
+  TRIANGLES,
+  VERTEX_SHADER,
+} from '../../src/gl/constants';
+
+const T5_W = 8;
+const T5_H = 8;
+const T5_VS = 'attribute vec4 aPos; void main() { gl_Position = aPos; }';
+const T5_FS = 'precision mediump float; void main() { gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); }';
+
+function t5Context(): WebGL1Context {
+  const gl = createSoftwareWebGLContext({ width: T5_W, height: T5_H });
+  if (gl === null) throw new Error('t5Context: factory returned null');
+  return gl;
+}
+
+function t5LinkPair(gl: WebGL1Context, vsrc = T5_VS, fsrc = T5_FS): { program: NonNullable<ReturnType<WebGL1Context['createProgram']>> } {
+  const vs = gl.createShader(VERTEX_SHADER);
+  const fs = gl.createShader(FRAGMENT_SHADER);
+  if (vs === null || fs === null) throw new Error('t5LinkPair: shader creation failed');
+  gl.shaderSource(vs, vsrc);
+  gl.shaderSource(fs, fsrc);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  if (gl.getShaderParameter(vs, COMPILE_STATUS) !== true) throw new Error('t5LinkPair: VS failed: ' + gl.getShaderInfoLog(vs));
+  if (gl.getShaderParameter(fs, COMPILE_STATUS) !== true) throw new Error('t5LinkPair: FS failed: ' + gl.getShaderInfoLog(fs));
+  const program = gl.createProgram();
+  if (program === null) throw new Error('t5LinkPair: program creation failed');
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (gl.getProgramParameter(program, LINK_STATUS) !== true) throw new Error('t5LinkPair: link failed: ' + gl.getProgramInfoLog(program));
+  return { program };
+}
+
+function t5SetupBufferDraw(gl: WebGL1Context, floats: number[], size = 2): void {
+  const buf = gl.createBuffer();
+  if (buf === null) throw new Error('t5SetupBufferDraw: createBuffer failed');
+  gl.bindBuffer(ARRAY_BUFFER, buf);
+  gl.bufferData(ARRAY_BUFFER, new Float32Array(floats), STATIC_DRAW);
+  if (gl.getError() !== NO_ERROR) throw new Error('t5SetupBufferDraw: bufferData errored');
+  const { program } = t5LinkPair(gl);
+  gl.useProgram(program);
+  const loc = gl.getAttribLocation(program, 'aPos');
+  if (loc < 0) throw new Error('t5SetupBufferDraw: aPos location not found');
+  gl.vertexAttribPointer(loc, size, FLOAT, false, 0, 0);
+  if (gl.getError() !== NO_ERROR) throw new Error('t5SetupBufferDraw: vertexAttribPointer errored');
+  gl.enableVertexAttribArray(loc);
+}
+
+function t5Snapshot(gl: WebGL1Context): Uint8Array {
+  // Arrange helper: full-buffer readback snapshot.
+  const out = new Uint8Array(T5_W * T5_H * 4);
+  gl.readPixels(0, 0, T5_W, T5_H, RGBA, UNSIGNED_BYTE, out);
+  if (gl.getError() !== NO_ERROR) throw new Error('t5Snapshot: readPixels errored');
+  return out;
+}
+
+function t5Pixel(gl: WebGL1Context, x: number, y: number): [number, number, number, number] {
+  // Arrange helper: single-pixel readback.
+  const out = new Uint8Array(4);
+  gl.readPixels(x, y, 1, 1, RGBA, UNSIGNED_BYTE, out);
+  if (gl.getError() !== NO_ERROR) throw new Error('t5Pixel: readPixels errored');
+  return [out[0] as number, out[1] as number, out[2] as number, out[3] as number];
+}
+
+describe('Sprint 5 Task 5 Group 1: drawArrays precondition matrix (RED)', () => {
+  it('drawArrays with unrecognized mode records INVALID_ENUM', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(POINTS, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_ENUM);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with negative first records INVALID_VALUE', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, -1, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with negative count records INVALID_VALUE', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, -3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with no bound program records INVALID_OPERATION (M3 unit test 1)', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    gl.useProgram(null);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with unlinked program records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = t5Context();
+    const program = gl.createProgram();
+    if (program === null) throw new Error('arrange: createProgram failed');
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act: draw with a program that was never linked (useProgram rejects it, currentProgram stays null).
+    gl.useProgram(program);
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with enabled attribute but no bound buffer records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = t5Context();
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const { program } = t5LinkPair(gl);
+    gl.useProgram(program);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    if (loc < 0) throw new Error('arrange: aPos not found');
+    gl.vertexAttribPointer(loc, 2, FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(loc);
+    // Detach the buffer binding captured at pointer time so the enabled array has no buffer.
+    const desc = gl.getVertexAttribDescriptor(loc);
+    if (desc === null || desc.buffer === null) throw new Error('arrange: descriptor missing buffer');
+    (desc.buffer as { alive: boolean }).alive = false;
+    gl.bindBuffer(ARRAY_BUFFER, null);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with attribute range exceeding buffer records INVALID_OPERATION (M3 unit test 2, SOW-REQ-017)', () => {
+    // Arrange: 24 bytes (2 vec3) but 3 vertices require 36 bytes.
+    const gl = t5Context();
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([1, 2, 3, 4, 5, 6]), STATIC_DRAW);
+    const { program } = t5LinkPair(gl);
+    gl.useProgram(program);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    if (loc < 0) throw new Error('arrange: aPos not found');
+    gl.vertexAttribPointer(loc, 3, FLOAT, false, 12, 0);
+    gl.enableVertexAttribArray(loc);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(new Uint8Array(T5_W * T5_H * 4).map((_, i) => (i % 4 === 3 ? 255 : 0))));
+  });
+
+  it('drawArrays with incomplete bound framebuffer records INVALID_FRAMEBUFFER_OPERATION', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    const proto = DrawingBuffer.prototype as unknown as Record<string, unknown>;
+    const original = proto['checkStatus'];
+    proto['checkStatus'] = () => FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    proto['checkStatus'] = original;
+    // Assert:
+    expect(threw).toBe(false);
+    expect(FRAMEBUFFER_COMPLETE).not.toBe(FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+    expect(gl.getError()).toBe(INVALID_FRAMEBUFFER_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('drawArrays with count === 0 is no-op recording NO_ERROR', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(0, 0, 1, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const before = t5Snapshot(gl);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 0);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+});
+
+describe('Sprint 5 Task 5 Group 2: happy-path TRIANGLES draw (RED)', () => {
+  it('drawArrays(TRIANGLES, 0, 3) renders shader-driven triangle to framebuffer', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    let threw = false;
+    try {
+      gl.drawArrays(TRIANGLES, 0, 3);
+    } catch { threw = true; }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(t5Pixel(gl, T5_W >> 1, T5_H >> 1)).toEqual([0, 255, 0, 255]);
+    expect(t5Pixel(gl, 0, 0)).toEqual([0, 255, 0, 255]);
+  });
+});
+
+describe('Sprint 5 Task 5 Group 3: TD-009 validateUniform regressions (RED)', () => {
+  it('TD-009 regression: writeFloatUniform validation and store update', () => {
+    // Arrange:
+    const gl = t5Context();
+    const { program } = t5LinkPair(gl, 'attribute vec4 aPos; uniform vec3 uLight; void main() { gl_Position = aPos + vec4(uLight, 0.0); }', T5_FS);
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uLight');
+    if (loc === null) throw new Error('arrange: uLight location null');
+    // Act:
+    gl.uniform3f(loc, 1, 2, 3);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    const linked = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle.linkedProgram;
+    expect(Array.from(linked.uniformStore.f32.slice(0, 3))).toEqual([1, 2, 3]);
+    // Act:
+    gl.uniform3fv(loc, new Float32Array([4, 5, 6]));
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(Array.from(linked.uniformStore.f32.slice(0, 3))).toEqual([4, 5, 6]);
+    // Act: invalid component length records INVALID_VALUE with zero store mutation.
+    const before = Array.from(linked.uniformStore.f32);
+    gl.uniform3fv(loc, new Float32Array([7, 8]));
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(Array.from(linked.uniformStore.f32)).toEqual(before);
+  });
+
+  it('TD-009 regression: writeIntUniform validation and store update', () => {
+    // Arrange:
+    const gl = t5Context();
+    const { program } = t5LinkPair(
+      gl,
+      'attribute vec4 aPos; uniform ivec2 uCoord; void main() { gl_Position = aPos + vec4(float(uCoord.x), float(uCoord.y), 0.0, 0.0); }',
+      'precision mediump float; uniform sampler2D uTex; void main() { gl_FragColor = texture2D(uTex, vec2(0.5)); }',
+    );
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uCoord');
+    const samplerLoc = gl.getUniformLocation(program, 'uTex');
+    if (loc === null || samplerLoc === null) throw new Error('arrange: uniform locations null');
+    // Act:
+    gl.uniform2i(loc, 10, 20);
+    gl.uniform1i(samplerLoc, 2);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    const linked = (program as unknown as { handle: { linkedProgram: { uniformStore: { i32: Int32Array; samplerUnits: Int32Array } } } }).handle.linkedProgram;
+    expect(Array.from(linked.uniformStore.i32.slice(0, 2))).toEqual([10, 20]);
+    expect(linked.uniformStore.samplerUnits[0]).toBe(2);
+    // Act: float setter targeting an int uniform records INVALID_OPERATION.
+    gl.uniform2f(loc, 1, 2);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+  });
+
+  it('TD-009 regression: writeMatrixUniform transpose check and store update', () => {
+    // Arrange:
+    const gl = t5Context();
+    const { program } = t5LinkPair(gl, 'attribute vec4 aPos; uniform mat3 uMatrix; void main() { gl_Position = vec4(uMatrix * aPos.xyz, 1.0); }', T5_FS);
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uMatrix');
+    if (loc === null) throw new Error('arrange: uMatrix location null');
+    const linked = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle.linkedProgram;
+    const before = Array.from(linked.uniformStore.f32);
+    // Act:
+    gl.uniformMatrix3fv(loc, true, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(Array.from(linked.uniformStore.f32)).toEqual(before);
+    // Act:
+    gl.uniformMatrix3fv(loc, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(Array.from(linked.uniformStore.f32.slice(0, 9))).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  });
+});
