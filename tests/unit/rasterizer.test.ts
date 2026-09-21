@@ -794,3 +794,181 @@ describe('Rasterizer - mapClipToScreen (AC-1)', () => {
     expect(s.invW).toBeCloseTo(1.0, 5);
   });
 });
+
+describe('Sprint 5 Task 1 - TD-002 depthRange mapping (TEST 1)', () => {
+  it('maps ndcZ=0 through range [0.25,0.75] to z=0.5', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setDepthRange(0.25, 0.75);
+    const state = glState.snapshot();
+    const clipVertex = { clip: [0, 0, 0, 1] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(4) };
+    // Act:
+    const result = mapClipToScreen(clipVertex, state);
+    // Assert:
+    const expectedZ01 = Math.fround(Math.fround(0.0 * 0.5) + 0.5);
+    const expectedDiff = Math.fround(Math.fround(0.75) - Math.fround(0.25));
+    const expectedScaled = Math.fround(expectedDiff * expectedZ01);
+    const expectedZ = Math.fround(Math.fround(0.25) + expectedScaled);
+    expect(result.z).toBeCloseTo(expectedZ, 6);
+    expect(result.z).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-002 non-symmetric mapping (TEST 2)', () => {
+  it('maps ndcZ=1 through range [0.1,0.9] to z=0.9', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setDepthRange(0.1, 0.9);
+    const state = glState.snapshot();
+    const clipVertex = { clip: [0, 0, 1, 1] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(4) };
+    // Act:
+    const result = mapClipToScreen(clipVertex, state);
+    // Assert:
+    expect(result.z).toBeCloseTo(0.9, 6);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-002 default bit-identity (TEST 3)', () => {
+  it('default range [0,1] is bit-identical to prior hardcoded formula', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    const state = glState.snapshot();
+    const inputs = [-1.0, -0.75, -0.5, 0.0, 0.333, 0.5, 0.99, 1.0];
+    // Act & Assert:
+    for (const zVal of inputs) {
+      const vertex = { clip: [0, 0, zVal, 1] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(0) };
+      const screenVertex = mapClipToScreen(vertex, state);
+      const priorFormulaZ = Math.fround(Math.fround(Math.fround(zVal * 1.0) * 0.5) + 0.5);
+      expect(Object.is(screenVertex.z, priorFormulaZ)).toBe(true);
+    }
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-004 w-guard positive (TEST 4)', () => {
+  it('treats w=1e-7 as zero with invW=0 and no NaN', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const state = new GLState(sink, { width: 10, height: 10 }).snapshot();
+    const clipVertex = { clip: [1.0, 2.0, 0.5, 1e-7] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(4) };
+    // Act:
+    const result = mapClipToScreen(clipVertex, state);
+    // Assert:
+    expect(result.invW).toBe(0);
+    expect(Number.isNaN(result.x)).toBe(false);
+    expect(Number.isNaN(result.y)).toBe(false);
+    expect(Number.isNaN(result.z)).toBe(false);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-004 w-guard negative (TEST 5)', () => {
+  it('treats w=-1e-7 as zero with invW=0 and no NaN', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const state = new GLState(sink, { width: 10, height: 10 }).snapshot();
+    const clipVertex = { clip: [1.0, 2.0, 0.5, -1e-7] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(4) };
+    // Act:
+    const result = mapClipToScreen(clipVertex, state);
+    // Assert:
+    expect(result.invW).toBe(0);
+    expect(Number.isNaN(result.x)).toBe(false);
+    expect(Number.isNaN(result.y)).toBe(false);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-004 valid small w (TEST 6)', () => {
+  it('w=1e-5 above epsilon yields nonzero invW', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const state = new GLState(sink, { width: 10, height: 10 }).snapshot();
+    const clipVertex = { clip: [0, 0, 0, 1e-5] as [number, number, number, number], pointSize: 1, varyings: new Float32Array(4) };
+    // Act:
+    const result = mapClipToScreen(clipVertex, state);
+    // Assert:
+    expect(result.invW).toBe(Math.fround(1 / 1e-5));
+    expect(result.invW).not.toBe(0);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-004 bary reuse (TEST 7)', () => {
+  it('rasterizes covered triangle with correct color and depth', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 16, height: 16 });
+    glState.setViewport(0, 0, 16, 16);
+    const state = glState.snapshot();
+    const fb = new DrawingBuffer(sink, { width: 16, height: 16 });
+    const v0 = sv(2, 2, 0.5, [1, 0, 0, 1]);
+    const v1 = sv(13, 2, 0.5, [1, 0, 0, 1]);
+    const v2 = sv(2, 13, 0.5, [1, 0, 0, 1]);
+    // Act:
+    rasterizeTriangle(v0, v1, v2, state, fb);
+    // Assert:
+    expect(pxColor(fb, 16, 4, 4)).toEqual([255, 0, 0, 255]);
+    const ds = fb.getDepthStencilBuffer();
+    const depth = (ds[4 * 16 + 4] as number) >>> 8;
+    expect(depth).not.toBe(0x00ffffff);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-005 zero-varying white (TEST 8)', () => {
+  it('0 varyings shades covered pixel white and writes depth', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setViewport(0, 0, 10, 10);
+    const state = glState.snapshot();
+    const fb = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const mk = (x: number, y: number): ScreenVertex => ({ x: x * 16, y: y * 16, z: 0.5, invW: 1, varyings: new Float32Array(0) });
+    // Act:
+    rasterizeTriangle(mk(2, 2), mk(8, 2), mk(2, 8), state, fb);
+    // Assert:
+    const color = fb.getColorBuffer();
+    const offset = (3 * 10 + 3) * 4;
+    expect(color[offset]).toBe(255);
+    expect(color[offset + 1]).toBe(255);
+    expect(color[offset + 2]).toBe(255);
+    expect(color[offset + 3]).toBe(255);
+    const ds = fb.getDepthStencilBuffer();
+    expect((ds[3 * 10 + 3] as number) >>> 8).not.toBe(0x00ffffff);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-005 two-varying white (TEST 9)', () => {
+  it('2 varyings shades covered pixel white without bounds errors', () => {
+    // Arrange:
+    const sink = new ErrorSink();
+    const glState = new GLState(sink, { width: 10, height: 10 });
+    glState.setViewport(0, 0, 10, 10);
+    const state = glState.snapshot();
+    const fb = new DrawingBuffer(sink, { width: 10, height: 10 });
+    const mk = (x: number, y: number): ScreenVertex => ({ x: x * 16, y: y * 16, z: 0.5, invW: 1, varyings: new Float32Array([0.2, 0.8]) });
+    // Act:
+    const act = (): void => rasterizeTriangle(mk(2, 2), mk(8, 2), mk(2, 8), state, fb);
+    // Assert:
+    expect(act).not.toThrow();
+    act();
+    expect(pxColor(fb, 10, 3, 3)).toEqual([255, 255, 255, 255]);
+  });
+});
+
+describe('Sprint 5 Task 1 - TD-006 clipper preservation (TEST 10)', () => {
+  it('near-plane straddle clips to in-frustum polygon', () => {
+    // Arrange:
+    const a = makeVertex(0.0, 0.0, 0.0, 1.0, [1.0]);
+    const b = makeVertex(0.0, 0.0, -2.0, 1.0, [2.0]);
+    const c = makeVertex(0.5, 0.0, 0.0, 1.0, [3.0]);
+    // Act:
+    const result = clipTriangle(a, b, c);
+    // Assert:
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    for (const v of result) {
+      const z = v.clip[2] as number;
+      const w = v.clip[3] as number;
+      expect(z).toBeLessThanOrEqual(w);
+      expect(z).toBeGreaterThanOrEqual(-w);
+    }
+  });
+});

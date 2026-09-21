@@ -70,6 +70,15 @@ function interpolateClipVertex(vA: ClipVertex, vB: ClipVertex, t: number): ClipV
   return { clip: newClip, pointSize: newPointSize, varyings: newVaryings };
 }
 
+export function computeCrossingT(prevDist: number, currDist: number): number {
+  let t = Math.fround(prevDist / Math.fround(prevDist - currDist));
+  if (!(t >= 0 && t <= 1) || Number.isNaN(t)) {
+    t = t < 0 ? 0 : 1;
+    if (Number.isNaN(t)) t = 0;
+  }
+  return Math.min(1, Math.max(0, t));
+}
+
 function isValidVertex(v: ClipVertex | null | undefined): boolean {
   if (v === null || v === undefined) return false;
   if (!Array.isArray(v.clip) || v.clip.length < 4) return false;
@@ -126,23 +135,13 @@ export function clipTriangle(v0: ClipVertex, v1: ClipVertex, v2: ClipVertex): Cl
         if (prevDist >= 0) {
           outputList.push(currVertex);
         } else {
-          let t = Math.fround(prevDist / Math.fround(prevDist - currDist));
-          if (!(t >= 0 && t <= 1) || Number.isNaN(t)) {
-            t = t < 0 ? 0 : 1;
-            if (Number.isNaN(t)) t = 0;
-          }
-          t = Math.min(1, Math.max(0, t));
+          const t = computeCrossingT(prevDist, currDist);
           outputList.push(interpolateClipVertex(prevVertex, currVertex, t));
           outputList.push(currVertex);
         }
       } else {
         if (prevDist >= 0) {
-          let t = Math.fround(prevDist / Math.fround(prevDist - currDist));
-          if (!(t >= 0 && t <= 1) || Number.isNaN(t)) {
-            t = t < 0 ? 0 : 1;
-            if (Number.isNaN(t)) t = 0;
-          }
-          t = Math.min(1, Math.max(0, t));
+          const t = computeCrossingT(prevDist, currDist);
           outputList.push(interpolateClipVertex(prevVertex, currVertex, t));
         }
       }

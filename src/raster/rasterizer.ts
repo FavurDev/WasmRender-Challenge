@@ -55,7 +55,7 @@ function isCovered(w: number, isTopLeft: boolean): boolean {
 export function mapClipToScreen(clipVertex: ClipVertex, state: PipelineState): ScreenVertex {
   const w = clipVertex.clip[3];
   let invW = 0;
-  if (w !== 0 && Number.isFinite(w)) {
+  if (Math.abs(w) >= 1e-6 && Number.isFinite(w)) {
     invW = Math.fround(1 / w);
   }
   const ndcX = Math.fround(finiteOrZero(clipVertex.clip[0]) * invW);
@@ -64,7 +64,12 @@ export function mapClipToScreen(clipVertex: ClipVertex, state: PipelineState): S
   const vp = state.viewport;
   const winX = Math.fround(finiteOrZero(vp.x) + Math.fround(Math.fround(Math.fround(ndcX * 0.5) + 0.5) * vp.width));
   const winY = Math.fround(finiteOrZero(vp.y) + Math.fround(Math.fround(Math.fround(ndcY * 0.5) + 0.5) * vp.height));
-  const z = Math.fround(Math.fround(ndcZ * 0.5) + 0.5);
+  const z01 = Math.fround(Math.fround(ndcZ * 0.5) + 0.5);
+  const near = Math.fround(state.depth.range[0]);
+  const far = Math.fround(state.depth.range[1]);
+  const diff = Math.fround(far - near);
+  const scaled = Math.fround(diff * z01);
+  const z = Math.fround(near + scaled);
   const varyings = new Float32Array(clipVertex.varyings.length);
   varyings.set(clipVertex.varyings);
   return {
@@ -172,17 +177,16 @@ export function rasterizeTriangle(
   const frag: Fragment = { x: 0, y: 0, depth: 0, varyings: fragVaryings };
   const color = fb.getColorBuffer();
   const ds = fb.getDepthStencilBuffer();
+  const bary: [number, number, number] = [0, 0, 0];
   for (let py = loY; py <= hiY; py++) {
     let w0 = w0row;
     let w1 = w1row;
     let w2 = w2row;
     for (let px = loX; px <= hiX; px++) {
       if (isCovered(w0, e0tl) && isCovered(w1, e1tl) && isCovered(w2, e2tl)) {
-        const bary: [number, number, number] = [
-          Math.fround(w0 * invArea),
-          Math.fround(w1 * invArea),
-          Math.fround(w2 * invArea),
-        ];
+        bary[0] = Math.fround(w0 * invArea);
+        bary[1] = Math.fround(w1 * invArea);
+        bary[2] = Math.fround(w2 * invArea);
         perspectiveCorrect(bary, invW, sources, fragVaryings);
         frag.x = px;
         frag.y = py;
@@ -200,6 +204,12 @@ export function rasterizeTriangle(
           color[o] = Math.round(clamp01(fragVaryings[0] as number) * 255);
           color[o + 1] = Math.round(clamp01(fragVaryings[1] as number) * 255);
           color[o + 2] = Math.round(clamp01(fragVaryings[2] as number) * 255);
+          color[o + 3] = 255;
+        } else {
+          const o = idx * 4;
+          color[o] = 255;
+          color[o + 1] = 255;
+          color[o + 2] = 255;
           color[o + 3] = 255;
         }
         const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
