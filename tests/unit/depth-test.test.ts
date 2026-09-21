@@ -179,4 +179,17 @@ describe('Sprint 5 Task 7 RED: depth-test fix Test Cases 3-8', () => {
     const word = fb.getDepthStencilBuffer()[2 * W + 2] as number;
     expect(word >>> 0).toBe((((q(0.2) * 256) | 0x42) >>> 0) as number);
   });
+
+  it('TC9 depthMask(false) prevents depth write when DEPTH_TEST is disabled', () => {
+    // Arrange:
+    const { state, fb } = setup(false, LESS, false);
+    const ds = fb.getDepthStencilBuffer();
+    const clearWord = ((q(1.0) * 256) >>> 0) as number;
+    ds.fill(clearWord);
+    // Act:
+    rasterizeTriangle(...tri(0.5, [1, 0, 0, 1]), state, fb);
+    // Assert:
+    expect(pxColor(fb, 2, 2)).toEqual([255, 0, 0, 255]);
+    expect((ds[2 * W + 2] as number) >>> 0).toBe(clearWord >>> 0);
+  });
 });
