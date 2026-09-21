@@ -59,6 +59,8 @@ import { GLState } from './state';
 import type { CanvasDimensions, VertexAttribDescriptor } from './state';
 import { BufferManager } from './buffer';
 import type { BufferObject } from './buffer';
+import { TextureManager } from './texture';
+import type { TextureObject } from './texture';
 import { DrawingBuffer } from './framebuffer';
 import { resolveContextAttributes } from './context-attributes';
 import type { WebGLContextAttributes } from './context-attributes';
@@ -140,6 +142,7 @@ export class WebGL1Context {
   private readonly contextAttributes: WebGLContextAttributes;
   private readonly programRegistry = new ProgramRegistry();
   private readonly bufferManager: BufferManager;
+  private readonly textureManager: TextureManager;
   private readonly shaders = new Map<number, WebGLShader>();
   private readonly programs = new Map<number, WebGLProgram>();
   private nextShaderId = 1;
@@ -169,6 +172,7 @@ export class WebGL1Context {
     this.glState = new GLState(this.errorSink, this.canvas);
     this.drawingBuffer = new DrawingBuffer(this.errorSink, this.canvas);
     this.bufferManager = new BufferManager(this.errorSink);
+    this.textureManager = new TextureManager(this.errorSink);
   }
 
   /** Set the clear color. */
@@ -547,6 +551,61 @@ export class WebGL1Context {
   /** Query bound buffer parameter via BufferManager. */
   getBufferParameter(target: number, pname: number): number | GLenum | null {
     return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
+  }
+
+  /** Create a texture via TextureManager. */
+  createTexture(): TextureObject | null {
+    return this.textureManager.createTexture();
+  }
+
+  /** Delete a texture via TextureManager. */
+  deleteTexture(texture: TextureObject | null): void {
+    this.textureManager.deleteTexture(texture);
+  }
+
+  /** True iff texture is a live managed texture. */
+  isTexture(texture: unknown): boolean {
+    return this.textureManager.isTexture(texture);
+  }
+
+  /** Bind a texture via TextureManager. */
+  bindTexture(target: number, texture: TextureObject | null): void {
+    this.textureManager.bindTexture(target as GLenum, texture);
+  }
+
+  /** Set the active texture unit via TextureManager. */
+  activeTexture(unit: number): void {
+    this.textureManager.setActiveTexture(unit as GLenum);
+  }
+
+  /** Specify a texture image via TextureManager. */
+  texImage2D(target: number, level: number, internalformat: number, width: number, height: number, border: number, format: number, type: number, pixels?: ArrayBufferView | null): void {
+    this.textureManager.texImage2D(target as GLenum, level, internalformat as GLenum, width, height, border, format as GLenum, type as GLenum, pixels ?? null);
+  }
+
+  /** Update a texture sub-image via TextureManager. */
+  texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, pixels: ArrayBufferView | null): void {
+    this.textureManager.texSubImage2D(target as GLenum, level, xoffset, yoffset, width, height, format as GLenum, type as GLenum, pixels);
+  }
+
+  /** Copy drawing buffer rect into texture via TextureManager. */
+  copyTexImage2D(target: number, level: number, internalformat: number, x: number, y: number, width: number, height: number, border: number): void {
+    this.textureManager.copyTexImage2D(target as GLenum, level, internalformat as GLenum, x, y, width, height, border, this.drawingBuffer);
+  }
+
+  /** Set integer texture parameter via TextureManager. */
+  texParameteri(target: number, pname: number, param: number): void {
+    this.textureManager.texParameteri(target as GLenum, pname as GLenum, param);
+  }
+
+  /** Set float texture parameter via TextureManager. */
+  texParameterf(target: number, pname: number, param: number): void {
+    this.textureManager.texParameterf(target as GLenum, pname as GLenum, param);
+  }
+
+  /** Query texture parameter via TextureManager. */
+  getTexParameter(target: number, pname: number): number | GLenum | null {
+    return this.textureManager.getTexParameter(target as GLenum, pname as GLenum);
   }
 
   /** Return the vertex attribute descriptor for index (delegates to GLState). */

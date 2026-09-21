@@ -270,6 +270,13 @@ function tokenizeBody(bodyText: string, version: number, line: number): Token[] 
   return out;
 }
 
+function setVersionMacro(state: PreprocessorState, version: number): void {
+  state.activeVersion = version;
+  const seed = tokenize(String(version), version);
+  const rep = seed.ok ? seed.tokens.filter((t) => t.kind !== 'EOF') : [];
+  state.macroTable.set('__VERSION__', { kind: 'object', name: '__VERSION__', replacement: rep });
+}
+
 function parseDirective(lineText: string, line: number, state: PreprocessorState): DirectiveResult {
   const trimmed = lineText.trim();
   if (!trimmed.startsWith('#')) {
@@ -343,15 +350,9 @@ function parseDirective(lineText: string, line: number, state: PreprocessorState
     if (verMatch) {
       const ver = Number(verMatch[1]);
       if (ver === 300) {
-        state.activeVersion = 300;
-        const seed = tokenize('300', 300);
-        const rep = seed.ok ? seed.tokens.filter((t) => t.kind !== 'EOF') : [];
-        state.macroTable.set('__VERSION__', { kind: 'object', name: '__VERSION__', replacement: rep });
+        setVersionMacro(state, 300);
       } else {
-        state.activeVersion = 100;
-        const seed = tokenize('100', 100);
-        const rep = seed.ok ? seed.tokens.filter((t) => t.kind !== 'EOF') : [];
-        state.macroTable.set('__VERSION__', { kind: 'object', name: '__VERSION__', replacement: rep });
+        setVersionMacro(state, 100);
       }
     }
     return { ok: true };
