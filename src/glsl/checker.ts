@@ -73,7 +73,71 @@ const INT_TYPES = new Set(['int', 'ivec2', 'ivec3', 'ivec4']);
 const UINT_TYPES = new Set(['uint', 'uvec2', 'uvec3', 'uvec4']);
 const BOOL_TYPES = new Set(['bool', 'bvec2', 'bvec3', 'bvec4']);
 const CONSTRUCTORS = new Set([...FLOAT_TYPES, ...INT_TYPES, ...UINT_TYPES, ...BOOL_TYPES, 'sampler2D', 'samplerCube']);
-const TEXTURE_FNS = new Set(['texture2D', 'textureCube', 'texture', 'textureProj', 'textureLod']);
+const TEXTURE_FNS = new Set(['texture2D', 'textureCube', 'texture', 'textureProj', 'textureLod', 'textureGrad', 'textureLodEXT', 'texelFetch']);
+// Authorized additive gap-fill (Sprint 4 Task 5): builtin signature table.
+const BUILTIN_FLOAT_VEC = ['float', 'vec2', 'vec3', 'vec4'];
+const BUILTIN_SIGS = new Map<string, Array<{ params: string[]; ret: string | 'arg0' }>>([
+  ['normalize', [{ params: ['vec2'], ret: 'arg0' }, { params: ['vec3'], ret: 'arg0' }, { params: ['vec4'], ret: 'arg0' }]],
+  ['length', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'float' }, { params: ['vec3'], ret: 'float' }, { params: ['vec4'], ret: 'float' }]],
+  ['distance', [{ params: ['vec2', 'vec2'], ret: 'float' }, { params: ['vec3', 'vec3'], ret: 'float' }, { params: ['vec4', 'vec4'], ret: 'float' }, { params: ['float', 'float'], ret: 'float' }]],
+  ['dot', [{ params: ['vec2', 'vec2'], ret: 'float' }, { params: ['vec3', 'vec3'], ret: 'float' }, { params: ['vec4', 'vec4'], ret: 'float' }]],
+  ['cross', [{ params: ['vec3', 'vec3'], ret: 'vec3' }]],
+  ['reflect', [{ params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }]],
+  ['refract', [{ params: ['vec2', 'vec2', 'float'], ret: 'vec2' }, { params: ['vec3', 'vec3', 'float'], ret: 'vec3' }, { params: ['vec4', 'vec4', 'float'], ret: 'vec4' }]],
+  ['faceforward', [{ params: ['vec2', 'vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4', 'vec4'], ret: 'vec4' }]],
+  ['abs', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }, { params: ['int'], ret: 'int' }]],
+  ['floor', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['ceil', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['fract', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['sign', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['trunc', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['round', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['roundEven', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['min', [{ params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }, { params: ['float', 'vec2'], ret: 'vec2' }, { params: ['float', 'vec3'], ret: 'vec3' }, { params: ['float', 'vec4'], ret: 'vec4' }]],
+  ['max', [{ params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }, { params: ['float', 'vec2'], ret: 'vec2' }, { params: ['float', 'vec3'], ret: 'vec3' }, { params: ['float', 'vec4'], ret: 'vec4' }]],
+  ['mod', [{ params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }, { params: ['vec2', 'float'], ret: 'vec2' }, { params: ['vec3', 'float'], ret: 'vec3' }, { params: ['vec4', 'float'], ret: 'vec4' }]],
+  ['step', [{ params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }]],
+  ['pow', [{ params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }]],
+  ['mix', [{ params: ['float', 'float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2', 'float'], ret: 'vec2' }, { params: ['vec3', 'vec3', 'float'], ret: 'vec3' }, { params: ['vec4', 'vec4', 'float'], ret: 'vec4' }, { params: ['vec2', 'vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4', 'vec4'], ret: 'vec4' }]],
+  ['clamp', [{ params: ['float', 'float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4', 'vec4'], ret: 'vec4' }, { params: ['vec2', 'float', 'float'], ret: 'vec2' }, { params: ['vec3', 'float', 'float'], ret: 'vec3' }, { params: ['vec4', 'float', 'float'], ret: 'vec4' }]],
+  ['smoothstep', [{ params: ['float', 'float', 'float'], ret: 'float' }, { params: ['float', 'float', 'vec2'], ret: 'vec2' }, { params: ['float', 'float', 'vec3'], ret: 'vec3' }, { params: ['float', 'float', 'vec4'], ret: 'vec4' }]],
+  ['sin', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['cos', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['tan', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['asin', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['acos', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['atan', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }, { params: ['float', 'float'], ret: 'float' }, { params: ['vec2', 'vec2'], ret: 'vec2' }, { params: ['vec3', 'vec3'], ret: 'vec3' }, { params: ['vec4', 'vec4'], ret: 'vec4' }]],
+  ['exp', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['log', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['exp2', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['log2', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['sqrt', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['inversesqrt', [{ params: ['float'], ret: 'float' }, { params: ['vec2'], ret: 'vec2' }, { params: ['vec3'], ret: 'vec3' }, { params: ['vec4'], ret: 'vec4' }]],
+  ['transpose', [{ params: ['mat2'], ret: 'mat2' }, { params: ['mat3'], ret: 'mat3' }, { params: ['mat4'], ret: 'mat4' }]],
+  ['inverse', [{ params: ['mat2'], ret: 'mat2' }, { params: ['mat3'], ret: 'mat3' }, { params: ['mat4'], ret: 'mat4' }]],
+  ['any', [{ params: ['bvec2'], ret: 'bool' }, { params: ['bvec3'], ret: 'bool' }, { params: ['bvec4'], ret: 'bool' }]],
+  ['all', [{ params: ['bvec2'], ret: 'bool' }, { params: ['bvec3'], ret: 'bool' }, { params: ['bvec4'], ret: 'bool' }]],
+  ['not', [{ params: ['bvec2'], ret: 'bvec2' }, { params: ['bvec3'], ret: 'bvec3' }, { params: ['bvec4'], ret: 'bvec4' }, { params: ['bool'], ret: 'bool' }]],
+  ['lessThan', [{ params: ['vec2', 'vec2'], ret: 'bvec2' }, { params: ['vec3', 'vec3'], ret: 'bvec3' }, { params: ['vec4', 'vec4'], ret: 'bvec4' }]],
+  ['greaterThan', [{ params: ['vec2', 'vec2'], ret: 'bvec2' }, { params: ['vec3', 'vec3'], ret: 'bvec3' }, { params: ['vec4', 'vec4'], ret: 'bvec4' }]],
+  ['equal', [{ params: ['vec2', 'vec2'], ret: 'bvec2' }, { params: ['vec3', 'vec3'], ret: 'bvec3' }, { params: ['vec4', 'vec4'], ret: 'bvec4' }]],
+  ['notEqual', [{ params: ['vec2', 'vec2'], ret: 'bvec2' }, { params: ['vec3', 'vec3'], ret: 'bvec3' }, { params: ['vec4', 'vec4'], ret: 'bvec4' }]],
+  ['isnan', [{ params: ['float'], ret: 'bool' }, { params: ['vec2'], ret: 'bvec2' }, { params: ['vec3'], ret: 'bvec3' }, { params: ['vec4'], ret: 'bvec4' }]],
+  ['isinf', [{ params: ['float'], ret: 'bool' }, { params: ['vec2'], ret: 'bvec2' }, { params: ['vec3'], ret: 'bvec3' }, { params: ['vec4'], ret: 'bvec4' }]],
+  ['float', [{ params: ['int'], ret: 'float' }, { params: ['uint'], ret: 'float' }, { params: ['bool'], ret: 'float' }, { params: ['float'], ret: 'float' }]],
+  ['int', [{ params: ['float'], ret: 'int' }, { params: ['int'], ret: 'int' }, { params: ['uint'], ret: 'int' }, { params: ['bool'], ret: 'int' }]],
+  ['uint', [{ params: ['float'], ret: 'uint' }, { params: ['int'], ret: 'uint' }, { params: ['uint'], ret: 'uint' }, { params: ['bool'], ret: 'uint' }]],
+  ['bool', [{ params: ['float'], ret: 'bool' }, { params: ['int'], ret: 'bool' }, { params: ['uint'], ret: 'bool' }, { params: ['bool'], ret: 'bool' }]],
+]);
+void BUILTIN_FLOAT_VEC;
+// AST Retention Bridge: CheckedShader -> TranslationUnit map populated by check().
+const checkedASTs = new WeakMap<object, TranslationUnit>();
+export function getCheckedAST(checked: object): TranslationUnit | undefined {
+  return checkedASTs.get(checked);
+}
+export function registerCheckedAST(checked: object, ast: TranslationUnit): void {
+  checkedASTs.set(checked, ast);
+}
 
 function isUintType(t: string): boolean {
   return UINT_TYPES.has(t) || t.startsWith('usampler');
@@ -331,6 +395,22 @@ function exprType(e: unknown, ctx: Ctx): string | null {
           }
           return 'vec4';
         }
+        const sigs = BUILTIN_SIGS.get(f.callee);
+        if (sigs !== undefined) {
+          for (const s of sigs) {
+            if (s.params.length !== argTypes.length) continue;
+            let ok = true;
+            for (let i = 0; i < s.params.length; i++) {
+              if (!assignable(argTypes[i] as string, s.params[i] as string, ctx.version)) { ok = false; break; }
+            }
+            if (ok) return s.ret === 'arg0' ? (argTypes[0] as string) : s.ret;
+          }
+          const first = sigs[0] as { params: string[] };
+          if (first.params.length !== argTypes.length) {
+            return ctx.fail(line, "Function '" + f.callee + "' expects " + String(first.params.length) + ' argument(s) but got ' + String(argTypes.length));
+          }
+          return ctx.fail(line, "No matching overload for function '" + f.callee + "'");
+        }
         const overloads = ctx.funcs.get(f.callee);
         if (overloads === undefined || overloads.length === 0) {
           return ctx.fail(line, "Undeclared function '" + f.callee + "'");
@@ -353,10 +433,18 @@ function exprType(e: unknown, ctx: Ctx): string | null {
         return ctx.fail(line, "No matching overload for function '" + f.callee + "'");
       }
       case 'FieldAccessExpression': {
-        const fa = e as { object?: unknown };
+        const fa = e as { object?: unknown; field?: unknown };
         const ot = exprType(fa.object, ctx);
         if (ot === null) return null;
+        const field = typeof fa.field === 'string' ? fa.field : '';
         if (ot === 'float' || ot === 'int' || ot === 'uint' || ot === 'bool') return ot;
+        const n = field.length;
+        if (n >= 1 && n <= 4) {
+          if (ot === 'vec2' || ot === 'vec3' || ot === 'vec4') return n === 1 ? 'float' : 'vec' + String(n);
+          if (ot === 'ivec2' || ot === 'ivec3' || ot === 'ivec4') return n === 1 ? 'int' : 'ivec' + String(n);
+          if (ot === 'uvec2' || ot === 'uvec3' || ot === 'uvec4') return n === 1 ? 'uint' : 'uvec' + String(n);
+          if (ot === 'bvec2' || ot === 'bvec3' || ot === 'bvec4') return n === 1 ? 'bool' : 'bvec' + String(n);
+        }
         return 'float';
       }
       case 'IndexExpression': {
@@ -856,7 +944,9 @@ export function check(
     const declaredOutputs = globalVars.filter((g) => g.storage === 'varying' || g.storage === 'out');
     const uniforms = globalVars.filter((g) => g.storage === 'uniform');
     const functions = [...ctx.funcs.keys()];
-    return { ok: true, tokens: { stage, version, declaredInputs, declaredOutputs, uniforms, functions } };
+    const checked: CheckedShader = { stage, version, declaredInputs, declaredOutputs, uniforms, functions };
+    try { checkedASTs.set(checked, ast); } catch (_e) { void _e; }
+    return { ok: true, tokens: checked };
   } catch (err) {
     return { ok: false, log: formatDiagnostic(1, err instanceof Error ? err.message : 'Internal checker error', 0) };
   }

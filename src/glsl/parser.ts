@@ -307,8 +307,9 @@ class Parser {
   parseParam(): VariableDeclaration | null {
     const c = this.current();
     let precision: string | null = null;
-    // skip param qualifiers (in/out/inout/const)
-    while ((this.current().kind === 'KEYWORD' || this.current().kind === 'IDENTIFIER') && (this.current().text === 'in' || this.current().text === 'out' || this.current().text === 'inout' || this.current().text === 'const')) this.pos += 1;
+    // skip param qualifiers (in/out/inout/const); accept RESERVED kind since in/out tokenize as reserved under ES 1.00
+    let paramStorage: string | null = null;
+    while ((this.current().kind === 'KEYWORD' || this.current().kind === 'IDENTIFIER' || this.current().kind === 'RESERVED') && (this.current().text === 'in' || this.current().text === 'out' || this.current().text === 'inout' || this.current().text === 'const')) { if (this.current().text === 'in' || this.current().text === 'out' || this.current().text === 'inout') paramStorage = this.current().text; this.pos += 1; }
     if (this.current().kind === 'KEYWORD' && PRECISION_Q.has(this.current().text)) { precision = this.current().text; this.pos += 1; }
     const t = this.current();
     if (t.kind !== 'KEYWORD' || !TYPE_NAMES.has(t.text)) {
@@ -318,7 +319,7 @@ class Parser {
     this.pos += 1;
     const id = this.current();
     if (id.kind === 'OPERATOR' && (id.text === ')' || id.text === ',')) {
-      return { kind: 'VariableDeclaration', line: c.line, typeName: t.text, name: '', layout: null, storage: null, precision, interpolation: null, arraySize: null, initializer: null };
+      return { kind: 'VariableDeclaration', line: c.line, typeName: t.text, name: '', layout: null, storage: paramStorage, precision, interpolation: null, arraySize: null, initializer: null };
     }
     if (id.kind !== 'IDENTIFIER') return this.fail(id.line, "Expected identifier, got '" + id.text + "'");
     this.pos += 1;
@@ -333,7 +334,7 @@ class Parser {
       if (rb.kind !== 'OPERATOR' || rb.text !== ']') return this.fail(rb.line, "Expected ']'");
       this.pos += 1;
     }
-    return { kind: 'VariableDeclaration', line: c.line, typeName: t.text, name: id.text, layout: null, storage: null, precision, interpolation: null, arraySize: arr, initializer: null };
+    return { kind: 'VariableDeclaration', line: c.line, typeName: t.text, name: id.text, layout: null, storage: paramStorage, precision, interpolation: null, arraySize: arr, initializer: null };
   }
 
   parseDeclaratorList(typeName: string, layout: LayoutQualifier | null, storage: string | null, precision: string | null, interpolation: string | null, line: number): VariableDeclaration[] | null {
