@@ -15,6 +15,8 @@
  * caller's typed arrays via clone-on-bind; no persistent slot arrays are kept,
  * so repeated identical invocations produce byte-identical outputs (AC-4).
  */
+// CHANGELOG:
+// - Sprint 4 (2026-09-20): New AST interpreter (Task 5).
 import type {
   AssignmentExpression,
   BinaryExpression,

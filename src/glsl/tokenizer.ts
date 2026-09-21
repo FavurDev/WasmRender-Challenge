@@ -1,5 +1,6 @@
 // CHANGELOG:
 // - Sprint 3 (2026-09-20): GLSL ES 1.00/3.00 tokenizer with line-accurate diagnostics.
+// - Sprint 4 (2026-09-20): TD-007 keyword-table audit closure; no token changes.
 /** GLSL ES tokenizer — hand-written lexer, no-throw, L3 (type-only ErrorSink import). */
 
 import type { ErrorSink } from '../gl/errors';

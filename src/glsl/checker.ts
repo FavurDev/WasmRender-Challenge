@@ -13,6 +13,7 @@
  */
 // CHANGELOG:
 // - Sprint 3 (2026-09-20): Scoped semantic checker for ES 1.00/3.00 producing CheckedShader metadata.
+// - Sprint 4 (2026-09-20): AST retention bridge + builtin table additions.
 import { formatDiagnostic } from './tokenizer';
 import type { CompileResult } from './tokenizer';
 import type {

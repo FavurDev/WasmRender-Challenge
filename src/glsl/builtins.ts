@@ -11,6 +11,7 @@
  */
 // CHANGELOG:
 // - Sprint 4 (2026-09-20): Non-sampling builtin library core (Task 2).
+// - Sprint 4 (2026-09-20): Texture sampling entry points (Task 3).
 
 export type Value = number | boolean | Float32Array | Int32Array | Uint32Array | boolean[];
 
