@@ -41,6 +41,81 @@ import type { GLenum } from './constants';
 import type { IErrorSink } from './errors';
 import type { DrawingBuffer } from './framebuffer';
 
+export interface PixelStoreStateProvider {
+  getUnpackFlipY(): boolean;
+  getUnpackPremultiplyAlpha(): boolean;
+  getUnpackColorspaceConversion(): number;
+}
+
+export function transformUploadedPixels(
+  src: Uint8Array,
+  width: number,
+  height: number,
+  format: GLenum,
+  type: GLenum,
+  flipY: boolean,
+  premultiplyAlpha: boolean,
+): Uint8Array {
+  const bpp = bytesPerPixel(format, type);
+  const totalBytes = width * height * bpp;
+  if (flipY === false && premultiplyAlpha === false) {
+    const out = new Uint8Array(totalBytes);
+    out.set(src.subarray(0, totalBytes));
+    return out;
+  }
+  const rowBytes = width * bpp;
+  const dst = new Uint8Array(totalBytes);
+  const premultRgba = premultiplyAlpha && format === RGBA && type === UNSIGNED_BYTE;
+  const premultLA = premultiplyAlpha && format === LUMINANCE_ALPHA && type === UNSIGNED_BYTE;
+  for (let srcRow = 0; srcRow < height; srcRow++) {
+    const dstRow = flipY ? height - 1 - srcRow : srcRow;
+    const srcOff = srcRow * rowBytes;
+    const dstOff = dstRow * rowBytes;
+    if (!premultiplyAlpha || (!premultRgba && !premultLA)) {
+      dst.set(src.subarray(srcOff, srcOff + rowBytes), dstOff);
+      continue;
+    }
+    if (premultRgba) {
+      for (let col = 0; col < width; col++) {
+        const s = srcOff + col * 4;
+        const d = dstOff + col * 4;
+        const r = src[s]!;
+        const g = src[s + 1]!;
+        const b = src[s + 2]!;
+        const a = src[s + 3]!;
+        if (a === 255) {
+          dst[d] = r; dst[d + 1] = g; dst[d + 2] = b; dst[d + 3] = a;
+        } else if (a === 0) {
+          dst[d] = 0; dst[d + 1] = 0; dst[d + 2] = 0; dst[d + 3] = 0;
+        } else {
+          const aNorm = Math.fround(a / 255);
+          dst[d] = Math.min(255, Math.max(0, Math.round(Math.fround(r * aNorm))));
+          dst[d + 1] = Math.min(255, Math.max(0, Math.round(Math.fround(g * aNorm))));
+          dst[d + 2] = Math.min(255, Math.max(0, Math.round(Math.fround(b * aNorm))));
+          dst[d + 3] = a;
+        }
+      }
+    } else {
+      for (let col = 0; col < width; col++) {
+        const s = srcOff + col * 2;
+        const d = dstOff + col * 2;
+        const lum = src[s]!;
+        const a = src[s + 1]!;
+        if (a === 255) {
+          dst[d] = lum; dst[d + 1] = a;
+        } else if (a === 0) {
+          dst[d] = 0; dst[d + 1] = 0;
+        } else {
+          const aNorm = Math.fround(a / 255);
+          dst[d] = Math.min(255, Math.max(0, Math.round(Math.fround(lum * aNorm))));
+          dst[d + 1] = a;
+        }
+      }
+    }
+  }
+  return dst;
+}
+
 export interface MipLevel {
   readonly width: number;
   readonly height: number;
@@ -234,13 +309,15 @@ function viewBytes(pixels: ArrayBufferView | null | undefined): Uint8Array | nul
 
 export class TextureManager implements ITextureManager {
   private readonly errorSink: IErrorSink;
+  private readonly pixelStoreProvider: PixelStoreStateProvider | null;
   private nextTextureId = 1;
   private readonly textures = new Map<number, TextureObject>();
   private readonly textureUnits: Array<{ binding2D: TextureObject | null; bindingCube: TextureObject | null }> = [];
   private activeTextureUnit: GLenum = TEXTURE0;
 
-  constructor(errorSink: IErrorSink) {
+  constructor(errorSink: IErrorSink, pixelStoreProvider?: PixelStoreStateProvider | null) {
     this.errorSink = errorSink;
+    this.pixelStoreProvider = pixelStoreProvider ?? null;
     for (let i = 0; i < 32; i++) this.textureUnits.push({ binding2D: null, bindingCube: null });
   }
 
@@ -385,7 +462,15 @@ export class TextureManager implements ITextureManager {
     let storage: Uint8Array;
     try {
       storage = new Uint8Array(totalBytes);
-      if (src !== null) storage.set(src.subarray(0, totalBytes));
+      if (src !== null) {
+        const flipY = this.pixelStoreProvider !== null ? this.pixelStoreProvider.getUnpackFlipY() : false;
+        const premultiplyAlpha = this.pixelStoreProvider !== null ? this.pixelStoreProvider.getUnpackPremultiplyAlpha() : false;
+        if (flipY || premultiplyAlpha) {
+          storage.set(transformUploadedPixels(src, width, height, format, type, flipY, premultiplyAlpha));
+        } else {
+          storage.set(src.subarray(0, totalBytes));
+        }
+      }
     } catch {
       this.errorSink.recordError(OUT_OF_MEMORY);
       return;
@@ -445,10 +530,16 @@ export class TextureManager implements ITextureManager {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
+    const flipY = this.pixelStoreProvider !== null ? this.pixelStoreProvider.getUnpackFlipY() : false;
+    const premultiplyAlpha = this.pixelStoreProvider !== null ? this.pixelStoreProvider.getUnpackPremultiplyAlpha() : false;
+    let subData: Uint8Array = src;
+    if (flipY || premultiplyAlpha) {
+      subData = transformUploadedPixels(src, width, height, format, type, flipY, premultiplyAlpha);
+    }
     for (let r = 0; r < height; r++) {
       const srcOff = r * width * bpp;
       const dstOff = ((yoffset + r) * existing.width + xoffset) * bpp;
-      existing.data.set(src.subarray(srcOff, srcOff + width * bpp), dstOff);
+      existing.data.set(subData.subarray(srcOff, srcOff + width * bpp), dstOff);
     }
     bound.completeness = null;
   }

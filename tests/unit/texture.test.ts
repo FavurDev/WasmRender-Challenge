@@ -1,6 +1,7 @@
 /** TextureManager unit tests (Sprint 6 Task 1 red phase) — WebGL 1.0 texture lifecycle, binding, image spec, subimage, copy, sampler params. */
 import { describe, expect, it } from 'vitest';
 import { ErrorSink } from '../../src/gl/errors';
+import { GLState } from '../../src/gl/state';
 import { TextureManager } from '../../src/gl/texture';
 import { DrawingBuffer } from '../../src/gl/framebuffer';
 import { WebGL1Context } from '../../src/gl/webgl1-context';
@@ -44,6 +45,11 @@ import {
   UNSIGNED_SHORT_4_4_4_4,
   UNSIGNED_SHORT_5_5_5_1,
   UNSIGNED_SHORT_5_6_5,
+  UNPACK_COLORSPACE_CONVERSION_WEBGL,
+  UNPACK_FLIP_Y_WEBGL,
+  UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+  BROWSER_DEFAULT_WEBGL,
+  ZERO,
 } from '../../src/gl/constants';
 import type { GLenum } from '../../src/gl/constants';
 
@@ -475,5 +481,144 @@ describe('WebGL1Context texture facade', () => {
     expect(minF).toBe(NEAREST);
     expect(isTexAfter).toBe(false);
     expect(err).toBe(NO_ERROR);
+  });
+});
+
+describe('Sprint 6 pixel unpack flags', () => {
+  it('TC1: UNPACK_FLIP_Y_WEBGL vertically inverts uploaded rows in texImage2D', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    const srcData = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+    (ctx as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_FLIP_Y_WEBGL, true);
+    // Act:
+    ctx.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, srcData);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    expect(Array.from(data.slice(0, 8))).toEqual([0, 0, 255, 255, 255, 255, 0, 255]);
+    expect(Array.from(data.slice(8, 16))).toEqual([255, 0, 0, 255, 0, 255, 0, 255]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC2: UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies RGB by alpha in texImage2D', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    const srcData = new Uint8Array([200, 100, 50, 128, 255, 255, 255, 0]);
+    (ctx as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    // Act:
+    ctx.texImage2D(TEXTURE_2D, 0, RGBA, 2, 1, 0, RGBA, UNSIGNED_BYTE, srcData);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    expect(Array.from(data.slice(0, 4))).toEqual([100, 50, 25, 128]);
+    expect(Array.from(data.slice(4, 8))).toEqual([0, 0, 0, 0]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC3: UNPACK_COLORSPACE_CONVERSION_WEBGL validates supported enums and rejects unsupported', () => {
+    // Arrange:
+    const errorSink = new ErrorSink();
+    const st = new GLState(errorSink, { width: 300, height: 150 });
+    // Act & Assert: default round-trips BROWSER_DEFAULT_WEBGL
+    expect(st.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL)).toBe(BROWSER_DEFAULT_WEBGL);
+    st.setPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL, ZERO);
+    expect(errorSink.getError()).toBe(NO_ERROR);
+    expect(st.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL)).toBe(ZERO);
+    st.setPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL, BROWSER_DEFAULT_WEBGL);
+    expect(errorSink.getError()).toBe(NO_ERROR);
+    expect(st.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL)).toBe(BROWSER_DEFAULT_WEBGL);
+    st.setPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL, 0x9999);
+    expect(errorSink.getError()).toBe(INVALID_VALUE);
+    expect(st.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL)).toBe(BROWSER_DEFAULT_WEBGL);
+    // Facade wiring: pixelStorei exposed on context
+    const ctx = new WebGL1Context() as unknown as { pixelStorei: (p: number, v: unknown) => void };
+    expect(typeof ctx.pixelStorei).toBe('function');
+  });
+
+  it('TC4: default unpack flags preserve byte-identical pixel storage', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    const srcData = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160]);
+    // Act:
+    ctx.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, srcData);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    expect(Array.from(data)).toEqual(Array.from(srcData));
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC5: combined UNPACK_FLIP_Y_WEBGL and UNPACK_PREMULTIPLY_ALPHA_WEBGL apply simultaneously', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    const anyCtx = ctx as unknown as { pixelStorei: (p: number, v: unknown) => void };
+    anyCtx.pixelStorei(UNPACK_FLIP_Y_WEBGL, true);
+    anyCtx.pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    const srcData = new Uint8Array([200, 200, 200, 128, 100, 100, 100, 255, 50, 50, 50, 0, 255, 0, 128, 64]);
+    // Act:
+    ctx.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, srcData);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    expect(Array.from(data.slice(0, 8))).toEqual([0, 0, 0, 0, 64, 0, 32, 64]);
+    expect(Array.from(data.slice(8, 16))).toEqual([100, 100, 100, 128, 100, 100, 100, 255]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC6: texSubImage2D with UNPACK_FLIP_Y_WEBGL flips only sub-image rows', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    const base = new Uint8Array(4 * 4 * 4);
+    for (let i = 0; i < 16; i++) base.set([128, 128, 128, 255], i * 4);
+    ctx.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, base);
+    (ctx as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_FLIP_Y_WEBGL, true);
+    const patch = new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+    // Act:
+    ctx.texSubImage2D(TEXTURE_2D, 0, 1, 1, 2, 2, RGBA, UNSIGNED_BYTE, patch);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    const texel = (x: number, y: number): number[] => Array.from(data.slice((y * 4 + x) * 4, (y * 4 + x) * 4 + 4));
+    expect(texel(0, 0)).toEqual([128, 128, 128, 255]);
+    expect(texel(0, 3)).toEqual([128, 128, 128, 255]);
+    expect(texel(1, 1)).toEqual([0, 0, 255, 255]);
+    expect(texel(2, 1)).toEqual([255, 255, 0, 255]);
+    expect(texel(1, 2)).toEqual([255, 0, 0, 255]);
+    expect(texel(2, 2)).toEqual([0, 255, 0, 255]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC7: UNPACK_PREMULTIPLY_ALPHA_WEBGL with LUMINANCE_ALPHA format', () => {
+    // Arrange:
+    const ctx = new WebGL1Context();
+    const tex = ctx.createTexture();
+    ctx.bindTexture(TEXTURE_2D, tex);
+    (ctx as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    const srcData = new Uint8Array([200, 128, 255, 0]);
+    // Act:
+    ctx.texImage2D(TEXTURE_2D, 0, LUMINANCE_ALPHA, 2, 1, 0, LUMINANCE_ALPHA, UNSIGNED_BYTE, srcData);
+    // Assert:
+    const data = tex!.levels2D.get(0)!.data;
+    expect(Array.from(data)).toEqual([100, 128, 0, 0]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TC8: transformUploadedPixels pure helper edge cases', async () => {
+    // Arrange:
+    const mod = (await import('../../src/gl/texture')) as unknown as Record<string, unknown>;
+    // Act:
+    const fn = mod['transformUploadedPixels'] as unknown;
+    // Assert: helper must exist (red phase: missing export fails here)
+    expect(typeof fn).toBe('function');
+    const f = fn as (src: Uint8Array, w: number, h: number, fmt: number, ty: number, flip: boolean, prem: boolean) => Uint8Array;
+    expect(Array.from(f(new Uint8Array([1, 2, 3, 10, 20, 30]), 2, 1, RGB, UNSIGNED_BYTE, true, false))).toEqual([1, 2, 3, 10, 20, 30]);
+    expect(Array.from(f(new Uint8Array([200, 100, 50, 255]), 1, 1, RGBA, UNSIGNED_BYTE, false, true))).toEqual([200, 100, 50, 255]);
+    expect(Array.from(f(new Uint8Array([200, 100, 50, 0]), 1, 1, RGBA, UNSIGNED_BYTE, false, true))).toEqual([0, 0, 0, 0]);
+    expect(Array.from(f(new Uint8Array([10, 20, 30, 40, 50, 60]), 2, 1, RGB, UNSIGNED_BYTE, false, true))).toEqual([10, 20, 30, 40, 50, 60]);
   });
 });

@@ -28,6 +28,9 @@ import {
   INVALID_FRAMEBUFFER_OPERATION,
   INVALID_OPERATION,
   INVALID_VALUE,
+  UNPACK_COLORSPACE_CONVERSION_WEBGL,
+  UNPACK_FLIP_Y_WEBGL,
+  UNPACK_PREMULTIPLY_ALPHA_WEBGL,
   LINK_STATUS,
   SCISSOR_BOX,
   SHADER_TYPE,
@@ -60,7 +63,7 @@ import type { CanvasDimensions, VertexAttribDescriptor } from './state';
 import { BufferManager } from './buffer';
 import type { BufferObject } from './buffer';
 import { TextureManager } from './texture';
-import type { TextureObject } from './texture';
+import type { PixelStoreStateProvider, TextureObject } from './texture';
 import { DrawingBuffer } from './framebuffer';
 import { resolveContextAttributes } from './context-attributes';
 import type { WebGLContextAttributes } from './context-attributes';
@@ -172,7 +175,12 @@ export class WebGL1Context {
     this.glState = new GLState(this.errorSink, this.canvas);
     this.drawingBuffer = new DrawingBuffer(this.errorSink, this.canvas);
     this.bufferManager = new BufferManager(this.errorSink);
-    this.textureManager = new TextureManager(this.errorSink);
+    const pixelStoreProvider: PixelStoreStateProvider = {
+      getUnpackFlipY: () => this.glState.getPixelStorei(UNPACK_FLIP_Y_WEBGL) === true,
+      getUnpackPremultiplyAlpha: () => this.glState.getPixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL) === true,
+      getUnpackColorspaceConversion: () => this.glState.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL) as number,
+    };
+    this.textureManager = new TextureManager(this.errorSink, pixelStoreProvider);
   }
 
   /** Set the clear color. */
@@ -611,6 +619,16 @@ export class WebGL1Context {
   /** Generate mipmap chain via TextureManager. */
   generateMipmap(target: number): void {
     this.textureManager.generateMipmap(target as GLenum);
+  }
+
+  /** Set pixel-store unpack/pack state via GLState. */
+  pixelStorei(pname: number, param: number | boolean): void {
+    this.glState.setPixelStorei(pname as GLenum, param);
+  }
+
+  /** Query pixel-store state via GLState. */
+  getPixelStorei(pname: number): number | boolean {
+    return this.glState.getPixelStorei(pname as GLenum);
   }
 
   /** Return the vertex attribute descriptor for index (delegates to GLState). */
