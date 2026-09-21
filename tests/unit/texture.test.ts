@@ -963,3 +963,286 @@ describe('Sprint 6 Task 4 fix-loop regressions (HIGH-1/2/3)', () => {
     expect(Array.from(ny.slice(0, 3))).toEqual([1, 1, 0]);
   });
 });
+
+/** Sprint 6 Task 8: M3 texture DoD integration suite — full public-API textured-quad fixtures. Appended; lines above untouched. */
+
+function setupTexturedQuadHarness(gl: WebGL1Context, width: number, height: number): void {
+  const vsSrc =
+    'attribute vec2 aPosition; attribute vec2 aTexCoord; varying vec2 vTexCoord; ' +
+    'void main() { vTexCoord = aTexCoord; gl_Position = vec4(aPosition, 0.0, 1.0); }';
+  const fsSrc =
+    'precision mediump float; uniform sampler2D uSampler; varying vec2 vTexCoord; ' +
+    'void main() { gl_FragColor = texture2D(uSampler, vTexCoord); }';
+  const vs = gl.createShader(VERTEX_SHADER);
+  const fs = gl.createShader(FRAGMENT_SHADER);
+  if (vs === null || fs === null) throw new Error('harness: shader creation failed');
+  gl.shaderSource(vs, vsSrc);
+  gl.shaderSource(fs, fsSrc);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  if (gl.getShaderParameter(vs, COMPILE_STATUS) !== true) throw new Error('harness: VS failed');
+  if (gl.getShaderParameter(fs, COMPILE_STATUS) !== true) throw new Error('harness: FS failed');
+  const prog = gl.createProgram();
+  if (prog === null) throw new Error('harness: program creation failed');
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (gl.getProgramParameter(prog, LINK_STATUS) !== true) throw new Error('harness: link failed');
+  gl.useProgram(prog);
+  const quad = new Float32Array([
+    -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0, -1.0, 1.0, 0.0, 1.0,
+    -1.0, 1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+  ]);
+  const buf = gl.createBuffer();
+  if (buf === null) throw new Error('harness: createBuffer failed');
+  gl.bindBuffer(ARRAY_BUFFER, buf);
+  gl.bufferData(ARRAY_BUFFER, quad, STATIC_DRAW);
+  const locPos = gl.getAttribLocation(prog, 'aPosition');
+  const locTex = gl.getAttribLocation(prog, 'aTexCoord');
+  if (locPos < 0 || locTex < 0) throw new Error('harness: attrib locations not found');
+  gl.enableVertexAttribArray(locPos);
+  gl.enableVertexAttribArray(locTex);
+  gl.vertexAttribPointer(locPos, 2, FLOAT, false, 16, 0);
+  gl.vertexAttribPointer(locTex, 2, FLOAT, false, 16, 8);
+  const locSampler = gl.getUniformLocation(prog, 'uSampler');
+  if (locSampler === null) throw new Error('harness: uSampler location null');
+  gl.uniform1i(locSampler, 0);
+  gl.viewport(0, 0, width, height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(COLOR_BUFFER_BIT);
+}
+
+function t8Context(w: number, h: number): WebGL1Context {
+  const gl = createSoftwareWebGLContext({ width: w, height: h });
+  if (gl === null) throw new Error('t8: factory returned null');
+  return gl;
+}
+
+describe('Sprint 6 Task 8: M3 texture DoD integration suite', () => {
+  it('M3 Texture DoD Fixture 1: solid-color textured quad renders exact texel across full viewport', () => {
+    // Arrange:
+    const gl = t8Context(4, 4);
+    setupTexturedQuadHarness(gl, 4, 4);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.activeTexture(TEXTURE0);
+    gl.bindTexture(TEXTURE_2D, tex);
+    const pixelData = new Uint8Array([64, 128, 192, 255, 64, 128, 192, 255, 64, 128, 192, 255, 64, 128, 192, 255]);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, pixelData);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(4 * 4 * 4);
+    gl.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, outBuf);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        const o = (y * 4 + x) * 4;
+        expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel (${x},${y})`).toEqual([64, 128, 192, 255]);
+      }
+    }
+  });
+
+  it('M3 Texture DoD Fixture 2: two-color mipmapped texture under minification selects lower mip average', () => {
+    // Arrange:
+    const gl = t8Context(2, 2);
+    setupTexturedQuadHarness(gl, 2, 2);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.activeTexture(TEXTURE0);
+    gl.bindTexture(TEXTURE_2D, tex);
+    const R: [number, number, number, number] = [255, 0, 0, 255];
+    const B: [number, number, number, number] = [0, 0, 255, 255];
+    const rows: Array<[number, number, number, number][]> = [
+      [R, B, R, B],
+      [B, R, B, R],
+      [R, B, R, B],
+      [B, R, B, R],
+    ];
+    const baseData = new Uint8Array(4 * 4 * 4);
+    rows.forEach((row, y) => row.forEach((c, x) => baseData.set(c, (y * 4 + x) * 4)));
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, baseData);
+    gl.generateMipmap(TEXTURE_2D);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, outBuf);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let i = 0; i < 4; i++) {
+      const o = i * 4;
+      expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel ${i}`).toEqual([128, 0, 128, 255]);
+    }
+    expect([128, 0, 128, 255]).not.toEqual([255, 0, 0, 255]);
+    expect([128, 0, 128, 255]).not.toEqual([0, 0, 255, 255]);
+  });
+
+  it('M3 Texture DoD Fixture 3: NPOT texture with mipmap minification filter renders opaque black with no error', () => {
+    // Arrange:
+    const gl = t8Context(4, 4);
+    setupTexturedQuadHarness(gl, 4, 4);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.activeTexture(TEXTURE0);
+    gl.bindTexture(TEXTURE_2D, tex);
+    const npotData = new Uint8Array(3 * 3 * 4);
+    for (let i = 0; i < 9; i++) npotData.set([255, 255, 0, 255], i * 4);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 3, 3, 0, RGBA, UNSIGNED_BYTE, npotData);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(4 * 4 * 4);
+    gl.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, outBuf);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        const o = (y * 4 + x) * 4;
+        expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel (${x},${y})`).toEqual([0, 0, 0, 255]);
+      }
+    }
+  });
+
+  it('M3 Texture DoD Fixture 4: UNPACK_FLIP_Y_WEBGL inverts row order during render', () => {
+    // Arrange:
+    const gl = t8Context(2, 2);
+    setupTexturedQuadHarness(gl, 2, 2);
+    (gl as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_FLIP_Y_WEBGL, true);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    const pixelData = new Uint8Array([255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255]);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, pixelData);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, outBuf);
+    (gl as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_FLIP_Y_WEBGL, false);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let x = 0; x < 2; x++) {
+      const b = (0 * 2 + x) * 4;
+      const t = (1 * 2 + x) * 4;
+      expect([outBuf[b], outBuf[b + 1], outBuf[b + 2], outBuf[b + 3]], `bottom (${x},0)`).toEqual([0, 255, 0, 255]);
+      expect([outBuf[t], outBuf[t + 1], outBuf[t + 2], outBuf[t + 3]], `top (${x},1)`).toEqual([255, 0, 0, 255]);
+    }
+  });
+
+  it('M3 Texture DoD Fixture 5: UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies RGB during upload', () => {
+    // Arrange:
+    const gl = t8Context(2, 2);
+    setupTexturedQuadHarness(gl, 2, 2);
+    (gl as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    const pixelData = new Uint8Array([200, 100, 50, 128, 200, 100, 50, 128, 200, 100, 50, 128, 200, 100, 50, 128]);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, pixelData);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, outBuf);
+    (gl as unknown as { pixelStorei: (p: number, v: unknown) => void }).pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let i = 0; i < 4; i++) {
+      const o = i * 4;
+      expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel ${i}`).toEqual([100, 50, 25, 128]);
+    }
+  });
+
+  it('M3 Texture DoD Regression: double render of textured quad produces byte-identical framebuffer', () => {
+    // Arrange:
+    const uploadSolid = (gl: WebGL1Context): void => {
+      const tex = gl.createTexture();
+      if (tex === null) throw new Error('arrange: createTexture failed');
+      gl.activeTexture(TEXTURE0);
+      gl.bindTexture(TEXTURE_2D, tex);
+      const data = new Uint8Array(2 * 2 * 4);
+      for (let i = 0; i < 4; i++) data.set([40, 80, 160, 255], i * 4);
+      gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, data);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    };
+    const gl1 = t8Context(4, 4);
+    setupTexturedQuadHarness(gl1, 4, 4);
+    uploadSolid(gl1);
+    const gl2 = t8Context(4, 4);
+    setupTexturedQuadHarness(gl2, 4, 4);
+    uploadSolid(gl2);
+    // Act:
+    gl1.drawArrays(TRIANGLES, 0, 6);
+    const buf1 = new Uint8Array(4 * 4 * 4);
+    gl1.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, buf1);
+    gl2.drawArrays(TRIANGLES, 0, 6);
+    const buf2 = new Uint8Array(4 * 4 * 4);
+    gl2.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, buf2);
+    // Assert:
+    expect(Array.from(buf1)).toEqual(Array.from(buf2));
+    expect(gl1.getError()).toBe(NO_ERROR);
+    expect(gl2.getError()).toBe(NO_ERROR);
+  });
+
+  it('M3 Texture DoD Error Check: sampling unbound texture unit renders opaque black with no error recorded', () => {
+    // Arrange:
+    const gl = t8Context(2, 2);
+    setupTexturedQuadHarness(gl, 2, 2);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, outBuf);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let i = 0; i < 4; i++) {
+      const o = i * 4;
+      expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel ${i}`).toEqual([0, 0, 0, 255]);
+    }
+  });
+
+  it('M3 Texture DoD State Hygiene: unpack flags modification does not contaminate subsequent texture uploads', () => {
+    // Arrange:
+    const gl = t8Context(2, 2);
+    setupTexturedQuadHarness(gl, 2, 2);
+    const ps = gl as unknown as { pixelStorei: (p: number, v: unknown) => void };
+    ps.pixelStorei(UNPACK_FLIP_Y_WEBGL, true);
+    ps.pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    ps.pixelStorei(UNPACK_FLIP_Y_WEBGL, false);
+    ps.pixelStorei(UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    const pixelData = new Uint8Array([200, 100, 50, 128, 200, 100, 50, 128, 200, 100, 50, 128, 200, 100, 50, 128]);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, pixelData);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 6);
+    const outBuf = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, outBuf);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let i = 0; i < 4; i++) {
+      const o = i * 4;
+      expect([outBuf[o], outBuf[o + 1], outBuf[o + 2], outBuf[o + 3]], `pixel ${i}`).toEqual([200, 100, 50, 128]);
+    }
+  });
+});
