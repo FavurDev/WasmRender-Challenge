@@ -641,8 +641,9 @@ import {
   VERTEX_SHADER,
 } from '../../src/gl/constants';
 import type { DirectVertex } from '../../src/gl/webgl1-context';
-import { executeFragment } from '../../src/glsl/interpreter';
+import { executeFragment, executeVertex } from '../../src/glsl/interpreter';
 import type { InterpreterHost } from '../../src/glsl/interpreter';
+import { readFileSync } from 'node:fs';
 
 type ShaderHandleStub = { readonly __brand: 'shader' };
 type ProgramHandleStub = { readonly __brand: 'program' };
@@ -1110,5 +1111,183 @@ describe('Sprint 4 Task 7 - M2 Definition of Done verification suite', () => {
       expect(bullet.length).toBeGreaterThan(0);
       expect(owner.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/* Sprint 7 Task 8 — TD-012 interpreter fault observability (TDD red phase, additive). */
+
+type FaultHost = InterpreterHost & { reportFault: (err: unknown, stage: string) => void };
+
+function td012Link(gl: Task6Facade, vsSource: string, fsSource: string): Parameters<typeof executeFragment>[0] {
+  const program = linkPair(gl, vsSource, fsSource);
+  gl.useProgram(program);
+  return (program as unknown as { handle: { linkedProgram: Parameters<typeof executeFragment>[0] } }).handle
+    .linkedProgram;
+}
+
+function td012FaultHost(
+  onFault: (err: unknown, stage: string) => void,
+): { host: FaultHost; faultCalls: Array<{ err: unknown; stage: string }> } {
+  const faultCalls: Array<{ err: unknown; stage: string }> = [];
+  const host = {
+    readUniform: (_slot: number): Float32Array => {
+      throw new Error('TD-012 injected uniform fault');
+    },
+    sample: (_slot: number, _coord: Float32Array) => new Float32Array([0, 0, 0, 1]),
+    reportFault: (err: unknown, stage: string) => {
+      faultCalls.push({ err, stage });
+      onFault(err, stage);
+    },
+  } as unknown as FaultHost;
+  return { host, faultCalls };
+}
+
+const TD012_VS = 'attribute vec4 aPos; uniform vec4 uOff; void main() { gl_Position = aPos + uOff; }';
+const TD012_FS = 'precision mediump float; uniform vec4 uColor; void main() { gl_FragColor = uColor; }';
+const TD012_FS_HELPER =
+  'precision mediump float; uniform vec4 uColor; vec4 fetch() { return uColor; } void main() { gl_FragColor = fetch(); }';
+
+describe('TD-012 interpreter fault observability (Sprint 7 Task 8, red phase)', () => {
+  it('TEST2: executeFragment fault triggers reportFault and returns fallback without throwing', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const linked = td012Link(gl, TD012_VS, TD012_FS);
+    const { host, faultCalls } = td012FaultHost(() => {});
+    const varyings = new Map([['vColor', new Float32Array([0.25, 0.5, 0.75, 1.0])]]);
+    // Act:
+    let threw = false;
+    let frag: ReturnType<typeof executeFragment> = { discarded: false, color: new Float32Array([9, 9, 9, 9]) };
+    try {
+      frag = executeFragment(linked, varyings, host);
+    } catch {
+      threw = true;
+    }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(faultCalls.length).toBe(1);
+    expect(faultCalls[0]!.stage).toBe('fragment');
+    expect(faultCalls[0]!.err).toBeInstanceOf(Error);
+    expect(Array.from(frag.color)).toEqual([0, 0, 0, 1]);
+  });
+
+  it('TEST3: executeVertex fault triggers reportFault and returns fallback without throwing', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const linked = td012Link(gl, TD012_VS, TD012_FS);
+    const { host, faultCalls } = td012FaultHost(() => {});
+    // Fault injection: throwing get() escapes evalIdentifier/evalTextureCall KEEP
+    // catches — attribs.get() runs in executeVertex body outside any inner catch.
+    const attribs = {
+      get(_key: number): Float32Array {
+        throw new Error('TD-012 injected attrib fault');
+      },
+    } as unknown as Map<number, Float32Array>;
+    // Act:
+    let threw = false;
+    let vert: ReturnType<typeof executeVertex> = {
+      clipPos: new Float32Array([9, 9, 9, 9]),
+      pointSize: 7,
+      varyings: new Map(),
+    };
+    try {
+      vert = executeVertex(linked, 0, attribs, host);
+    } catch {
+      threw = true;
+    }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(faultCalls.length).toBe(1);
+    expect(faultCalls[0]!.stage).toBe('vertex');
+    expect(Array.from(vert.clipPos)).toEqual([0, 0, 0, 1]);
+    expect(vert.pointSize).toBe(1);
+  });
+
+  it('TEST4: fault routes to real ErrorSink as INVALID_OPERATION via reportFault wiring', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const linked = td012Link(gl, TD012_VS, TD012_FS);
+    const sink = new ErrorSink();
+    const { host } = td012FaultHost((err) => {
+      void err;
+      sink.recordError(INVALID_OPERATION);
+    });
+    // Act:
+    let threw = false;
+    try {
+      executeFragment(linked, new Map(), host);
+    } catch {
+      threw = true;
+    }
+    // Assert:
+    expect(threw).toBe(false);
+    expect(sink.getError()).toBe(INVALID_OPERATION);
+    expect(sink.getError()).toBe(NO_ERROR);
+  });
+
+  it('TEST5: valid-path fragment execution records NO_ERROR on a real context', () => {
+    // Arrange:
+    const ctx = createSoftwareWebGLContext({ width: 8, height: 8 })!;
+    const gl = facadeOf(ctx);
+    const linked = td012Link(gl, TD012_VS, TD012_FS);
+    const host: InterpreterHost = {
+      readUniform: (slot: number) => linked.uniformStore.f32.slice(slot, slot + 4),
+      sample: (_slot: number, _coord: Float32Array) => new Float32Array([0, 0, 0, 1]),
+    };
+    // Act:
+    const frag = executeFragment(linked, new Map<string, Float32Array>(), host);
+    // Assert:
+    expect(Array.from(frag.color)).toEqual([0, 0, 0, 0]);
+    expect(ctx.getError()).toBe(NO_ERROR);
+  });
+
+  it('TEST6: valid-path fragment execution is byte-identical across runs', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const linked = td012Link(gl, TD012_VS, TD012_FS);
+    const host: InterpreterHost = {
+      readUniform: (slot: number) => linked.uniformStore.f32.slice(slot, slot + 4),
+      sample: (_slot: number, _coord: Float32Array) => new Float32Array([0, 0, 0, 1]),
+    };
+    const varyings = new Map([['vColor', new Float32Array([0.1, 0.2, 0.3, 1.0])]]);
+    // Act:
+    const first = executeFragment(linked, varyings, host);
+    const second = executeFragment(linked, varyings, host);
+    // Assert:
+    expect(Array.from(first.color)).toEqual(Array.from(second.color));
+    expect(first.color.buffer.byteLength).toBe(second.color.buffer.byteLength);
+  });
+
+  it('TEST7: fault inside user function reports stage fragment with clean stack and f(0) return', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const linked = td012Link(gl, TD012_VS, TD012_FS_HELPER);
+    const { host, faultCalls } = td012FaultHost(() => {});
+    // Act:
+    let threw = false;
+    let frag: ReturnType<typeof executeFragment> = { discarded: false, color: new Float32Array([9, 9, 9, 9]) };
+    try {
+      frag = executeFragment(linked, new Map(), host);
+    } catch {
+      threw = true;
+    }
+    const again = executeFragment(linked, new Map(), host);
+    // Assert:
+    expect(threw).toBe(false);
+    expect(faultCalls.length).toBeGreaterThanOrEqual(1);
+    expect(faultCalls[0]!.stage).toBe('fragment');
+    expect(Array.from(frag.color)).toEqual([0, 0, 0, 1]);
+    expect(Array.from(again.color)).toEqual(Array.from(frag.color));
+  });
+
+  it('TEST8: interpreter catch sites reference reportFault (static source assertion)', () => {
+    // Arrange:
+    const source = readFileSync('src/glsl/interpreter.ts', 'utf8');
+    const vertexCatch = source.slice(source.indexOf('export function executeVertex'));
+    const fragmentCatch = source.slice(source.indexOf('export function executeFragment'));
+    // Act: (static inspection — no execution)
+    // Assert:
+    expect(source).toContain('reportFault');
+    expect(vertexCatch).toContain('reportFault');
+    expect(fragmentCatch).toContain('reportFault');
   });
 });

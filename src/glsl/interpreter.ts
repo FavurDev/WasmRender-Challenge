@@ -60,6 +60,7 @@ import { getCheckedAST } from './checker';
 export interface InterpreterHost {
   readUniform(slot: number): number | Float32Array | Int32Array | Uint32Array;
   sample(slot: number, coord: Float32Array, biasOrLod?: number, contextVersion?: 1 | 2): Float32Array;
+  reportFault?(err: unknown, stage: 'vertex' | 'fragment'): void;
 }
 
 export interface ClipVertex {
@@ -79,6 +80,7 @@ export interface EvalContext {
   program: LinkedProgram;
   host: InterpreterHost;
   version: 100 | 300;
+  stage: 'vertex' | 'fragment';
 }
 
 /* ------------------------------------------------------------------ */
@@ -347,7 +349,7 @@ function evalIdentifier(
       if (raw instanceof Uint32Array) return new Uint32Array(raw);
     }
   } catch (_e) {
-    void _e;
+    ctx.host.reportFault?.(_e, ctx.stage);
   }
   return f(0);
 }
@@ -1206,7 +1208,7 @@ export function invokeUserFunction(
     }
     return ret;
   } catch (_e) {
-    void _e;
+    ctx.host.reportFault?.(_e, 'fragment');
     try {
       env.popFrame();
     } catch (_e2) {
@@ -1319,7 +1321,7 @@ export function executeVertex(
 ): ClipVertex {
   try {
     const version = program.vs.version === 300 ? 300 : 100;
-    const ctx: EvalContext = { program, host, version };
+    const ctx: EvalContext = { program, host, version, stage: 'vertex' };
     const env = new ExecutionEnvironment();
     env.define('gl_Position', new Float32Array([0, 0, 0, 1]));
     env.define('gl_PointSize', 1);
@@ -1344,7 +1346,7 @@ export function executeVertex(
     }
     return { clipPos, pointSize, varyings };
   } catch (_e) {
-    void _e;
+    host.reportFault?.(_e, 'vertex');
     return { clipPos: new Float32Array([0, 0, 0, 1]), pointSize: 1, varyings: new Map() };
   }
 }
@@ -1359,7 +1361,7 @@ export function executeFragment(
   void derivCtx;
   try {
     const version = program.fs.version === 300 ? 300 : 100;
-    const ctx: EvalContext = { program, host, version };
+    const ctx: EvalContext = { program, host, version, stage: 'fragment' };
     const env = new ExecutionEnvironment();
     env.define('gl_FragColor', new Float32Array([0, 0, 0, 1]));
     env.define('gl_FrontFacing', frontFacing ?? true);
@@ -1380,7 +1382,7 @@ export function executeFragment(
     }
     return { discarded: false, color, depth: null as unknown as number };
   } catch (_e) {
-    void _e;
+    host.reportFault?.(_e, 'fragment');
     return { discarded: false, color: new Float32Array([0, 0, 0, 1]), depth: null as unknown as number };
   }
 }

@@ -263,6 +263,8 @@ export class GLState implements IGLState {
   private currentProgram: unknown | null = null;
   private attribs: VertexAttribDescriptor[] = [];
   private textureUnits: Array<{ binding2D: unknown | null; bindingCube: unknown | null }> = [];
+  private canvasWidth = 300;
+  private canvasHeight = 150;
 
   constructor(errorSink: IErrSink, canvas?: CanvasDimensions) {
     this.errorSink = errorSink;
@@ -272,6 +274,8 @@ export class GLState implements IGLState {
       if (typeof canvas.width === 'number' && Number.isFinite(canvas.width) && canvas.width > 0) w = Math.trunc(canvas.width);
       if (typeof canvas.height === 'number' && Number.isFinite(canvas.height) && canvas.height > 0) h = Math.trunc(canvas.height);
     }
+    this.canvasWidth = w;
+    this.canvasHeight = h;
     this.viewport = { x: 0, y: 0, width: w, height: h };
     this.scissorBox = { x: 0, y: 0, width: w, height: h };
     this.textureUnits = Array.from({ length: 32 }, () => ({ binding2D: null, bindingCube: null }));
@@ -612,6 +616,72 @@ export class GLState implements IGLState {
     };
     deepFreeze(snap);
     return snap;
+  }
+
+  /**
+   * Reset all mutable state to WebGL 1.0 spec defaults.
+   *
+   * Restores viewport/scissor to [0, 0, w, h], clears capabilities,
+   * clear values, blend/depth/stencil/raster/pixel-store state, all
+   * bindings, and vertex attribute descriptors.
+   */
+  resetToDefaults(): void {
+    const w = this.canvasWidth;
+    const h = this.canvasHeight;
+    this.capabilities.clear();
+    this.viewport = { x: 0, y: 0, width: w, height: h };
+    this.scissorBox = { x: 0, y: 0, width: w, height: h };
+    this.clearColor = [0, 0, 0, 0];
+    this.clearDepth = 1;
+    this.clearStencil = 0;
+    this.colorMask = [true, true, true, true];
+    this.depthState = { func: LESS as GLenum, mask: true, range: [0, 1] as [number, number] };
+    this.blendState = {
+      srcRGB: ONE as GLenum,
+      dstRGB: ZERO as GLenum,
+      srcAlpha: ONE as GLenum,
+      dstAlpha: ZERO as GLenum,
+      equationRGB: FUNC_ADD as GLenum,
+      equationAlpha: FUNC_ADD as GLenum,
+      blendColor: [0, 0, 0, 0] as [number, number, number, number],
+    };
+    this.stencilFront = {
+      func: ALWAYS as GLenum, ref: 0, valueMask: FULL_MASK, writeMask: FULL_MASK,
+      sfail: KEEP as GLenum, dpfail: KEEP as GLenum, dppass: KEEP as GLenum,
+    };
+    this.stencilBack = {
+      func: ALWAYS as GLenum, ref: 0, valueMask: FULL_MASK, writeMask: FULL_MASK,
+      sfail: KEEP as GLenum, dpfail: KEEP as GLenum, dppass: KEEP as GLenum,
+    };
+    this.rasterState = {
+      cullFaceMode: BACK as GLenum, frontFace: CCW as GLenum, lineWidth: 1,
+      polygonOffsetFactor: 0, polygonOffsetUnits: 0, sampleCoverageValue: 1, sampleCoverageInvert: false,
+    };
+    this.pixelStore = {
+      packAlignment: 4, unpackAlignment: 4, unpackFlipY: false,
+      unpackPremultiplyAlpha: false, unpackColorspaceConversion: BROWSER_DEFAULT_WEBGL as GLenum,
+    };
+    this.boundArrayBuffer = null;
+    this.boundElementArrayBuffer = null;
+    this.boundFramebuffer = null;
+    this.boundRenderbuffer = null;
+    this.currentProgram = null;
+    this.activeTexture = TEXTURE0;
+    for (const unit of this.textureUnits) {
+      unit.binding2D = null;
+      unit.bindingCube = null;
+    }
+    for (const attrib of this.attribs) {
+      attrib.enabled = false;
+      attrib.size = 4;
+      attrib.type = FLOAT as GLenum;
+      attrib.normalized = false;
+      attrib.stride = 0;
+      attrib.offset = 0;
+      attrib.buffer = null;
+      attrib.divisor = 0;
+      attrib.genericValue = [0, 0, 0, 1];
+    }
   }
 
   restore(snapshot: PipelineState): void {

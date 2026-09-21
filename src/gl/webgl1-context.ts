@@ -6,6 +6,8 @@
 import {
   ACTIVE_ATTRIBUTES,
   ACTIVE_UNIFORMS,
+  ALIASED_LINE_WIDTH_RANGE,
+  ALIASED_POINT_SIZE_RANGE,
   ARRAY_BUFFER,
   ATTACHED_SHADERS,
   BYTE,
@@ -15,6 +17,7 @@ import {
   DELETE_STATUS,
   DEPTH_BUFFER_BIT,
   DEPTH_CLEAR_VALUE,
+  ELEMENT_ARRAY_BUFFER,
   FIXED,
   FLOAT,
   FLOAT_MAT2,
@@ -24,11 +27,45 @@ import {
   FLOAT_VEC3,
   FLOAT_VEC4,
   FRAGMENT_SHADER,
+  COLOR_ATTACHMENT0,
+  DEPTH_ATTACHMENT,
+  STENCIL_ATTACHMENT,
+  DEPTH_STENCIL_ATTACHMENT,
+  FRAMEBUFFER,
+  FRAMEBUFFER_BINDING,
   FRAMEBUFFER_COMPLETE,
+  FRAMEBUFFER_UNSUPPORTED,
   INVALID_ENUM,
   INVALID_FRAMEBUFFER_OPERATION,
   INVALID_OPERATION,
   INVALID_VALUE,
+  LIMIT_ALIASED_LINE_WIDTH_RANGE,
+  LIMIT_ALIASED_POINT_SIZE_RANGE,
+  LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL1,
+  LIMIT_MAX_CUBE_MAP_TEXTURE_SIZE,
+  LIMIT_MAX_DRAW_BUFFERS_WEBGL1,
+  LIMIT_MAX_FRAGMENT_UNIFORM_VECTORS_WEBGL1,
+  LIMIT_MAX_RENDERBUFFER_SIZE,
+  LIMIT_MAX_TEXTURE_IMAGE_UNITS_WEBGL1,
+  LIMIT_MAX_TEXTURE_SIZE,
+  LIMIT_MAX_VARYING_VECTORS_WEBGL1,
+  LIMIT_MAX_VERTEX_ATTRIBS,
+  LIMIT_MAX_VERTEX_UNIFORM_VECTORS_WEBGL1,
+  MAX_COMBINED_TEXTURE_IMAGE_UNITS,
+  MAX_CUBE_MAP_TEXTURE_SIZE,
+  MAX_DRAW_BUFFERS,
+  MAX_FRAGMENT_UNIFORM_VECTORS,
+  MAX_RENDERBUFFER_SIZE,
+  MAX_TEXTURE_IMAGE_UNITS,
+  MAX_TEXTURE_SIZE,
+  MAX_VARYING_VECTORS,
+  MAX_VERTEX_ATTRIBS as MAX_VERTEX_ATTRIBS_PNAME,
+  MAX_VERTEX_UNIFORM_VECTORS,
+  MAX_VIEWPORT_DIMS,
+  RENDERBUFFER,
+  RENDERBUFFER_BINDING,
+  RENDERER,
+  SHADING_LANGUAGE_VERSION,
   UNPACK_COLORSPACE_CONVERSION_WEBGL,
   UNPACK_FLIP_Y_WEBGL,
   UNPACK_PREMULTIPLY_ALPHA_WEBGL,
@@ -42,9 +79,11 @@ import {
   TEXTURE0,
   TEXTURE_2D,
   TEXTURE_CUBE_MAP,
+  RGBA,
   TRIANGLES,
   VALID_DEPTH_FUNC_SET,
   VALIDATE_STATUS,
+  VENDOR,
   VERSION,
   VERSION_STRING_WEBGL1,
   UNSIGNED_BYTE,
@@ -70,7 +109,15 @@ import type { BufferObject } from './buffer';
 import { TextureManager, isMipmapFilter } from './texture';
 import type { PixelStoreStateProvider, TextureObject } from './texture';
 import { sample2D } from './sampler';
-import { DrawingBuffer } from './framebuffer';
+import {
+  DrawingBuffer,
+  FboTarget,
+  FramebufferManager,
+  RenderbufferManager,
+  WebGLFramebuffer,
+  WebGLRenderbuffer,
+} from './framebuffer';
+import type { RenderbufferStorage } from './framebuffer';
 import { resolveContextAttributes } from './context-attributes';
 import type { WebGLContextAttributes } from './context-attributes';
 import { clipTriangle } from '../raster/clipper';
@@ -81,9 +128,16 @@ import { runPreprocessor } from '../glsl/preprocessor';
 import { parse } from '../glsl/parser';
 import { check, registerCheckedAST } from '../glsl/checker';
 import type { CheckedShader } from '../glsl/checker';
+import { ExtensionRegistry } from './extensions';
 import { link, ProgramRegistry } from './program';
 import type { ActiveUniformInfo, LinkedProgram, ProgramHandle } from './program';
-import { createVertexAttribTargetMap, fetchVertexAttributes, validateVertexAttribRange } from './vertex-fetch';
+import {
+  createVertexAttribTargetMap,
+  fetchVertexAttributes,
+  resolveIndexSequence,
+  validateIndexRange,
+  validateVertexAttribRange,
+} from './vertex-fetch';
 import { executeFragment, executeVertex } from '../glsl/interpreter';
 import type { InterpreterHost } from '../glsl/interpreter';
 
@@ -293,10 +347,15 @@ export class WebGL1Context {
   private readonly programRegistry = new ProgramRegistry();
   private readonly bufferManager: BufferManager;
   private readonly textureManager: TextureManager;
+  private readonly framebufferManager: FramebufferManager;
+  private readonly renderbufferManager: RenderbufferManager;
+  private readonly fboTargets = new Map<number, { target: FboTarget; storage: RenderbufferStorage | null; width: number; height: number }>();
+  private readonly depthStencilFbos = new Set<number>();
   private readonly shaders = new Map<number, WebGLShader>();
   private readonly programs = new Map<number, WebGLProgram>();
   private nextShaderId = 1;
   private currentProgram: WebGLProgram | null = null;
+  private readonly extensionRegistry: ExtensionRegistry;
 
   /**
    * Construct the facade, resolving canvas dims and context attributes.
@@ -328,6 +387,40 @@ export class WebGL1Context {
       getUnpackColorspaceConversion: () => this.glState.getPixelStorei(UNPACK_COLORSPACE_CONVERSION_WEBGL) as number,
     };
     this.textureManager = new TextureManager(this.errorSink, pixelStoreProvider);
+    this.framebufferManager = new FramebufferManager(this.errorSink);
+    this.renderbufferManager = new RenderbufferManager(this.errorSink);
+    this.extensionRegistry = new ExtensionRegistry(this.errorSink, this.glState, {
+      onLoseContext: () => {
+        for (const shader of this.shaders.values()) shader.alive = false;
+        for (const program of this.programs.values()) program.handle.alive = false;
+        this.currentProgram = null;
+      },
+      onRestoreContext: () => {
+        this.currentProgram = null;
+        this.shaders.clear();
+        this.programs.clear();
+      },
+    });
+  }
+
+  /** True iff the context is lost. */
+  isContextLost(): boolean {
+    return this.errorSink.isContextLost();
+  }
+
+  /** Return a memoized extension object, or null for unknown names (no error). */
+  getExtension(name: string): object | null {
+    return this.extensionRegistry.getExtension(String(name));
+  }
+
+  /** Return exactly the seven supported extension names. */
+  getSupportedExtensions(): readonly string[] {
+    return this.extensionRegistry.getSupportedExtensions();
+  }
+
+  /** True iff the capability is enabled. */
+  isEnabled(cap: number): boolean {
+    return this.glState.isEnabled(cap as GLenum);
   }
 
   /** Set the clear color. */
@@ -359,15 +452,76 @@ export class WebGL1Context {
     this.glState.setDepthMask(flag);
   }
 
+  /** Set stencil func/ref/mask for front and back; validation sinks via GLState. */
+  stencilFunc(func: number, ref: number, mask: number): void {
+    this.glState.setStencilFunc(func as GLenum, ref, mask);
+  }
+
+  /** Set stencil func/ref/mask for one face; validation sinks via GLState. */
+  stencilFuncSeparate(face: number, func: number, ref: number, mask: number): void {
+    this.glState.setStencilFuncSeparate(face as GLenum, func as GLenum, ref, mask);
+  }
+
+  /** Set stencil ops for front and back; validation sinks via GLState. */
+  stencilOp(fail: number, zfail: number, zpass: number): void {
+    this.glState.setStencilOp(fail as GLenum, zfail as GLenum, zpass as GLenum);
+  }
+
+  /** Set stencil ops for one face; validation sinks via GLState. */
+  stencilOpSeparate(face: number, fail: number, zfail: number, zpass: number): void {
+    this.glState.setStencilOpSeparate(face as GLenum, fail as GLenum, zfail as GLenum, zpass as GLenum);
+  }
+
+  /** Set stencil write mask for front and back. */
+  stencilMask(mask: number): void {
+    this.glState.setStencilMask(mask);
+  }
+
+  /** Set stencil write mask for one face. */
+  stencilMaskSeparate(face: number, mask: number): void {
+    this.glState.setStencilMaskSeparate(face as GLenum, mask);
+  }
+
+  /** Set RGB and alpha blend factors; invalid enums sink via GLState. */
+  blendFunc(sfactor: number, dfactor: number): void {
+    this.glState.setBlendFunc(sfactor as GLenum, dfactor as GLenum);
+  }
+
+  /** Set separate RGB/alpha blend factors; invalid enums sink via GLState. */
+  blendFuncSeparate(srcRGB: number, dstRGB: number, srcAlpha: number, dstAlpha: number): void {
+    this.glState.setBlendFuncSeparate(srcRGB as GLenum, dstRGB as GLenum, srcAlpha as GLenum, dstAlpha as GLenum);
+  }
+
+  /** Set the RGB and alpha blend equations; invalid enums sink via GLState. */
+  blendEquation(mode: number): void {
+    this.glState.setBlendEquation(mode as GLenum);
+  }
+
+  /** Set separate RGB/alpha blend equations; invalid enums sink via GLState. */
+  blendEquationSeparate(modeRGB: number, modeAlpha: number): void {
+    this.glState.setBlendEquationSeparate(modeRGB as GLenum, modeAlpha as GLenum);
+  }
+
+  /** Set the constant blend color; values clamp to [0, 1] per spec (no error). */
+  blendColor(red: number, green: number, blue: number, alpha: number): void {
+    this.glState.setBlendColor(red, green, blue, alpha);
+  }
+
+  /** Enable or disable per-channel color writes. */
+  colorMask(red: boolean, green: boolean, blue: boolean, alpha: boolean): void {
+    this.glState.setColorMask(red, green, blue, alpha);
+  }
+
   /** Clear buffers selected by mask; invalid bits record INVALID_VALUE. */
   clear(mask: number): void {
+    if (this.errorSink.isContextLost()) return;
     const validBits = COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT | STENCIL_BUFFER_BIT;
     if ((mask & ~validBits) !== 0) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
     }
     const pipelineState = this.glState.snapshot();
-    this.drawingBuffer.clear(mask, pipelineState);
+    this.resolveActiveTarget().clear(mask, pipelineState);
   }
 
   /** Set the viewport rectangle. */
@@ -400,6 +554,7 @@ export class WebGL1Context {
    *   directGeometry: Direct vertex records; omitted routes to the buffered draw path.
    */
   drawArrays(mode: number, first: number, count: number, directGeometry?: readonly DirectVertex[]): void {
+    if (this.errorSink.isContextLost()) return;
     if (mode !== TRIANGLES) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
@@ -424,6 +579,13 @@ export class WebGL1Context {
       return;
     }
     const vertices = directGeometry.slice(first, first + count);
+    if (this.framebufferManager.getBoundFramebuffer() !== null) {
+      const fbStatus = this.checkFramebufferStatus(FRAMEBUFFER);
+      if (fbStatus !== FRAMEBUFFER_COMPLETE) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+    }
     const pipelineState = this.glState.snapshot();
     for (let index = 0; index < count; index += 3) {
       const g0 = vertices[index] as DirectVertex;
@@ -443,7 +605,7 @@ export class WebGL1Context {
         const sv0 = mapClipToScreen(cv0, pipelineState);
         const sv1 = mapClipToScreen(cv1, pipelineState);
         const sv2 = mapClipToScreen(cv2, pipelineState);
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer);
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer);
       }
     }
   }
@@ -463,7 +625,60 @@ export class WebGL1Context {
    *   first: First vertex index (must be >= 0).
    *   count: Vertex count (must be >= 0; trailing vertices not forming a full triangle are ignored).
    */
+  /**
+   * Draw TRIANGLES from a bound ELEMENT_ARRAY_BUFFER through the shared pipeline.
+   *
+   * Precondition ordering: context loss silent; non-TRIANGLES mode INVALID_ENUM;
+   * negative count/offset INVALID_VALUE; bad type INVALID_ENUM; count 0 silent
+   * no-op; missing/dead/unallocated element buffer INVALID_OPERATION; misaligned
+   * offset INVALID_OPERATION; byte overflow INVALID_OPERATION; then core.
+   */
+  drawElements(mode: number, count: number, type: number, offset: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (mode !== TRIANGLES) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (count < 0 || offset < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (type !== UNSIGNED_SHORT && type !== UNSIGNED_BYTE) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (count === 0) return;
+    const bound = this.bufferManager.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    if (bound === null || bound.alive !== true || bound.data === null) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const typeByteSize = type === UNSIGNED_SHORT ? 2 : 1;
+    if (offset % typeByteSize !== 0) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (offset + count * typeByteSize > bound.byteLength) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const indexList = resolveIndexSequence(bound.data, offset, count, type);
+    this.drawBufferedTrianglesCore(indexList, 0, count);
+  }
+
   private drawBufferedTriangles(first: number, count: number): void {
+    this.drawBufferedTrianglesCore(null, first, count);
+  }
+
+  /**
+   * Unified buffered draw pipeline shared by drawArrays and drawElements.
+   *
+   * Args:
+   *   indices: Resolved index list, or null for sequential vertices.
+   *   first: First vertex index (sequential path only).
+   *   count: Vertex/index count.
+   */
+  private drawBufferedTrianglesCore(indices: ReadonlyArray<number> | null, first: number, count: number): void {
     if (this.errorSink.isContextLost()) return;
     const prog = this.currentProgram;
     if (prog === null || prog.handle.linkStatus !== true) {
@@ -491,20 +706,37 @@ export class WebGL1Context {
       }
     }
     const bufferLookup = (handle: unknown): BufferObject | null => (handle as BufferObject | null) ?? null;
-    const range = validateVertexAttribRange(descriptors, bufferLookup, first, count, linked.activeAttribs);
-    if (!range.ok) {
-      this.errorSink.recordError(INVALID_OPERATION);
-      return;
+    if (indices !== null) {
+      const range = validateIndexRange(indices, descriptors, bufferLookup, linked.activeAttribs);
+      if (!range.ok) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+    } else {
+      const range = validateVertexAttribRange(descriptors, bufferLookup, first, count, linked.activeAttribs);
+      if (!range.ok) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
     }
-    const fb = this.drawingBuffer as unknown as { checkStatus?: () => number };
-    const fbStatus = typeof fb.checkStatus === 'function' ? fb.checkStatus() : FRAMEBUFFER_COMPLETE;
-    if (fbStatus !== FRAMEBUFFER_COMPLETE) {
-      this.errorSink.recordError(INVALID_FRAMEBUFFER_OPERATION);
-      return;
+    if (this.framebufferManager.getBoundFramebuffer() !== null) {
+      const fbStatus = this.checkFramebufferStatus(FRAMEBUFFER);
+      if (fbStatus !== FRAMEBUFFER_COMPLETE) {
+        this.errorSink.recordError(INVALID_FRAMEBUFFER_OPERATION);
+        return;
+      }
+    } else {
+      const fb = this.drawingBuffer as unknown as { checkStatus?: () => number };
+      const fbStatus = typeof fb.checkStatus === 'function' ? fb.checkStatus() : FRAMEBUFFER_COMPLETE;
+      if (fbStatus !== FRAMEBUFFER_COMPLETE) {
+        this.errorSink.recordError(INVALID_FRAMEBUFFER_OPERATION);
+        return;
+      }
     }
     if (count === 0) {
       return;
     }
+    const viewCache = new Map<ArrayBuffer, DataView>();
     const pipelineState = this.glState.snapshot();
     const targetMap = createVertexAttribTargetMap(linked.activeAttribs);
     const textureSnapshot = resolveDrawTextures(linked, this.textureManager);
@@ -512,6 +744,11 @@ export class WebGL1Context {
     const viewportHeight = pipelineState.viewport.height;
     const host: InterpreterHost = {
       readUniform: (slot: number) => this.readDrawUniform(linked, slot),
+      reportFault: (_err: unknown, _stage: 'vertex' | 'fragment') => {
+        void _err;
+        void _stage;
+        this.errorSink.recordError(INVALID_OPERATION);
+      },
       sample: (slot: number, coord: Float32Array, biasOrLod?: number, contextVersion?: 1 | 2) => {
         const ver: 1 | 2 = contextVersion === 2 ? 2 : 1;
         let unit = Math.trunc(slot);
@@ -551,8 +788,8 @@ export class WebGL1Context {
     const triCount = Math.floor(count / 3);
     for (let tri = 0; tri < triCount; tri++) {
       for (let corner = 0; corner < 3; corner++) {
-        const vertexId = first + tri * 3 + corner;
-        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap);
+        const vertexId = indices !== null ? (indices[tri * 3 + corner] as number) : first + tri * 3 + corner;
+        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap, viewCache);
         const out = executeVertex(linked, vertexId, targetMap, host);
         const shell = shells[corner] as ClipVertex;
         shell.clip[0] = out.clipPos[0] as number;
@@ -611,7 +848,7 @@ export class WebGL1Context {
             return null;
           }
         };
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer, shade);
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, shade);
       }
     }
   }
@@ -652,8 +889,35 @@ export class WebGL1Context {
    *   Parameter value, or null with INVALID_ENUM for unsupported pnames.
    */
   getParameter(pname: number): unknown {
+    if (this.errorSink.isContextLost()) return null;
     if (pname === VERSION) {
       return VERSION_STRING_WEBGL1;
+    }
+    if (pname === SHADING_LANGUAGE_VERSION) {
+      return 'WebGL GLSL ES 1.0 (Software)';
+    }
+    if (pname === VENDOR) {
+      return 'WebKit';
+    }
+    if (pname === RENDERER) {
+      return 'WebKit WebGL';
+    }
+    if (pname === MAX_VERTEX_ATTRIBS_PNAME) return LIMIT_MAX_VERTEX_ATTRIBS;
+    if (pname === MAX_VERTEX_UNIFORM_VECTORS) return LIMIT_MAX_VERTEX_UNIFORM_VECTORS_WEBGL1;
+    if (pname === MAX_VARYING_VECTORS) return LIMIT_MAX_VARYING_VECTORS_WEBGL1;
+    if (pname === MAX_TEXTURE_IMAGE_UNITS) return LIMIT_MAX_TEXTURE_IMAGE_UNITS_WEBGL1;
+    if (pname === MAX_COMBINED_TEXTURE_IMAGE_UNITS) return LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL1;
+    if (pname === MAX_FRAGMENT_UNIFORM_VECTORS) return LIMIT_MAX_FRAGMENT_UNIFORM_VECTORS_WEBGL1;
+    if (pname === MAX_DRAW_BUFFERS) return LIMIT_MAX_DRAW_BUFFERS_WEBGL1;
+    if (pname === MAX_TEXTURE_SIZE) return LIMIT_MAX_TEXTURE_SIZE;
+    if (pname === MAX_CUBE_MAP_TEXTURE_SIZE) return LIMIT_MAX_CUBE_MAP_TEXTURE_SIZE;
+    if (pname === MAX_RENDERBUFFER_SIZE) return LIMIT_MAX_RENDERBUFFER_SIZE;
+    if (pname === MAX_VIEWPORT_DIMS) return new Int32Array([4096, 4096]);
+    if (pname === ALIASED_POINT_SIZE_RANGE) {
+      return new Int32Array([LIMIT_ALIASED_POINT_SIZE_RANGE[0] as number, LIMIT_ALIASED_POINT_SIZE_RANGE[1] as number]);
+    }
+    if (pname === ALIASED_LINE_WIDTH_RANGE) {
+      return new Int32Array([LIMIT_ALIASED_LINE_WIDTH_RANGE[0] as number, LIMIT_ALIASED_LINE_WIDTH_RANGE[1] as number]);
     }
     if (pname === VIEWPORT) {
       const vp = this.glState.getViewport();
@@ -710,6 +974,16 @@ export class WebGL1Context {
       this.errorSink.recordError(INVALID_VALUE);
       return;
     }
+    const fbo = this.framebufferManager.getBoundFramebuffer() !== null ? this.resolveFboTarget() : null;
+    if (fbo !== null) {
+      this.readPixelsFromColorBuffer(
+        fbo.getColorBuffer(),
+        fbo.getWidth(),
+        fbo.getHeight(),
+        x, y, width, height, format as GLenum, type as GLenum, pixels, dstOffset,
+      );
+      return;
+    }
     this.drawingBuffer.readPixels(x, y, width, height, format as GLenum, type as GLenum, pixels, dstOffset);
   }
 
@@ -717,6 +991,7 @@ export class WebGL1Context {
 
   /** Create a buffer via BufferManager. */
   createBuffer(): BufferObject | null {
+    if (this.errorSink.isContextLost()) return null;
     return this.bufferManager.createBuffer();
   }
 
@@ -732,16 +1007,19 @@ export class WebGL1Context {
 
   /** Bind a buffer via BufferManager. */
   bindBuffer(target: number, buffer: BufferObject | null): void {
+    if (this.errorSink.isContextLost()) return;
     this.bufferManager.bindBuffer(target as GLenum, buffer);
   }
 
   /** Allocate/fill bound buffer storage via BufferManager. */
   bufferData(target: number, dataOrSize: number | ArrayBufferView | ArrayBuffer | null, usage: number): void {
+    if (this.errorSink.isContextLost()) return;
     this.bufferManager.bufferData(target as GLenum, dataOrSize, usage as GLenum);
   }
 
   /** Update a sub-range of bound buffer storage via BufferManager. */
   bufferSubData(target: number, offset: number, data: ArrayBufferView | ArrayBuffer): void {
+    if (this.errorSink.isContextLost()) return;
     this.bufferManager.bufferSubData(target as GLenum, offset, data);
   }
 
@@ -750,8 +1028,238 @@ export class WebGL1Context {
     return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
   }
 
+  // ---- Sprint 7: framebuffer/renderbuffer facade ----
+
+  /** Create a framebuffer via FramebufferManager. */
+  createFramebuffer(): WebGLFramebuffer | null {
+    if (this.errorSink.isContextLost()) return null;
+    return this.framebufferManager.createFramebuffer();
+  }
+
+  /** Delete a framebuffer via FramebufferManager. */
+  deleteFramebuffer(fb: WebGLFramebuffer | null): void {
+    if (fb !== null && fb !== undefined) this.depthStencilFbos.delete((fb as WebGLFramebuffer).id);
+    this.framebufferManager.deleteFramebuffer(fb);
+  }
+
+  /** True iff fb is a live managed framebuffer. */
+  isFramebuffer(fb: unknown): boolean {
+    return this.framebufferManager.isFramebuffer(fb);
+  }
+
+  /** Bind a framebuffer via FramebufferManager. */
+  bindFramebuffer(target: number, fb: WebGLFramebuffer | null): void {
+    if (this.errorSink.isContextLost()) return;
+    this.framebufferManager.bindFramebuffer(target as GLenum, fb);
+  }
+
+  /** Query framebuffer completeness for the bound framebuffer. */
+  checkFramebufferStatus(target: number): number {
+    if ((target as GLenum) === FRAMEBUFFER) {
+      const bound = this.framebufferManager.getBoundFramebuffer();
+      if (bound !== null && this.depthStencilFbos.has(bound.id)) return FRAMEBUFFER_UNSUPPORTED;
+    }
+    return this.framebufferManager.checkStatus(
+      target as GLenum,
+      this.framebufferManager.getBoundFramebuffer(),
+      (rb) => this.renderbufferManager.getStorage(rb),
+      this.buildTextureLookup(),
+    );
+  }
+
+  /** Attach a texture level to the bound framebuffer. */
+  framebufferTexture2D(target: number, attachment: number, textarget: number, texture: unknown, level: number): void {
+    if (this.errorSink.isContextLost()) return;
+    this.framebufferManager.framebufferTexture2D(
+      target as GLenum,
+      attachment as GLenum,
+      textarget as GLenum,
+      texture,
+      level,
+      this.buildTextureLookup(),
+    );
+  }
+
+  /** Attach a renderbuffer to the bound framebuffer. */
+  framebufferRenderbuffer(target: number, attachment: number, renderbuffertarget: number, rb: unknown): void {
+    if (this.errorSink.isContextLost()) return;
+    if ((attachment as GLenum) === DEPTH_STENCIL_ATTACHMENT) {
+      // Facade mapping: the manager has no combined depth-stencil slot, so the
+      // combined point aliases the stencil slot while the framebuffer id is
+      // tracked for an UNSUPPORTED completeness result.
+      const bound = this.framebufferManager.getBoundFramebuffer();
+      this.framebufferManager.framebufferRenderbuffer(
+        target as GLenum,
+        STENCIL_ATTACHMENT as GLenum,
+        renderbuffertarget as GLenum,
+        rb as WebGLRenderbuffer | null,
+        (candidate) => this.renderbufferManager.isRenderbuffer(candidate),
+      );
+      if (bound !== null && rb !== null && rb !== undefined) this.depthStencilFbos.add(bound.id);
+      else if (bound !== null) this.depthStencilFbos.delete(bound.id);
+      return;
+    }
+    this.framebufferManager.framebufferRenderbuffer(
+      target as GLenum,
+      attachment as GLenum,
+      renderbuffertarget as GLenum,
+      rb as WebGLRenderbuffer | null,
+      (candidate) => this.renderbufferManager.isRenderbuffer(candidate),
+    );
+  }
+
+  /** Query framebuffer attachment parameter (minimal: unsupported pnames record INVALID_ENUM). */
+  getFramebufferAttachmentParameter(target: number, attachment: number, pname: number): unknown {
+    void target;
+    void attachment;
+    void pname;
+    this.errorSink.recordError(INVALID_ENUM);
+    return null;
+  }
+
+  /** Create a renderbuffer via RenderbufferManager. */
+  createRenderbuffer(): WebGLRenderbuffer | null {
+    if (this.errorSink.isContextLost()) return null;
+    return this.renderbufferManager.createRenderbuffer();
+  }
+
+  /** Delete a renderbuffer via RenderbufferManager. */
+  deleteRenderbuffer(rb: WebGLRenderbuffer | null): void {
+    this.renderbufferManager.deleteRenderbuffer(rb);
+  }
+
+  /** True iff rb is a live managed renderbuffer. */
+  isRenderbuffer(rb: unknown): boolean {
+    return this.renderbufferManager.isRenderbuffer(rb);
+  }
+
+  /** Bind a renderbuffer via RenderbufferManager. */
+  bindRenderbuffer(target: number, rb: WebGLRenderbuffer | null): void {
+    if (this.errorSink.isContextLost()) return;
+    this.renderbufferManager.bindRenderbuffer(target as GLenum, rb);
+  }
+
+  /** Allocate bound renderbuffer storage via RenderbufferManager. */
+  renderbufferStorage(target: number, internalformat: number, width: number, height: number): void {
+    if (this.errorSink.isContextLost()) return;
+    this.renderbufferManager.renderbufferStorage(target as GLenum, internalformat as GLenum, width, height);
+  }
+
+  /** Query bound renderbuffer parameter via RenderbufferManager. */
+  getRenderbufferParameter(target: number, pname: number): number {
+    void target;
+    return this.renderbufferManager.getParameter(pname as GLenum);
+  }
+
+  private buildTextureLookup(): import('./framebuffer').IAttachmentTextureLookup {
+    const tm = this.textureManager;
+    return {
+      isAlive: (texture: unknown): boolean => {
+        try {
+          return tm.isTexture(texture);
+        } catch (_e) {
+          void _e;
+          return false;
+        }
+      },
+      getLevelSize: (texture: unknown, level: number): { width: number; height: number } | null => {
+        try {
+          const tex = texture as import('./texture').TextureObject;
+          if (tex === null || tex === undefined || tex.alive !== true) return null;
+          const mip = tex.levels2D.get(level);
+          if (mip === undefined) return null;
+          return { width: mip.width, height: mip.height };
+        } catch (_e) {
+          void _e;
+          return null;
+        }
+      },
+    };
+  }
+
+  private resolveFboTarget(): FboTarget | null {
+    const bound = this.framebufferManager.getBoundFramebuffer();
+    if (bound === null || bound === undefined) return null;
+    const rec = this.framebufferManager.getRecord(bound);
+    if (rec === null) return null;
+    const colorAtt = rec.attachments.get(COLOR_ATTACHMENT0 as GLenum) ?? null;
+    if (colorAtt === null || colorAtt.kind !== 'renderbuffer') return null;
+    const storage = this.renderbufferManager.getStorage(colorAtt.renderbuffer);
+    if (storage === null || storage.width <= 0 || storage.height <= 0) return null;
+    const cached = this.fboTargets.get(bound.id);
+    if (cached !== undefined && cached.storage === storage) return cached.target;
+    const target = new FboTarget(storage.width, storage.height, storage.colorData);
+    this.fboTargets.set(bound.id, { target, storage, width: storage.width, height: storage.height });
+    return target;
+  }
+
+  private resolveActiveTarget(): DrawingBuffer | FboTarget {
+    const fbo = this.resolveFboTarget();
+    if (fbo !== null) return fbo;
+    return this.drawingBuffer;
+  }
+
+  private readPixelsFromColorBuffer(
+    color: Uint8Array,
+    bufW: number,
+    bufH: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    format: GLenum,
+    type: GLenum,
+    pixels: ArrayBufferView | null,
+    dstOffset?: number,
+  ): void {
+    const offset = dstOffset !== undefined ? dstOffset : 0;
+    if (width < 0 || height < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (format !== RGBA) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (type !== UNSIGNED_BYTE) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!(pixels instanceof Uint8Array)) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const destArray = pixels as Uint8Array;
+    if (destArray.byteLength < offset + width * height * 4) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width === 0 || height === 0) return;
+    const readX = Math.trunc(x);
+    const readY = Math.trunc(y);
+    const readW = Math.trunc(width);
+    const readH = Math.trunc(height);
+    const startX = Math.max(0, readX);
+    const endX = Math.min(bufW, readX + readW);
+    const intersectW = Math.max(0, endX - startX);
+    const startY = Math.max(0, readY);
+    const endY = Math.min(bufH, readY + readH);
+    const intersectH = Math.max(0, endY - startY);
+    if (intersectW === 0 || intersectH === 0) return;
+    for (let row = 0; row < readH; row++) {
+      const targetY = readY + row;
+      if (targetY >= startY && targetY < endY) {
+        const dstRowStart = offset + row * readW * 4;
+        const dstWriteIndex = dstRowStart + (startX - readX) * 4;
+        const srcRowStart = (targetY * bufW + startX) * 4;
+        destArray.set(color.subarray(srcRowStart, srcRowStart + intersectW * 4), dstWriteIndex);
+      }
+    }
+  }
+
   /** Create a texture via TextureManager. */
   createTexture(): TextureObject | null {
+    if (this.errorSink.isContextLost()) return null;
     return this.textureManager.createTexture();
   }
 
@@ -767,6 +1275,7 @@ export class WebGL1Context {
 
   /** Bind a texture via TextureManager. */
   bindTexture(target: number, texture: TextureObject | null): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.bindTexture(target as GLenum, texture);
   }
 
@@ -777,26 +1286,31 @@ export class WebGL1Context {
 
   /** Specify a texture image via TextureManager. */
   texImage2D(target: number, level: number, internalformat: number, width: number, height: number, border: number, format: number, type: number, pixels?: ArrayBufferView | null): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.texImage2D(target as GLenum, level, internalformat as GLenum, width, height, border, format as GLenum, type as GLenum, pixels ?? null);
   }
 
   /** Update a texture sub-image via TextureManager. */
   texSubImage2D(target: number, level: number, xoffset: number, yoffset: number, width: number, height: number, format: number, type: number, pixels: ArrayBufferView | null): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.texSubImage2D(target as GLenum, level, xoffset, yoffset, width, height, format as GLenum, type as GLenum, pixels);
   }
 
   /** Copy drawing buffer rect into texture via TextureManager. */
   copyTexImage2D(target: number, level: number, internalformat: number, x: number, y: number, width: number, height: number, border: number): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.copyTexImage2D(target as GLenum, level, internalformat as GLenum, x, y, width, height, border, this.drawingBuffer);
   }
 
   /** Set integer texture parameter via TextureManager. */
   texParameteri(target: number, pname: number, param: number): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.texParameteri(target as GLenum, pname as GLenum, param);
   }
 
   /** Set float texture parameter via TextureManager. */
   texParameterf(target: number, pname: number, param: number): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.texParameterf(target as GLenum, pname as GLenum, param);
   }
 
@@ -807,6 +1321,7 @@ export class WebGL1Context {
 
   /** Generate mipmap chain via TextureManager. */
   generateMipmap(target: number): void {
+    if (this.errorSink.isContextLost()) return;
     this.textureManager.generateMipmap(target as GLenum);
   }
 
@@ -830,6 +1345,7 @@ export class WebGL1Context {
    * Validates everything before any mutation (atomic).
    */
   vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -871,6 +1387,7 @@ export class WebGL1Context {
 
   /** Enable a vertex attribute array; out-of-range records INVALID_VALUE. */
   enableVertexAttribArray(index: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -880,6 +1397,7 @@ export class WebGL1Context {
 
   /** Disable a vertex attribute array; out-of-range records INVALID_VALUE. */
   disableVertexAttribArray(index: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -889,6 +1407,7 @@ export class WebGL1Context {
 
   /** Set generic attrib to [x, 0, 0, 1]. */
   vertexAttrib1f(index: number, x: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -898,6 +1417,7 @@ export class WebGL1Context {
 
   /** Set generic attrib to [x, y, 0, 1]. */
   vertexAttrib2f(index: number, x: number, y: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -907,6 +1427,7 @@ export class WebGL1Context {
 
   /** Set generic attrib to [x, y, z, 1]. */
   vertexAttrib3f(index: number, x: number, y: number, z: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -916,6 +1437,7 @@ export class WebGL1Context {
 
   /** Set generic attrib to [x, y, z, w]. */
   vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void {
+    if (this.errorSink.isContextLost()) return;
     if (!Number.isFinite(index) || index < 0 || index >= 16) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -925,6 +1447,7 @@ export class WebGL1Context {
 
   /** Vector form of vertexAttrib1f; short arrays record INVALID_VALUE. */
   vertexAttrib1fv(index: number, values: ArrayLike<number>): void {
+    if (this.errorSink.isContextLost()) return;
     if (values === null || values === undefined || values.length < 1) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -934,6 +1457,7 @@ export class WebGL1Context {
 
   /** Vector form of vertexAttrib2f; short arrays record INVALID_VALUE. */
   vertexAttrib2fv(index: number, values: ArrayLike<number>): void {
+    if (this.errorSink.isContextLost()) return;
     if (values === null || values === undefined || values.length < 2) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -943,6 +1467,7 @@ export class WebGL1Context {
 
   /** Vector form of vertexAttrib3f; short arrays record INVALID_VALUE. */
   vertexAttrib3fv(index: number, values: ArrayLike<number>): void {
+    if (this.errorSink.isContextLost()) return;
     if (values === null || values === undefined || values.length < 3) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
@@ -952,6 +1477,7 @@ export class WebGL1Context {
 
   /** Vector form of vertexAttrib4f; short arrays record INVALID_VALUE. */
   vertexAttrib4fv(index: number, values: ArrayLike<number>): void {
+    if (this.errorSink.isContextLost()) return;
     if (values === null || values === undefined || values.length < 4) {
       this.errorSink.recordError(INVALID_VALUE);
       return;

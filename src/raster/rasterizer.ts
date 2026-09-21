@@ -7,10 +7,13 @@ Maps clip-space vertices to 1/16th subpixel screen vertices and rasterizes
 triangles with integer orient2d edge functions, incremental scan stepping, and
 a single reused Fragment record (zero per-fragment allocation).
  */
-import { ALWAYS, BACK, CCW, EQUAL, FRONT, FRONT_AND_BACK, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL } from '../gl/constants';
+// CHANGELOG: Sprint 7 Task 2 (2026-09-21): Route per-fragment scissor/stencil/depth through depth-stencil pipeline.
+import { BACK, CCW, FRONT, FRONT_AND_BACK } from '../gl/constants';
 import type { ClipVertex } from './clipper';
 import type { DrawingBuffer } from '../gl/framebuffer';
 import type { PipelineState } from '../gl/state';
+import { applyBlendAndWrite } from './blend';
+import { executeFragmentDepthStencil } from './depth-stencil';
 import { interpolateDepth, perspectiveCorrect } from './interpolate';
 
 export interface ScreenVertex {
@@ -54,18 +57,6 @@ function isCovered(w: number, isTopLeft: boolean): boolean {
   return w > 0 || (w === 0 && isTopLeft);
 }
 
-/** Evaluate depth comparison predicate on 24-bit quantized depths. Zero allocation. */
-function passesDepthTest(func: number, incomingDepth: number, storedDepth: number): boolean {
-  if (func === NEVER) return false;
-  if (func === LESS) return incomingDepth < storedDepth;
-  if (func === EQUAL) return incomingDepth === storedDepth;
-  if (func === LEQUAL) return incomingDepth <= storedDepth;
-  if (func === GREATER) return incomingDepth > storedDepth;
-  if (func === NOTEQUAL) return incomingDepth !== storedDepth;
-  if (func === GEQUAL) return incomingDepth >= storedDepth;
-  if (func === ALWAYS) return true;
-  return incomingDepth < storedDepth;
-}
 
 export function mapClipToScreen(clipVertex: ClipVertex, state: PipelineState): ScreenVertex {
   const w = clipVertex.clip[3];
@@ -216,47 +207,36 @@ export function rasterizeTriangle(
         frag.depth = interpolateDepth(bary, zVals);
         const idx = frag.y * bufW + frag.x;
         const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
-        let testPassed = true;
-        if (state.depthTestEnabled) {
-          const storedDepth24 = (((ds[idx] as number) >>> 8) & DEPTH_MAX_24) >>> 0;
-          testPassed = passesDepthTest(state.depth.func, depth24, storedDepth24);
-          if (!testPassed) {
-            w0 += e0stepX;
-            w1 += e1stepX;
-            w2 += e2stepX;
-            continue;
-          }
+        const dsPassed = executeFragmentDepthStencil(px, py, depth24, isFrontFacing, state, ds, idx);
+        if (!dsPassed) {
+          w0 += e0stepX;
+          w1 += e1stepX;
+          w2 += e2stepX;
+          continue;
         }
         const shaded = shade !== undefined && shade !== null ? shade(fragVaryings, px, py) : null;
         const n = fragVaryings.length;
+        let srcR = 1;
+        let srcG = 1;
+        let srcB = 1;
+        let srcA = 1;
         if (shaded !== null && shaded !== undefined) {
-          const o = idx * 4;
-          color[o] = Math.round(clamp01(shaded[0] as number) * 255);
-          color[o + 1] = Math.round(clamp01(shaded[1] as number) * 255);
-          color[o + 2] = Math.round(clamp01(shaded[2] as number) * 255);
-          color[o + 3] = Math.round(clamp01(shaded[3] as number) * 255);
+          srcR = shaded[0] as number;
+          srcG = shaded[1] as number;
+          srcB = shaded[2] as number;
+          srcA = shaded[3] as number;
         } else if (n >= 4) {
-          const o = idx * 4;
-          color[o] = Math.round(clamp01(fragVaryings[0] as number) * 255);
-          color[o + 1] = Math.round(clamp01(fragVaryings[1] as number) * 255);
-          color[o + 2] = Math.round(clamp01(fragVaryings[2] as number) * 255);
-          color[o + 3] = Math.round(clamp01(fragVaryings[3] as number) * 255);
+          srcR = fragVaryings[0] as number;
+          srcG = fragVaryings[1] as number;
+          srcB = fragVaryings[2] as number;
+          srcA = fragVaryings[3] as number;
         } else if (n === 3) {
-          const o = idx * 4;
-          color[o] = Math.round(clamp01(fragVaryings[0] as number) * 255);
-          color[o + 1] = Math.round(clamp01(fragVaryings[1] as number) * 255);
-          color[o + 2] = Math.round(clamp01(fragVaryings[2] as number) * 255);
-          color[o + 3] = 255;
-        } else {
-          const o = idx * 4;
-          color[o] = 255;
-          color[o + 1] = 255;
-          color[o + 2] = 255;
-          color[o + 3] = 255;
+          srcR = fragVaryings[0] as number;
+          srcG = fragVaryings[1] as number;
+          srcB = fragVaryings[2] as number;
+          srcA = 1;
         }
-        if (state.depth.mask) {
-          ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
-        }
+        applyBlendAndWrite(color, idx * 4, srcR, srcG, srcB, srcA, state, px, py, false);
       }
       w0 += e0stepX;
       w1 += e1stepX;

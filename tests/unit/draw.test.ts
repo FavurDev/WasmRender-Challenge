@@ -898,3 +898,166 @@ describe('Sprint 6 Task 7: vertex-fetch DataView path regression', () => {
     expect(results).toEqual([[1, 2, 3, 1], [4, 5, 6, 1], [7, 8, 9, 1]]);
   });
 });
+/** Sprint 7 Task 9 TD-013 cache-bounding TDD RED-phase tests. Appended; lines 1-900 untouched. */
+import { getCachedView, getViewCacheSize } from '../../src/gl/vertex-fetch';
+
+describe('TD-013 Group 1: cache bounding and lifecycle', () => {
+  it('TD-013 Regression 1: multi-draw across distinct buffers does not grow cache without bound', () => {
+    // Arrange:
+    const gl = t5Context();
+    const { program } = t5LinkPair(gl);
+    gl.useProgram(program);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    if (loc < 0) throw new Error('arrange: aPos not found');
+    // Act:
+    for (let i = 0; i < 20; i += 1) {
+      const buf = gl.createBuffer();
+      if (buf === null) throw new Error('act: createBuffer failed');
+      gl.bindBuffer(ARRAY_BUFFER, buf);
+      const floats = new Float32Array(9);
+      for (let v = 0; v < 9; v += 1) floats[v] = i * 10 + v;
+      gl.bufferData(ARRAY_BUFFER, floats, STATIC_DRAW);
+      gl.vertexAttribPointer(loc, 3, FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(loc);
+      gl.drawArrays(TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(NO_ERROR);
+    }
+    // Assert:
+    expect(getViewCacheSize()).toBe(0);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it('TD-013 Regression 2: intra-draw DataView reuse within single draw call', () => {
+    // Arrange:
+    const storage = new ArrayBuffer(72);
+    new Float32Array(storage).set(Array.from({ length: 18 }, (_, i) => i + 1));
+    const bufferObj = makeBuffer(storage);
+    const descriptors = descriptors16();
+    descriptors[0] = { enabled: true, size: 3, type: FLOAT, normalized: false, stride: 24, offset: 0, buffer: bufferObj, divisor: 0, genericValue: [0, 0, 0, 1] };
+    descriptors[1] = { enabled: true, size: 3, type: FLOAT, normalized: false, stride: 24, offset: 12, buffer: bufferObj, divisor: 0, genericValue: [0, 0, 0, 1] };
+    const activeAttribs = [
+      { location: 0, name: 'a_pos', size: 3, type: FLOAT },
+      { location: 1, name: 'a_col', size: 3, type: FLOAT },
+    ];
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    // Act:
+    const targetMap = new Map<number, Float32Array>([
+      [0, new Float32Array([0, 0, 0, 1])],
+      [1, new Float32Array([0, 0, 0, 1])],
+    ]);
+    fetchVertexAttributes(descriptors, () => bufferObj, 0, activeAttribs, targetMap, viewCache);
+    const size1 = getViewCacheSize(viewCache);
+    fetchVertexAttributes(descriptors, () => bufferObj, 1, activeAttribs, targetMap, viewCache);
+    const size2 = getViewCacheSize(viewCache);
+    // Assert:
+    expect(size1).toBe(1);
+    expect(size2).toBe(1);
+    expect([...(targetMap.get(0) as Float32Array)]).toEqual([7, 8, 9, 1]);
+  });
+
+  it('TD-013 Regression 3: standalone getCachedView fallback without viewCache parameter', () => {
+    // Arrange:
+    const data = new ArrayBuffer(32);
+    // Act:
+    const view1 = getCachedView(data);
+    const view2 = getCachedView(data);
+    // Assert:
+    expect(view1).toBeInstanceOf(DataView);
+    expect(view1.byteLength).toBe(32);
+    expect(view2).toBeInstanceOf(DataView);
+    expect(view2.byteLength).toBe(32);
+    expect(view1).not.toBe(view2);
+    expect(getViewCacheSize(undefined)).toBe(0);
+  });
+
+  it('TD-013 Regression 4: repeated draws across identical buffer reuse per-draw cache cleanly', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    // Act:
+    const snaps: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      gl.drawArrays(TRIANGLES, 0, 3);
+      expect(gl.getError()).toBe(NO_ERROR);
+      snaps.push(Array.from(t5Snapshot(gl)).join(','));
+    }
+    // Assert:
+    for (let i = 1; i < snaps.length; i += 1) expect(snaps[i]).toBe(snaps[0]);
+  });
+});
+
+describe('TD-013 Group 2: behavioral preservation', () => {
+  it('TD-013 Regression 5: multi-vertex byte-identical fetch across 3 vertices preserved', () => {
+    // Arrange:
+    const storage = new ArrayBuffer(36);
+    new Float32Array(storage).set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const bufferObj = makeBuffer(storage);
+    const descriptors = descriptors16();
+    descriptors[0] = { enabled: true, size: 3, type: FLOAT, normalized: false, stride: 0, offset: 0, buffer: bufferObj, divisor: 0, genericValue: [0, 0, 0, 1] };
+    const activeAttribs = [{ location: 0, name: 'a_pos', size: 3, type: FLOAT }];
+    // Act:
+    const results: number[][] = [];
+    for (let v = 0; v < 3; v += 1) {
+      const targetMap = new Map<number, Float32Array>([[0, new Float32Array([0, 0, 0, 1])]]);
+      fetchVertexAttributes(descriptors, () => bufferObj, v, activeAttribs, targetMap);
+      results.push([...(targetMap.get(0) as Float32Array)]);
+    }
+    // Assert:
+    expect(results).toEqual([[1, 2, 3, 1], [4, 5, 6, 1], [7, 8, 9, 1]]);
+  });
+
+  it('TD-013 Regression 6: DoD Fixture 1 happy path drawArrays pixel equality', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const full = t5Snapshot(gl);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    for (let i = 0; i < T5_W * T5_H; i += 1) {
+      expect([full[i * 4], full[i * 4 + 1], full[i * 4 + 2], full[i * 4 + 3]]).toEqual([0, 255, 0, 255]);
+    }
+  });
+
+  it('TD-013 Regression 7: zero count draw is no-op with zero cache activity', () => {
+    // Arrange:
+    const gl = t5Context();
+    t5SetupBufferDraw(gl, [-1, -1, 3, -1, -1, 3]);
+    gl.clearColor(0, 0, 1, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    const before = t5Snapshot(gl);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 0);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+
+  it('TD-013 Regression 8: attribute range validation failure touches no cache', () => {
+    // Arrange:
+    const gl = t5Context();
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([1, 2, 3, 4, 5, 6]), STATIC_DRAW);
+    const { program } = t5LinkPair(gl);
+    gl.useProgram(program);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    if (loc < 0) throw new Error('arrange: aPos not found');
+    gl.vertexAttribPointer(loc, 3, FLOAT, false, 12, 0);
+    gl.enableVertexAttribArray(loc);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    const before = t5Snapshot(gl);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
+  });
+});

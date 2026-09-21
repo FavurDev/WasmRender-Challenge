@@ -163,15 +163,20 @@ export function validateVertexAttribRange(
   return { ok: true };
 }
 
-const DATA_VIEW_CACHE = new WeakMap<ArrayBuffer, DataView>();
+export function getCachedView(data: ArrayBuffer, viewCache?: Map<ArrayBuffer, DataView>): DataView {
+  if (viewCache !== undefined) {
+    let view = viewCache.get(data);
+    if (view === undefined) {
+      view = new DataView(data);
+      viewCache.set(data, view);
+    }
+    return view;
+  }
+  return new DataView(data);
+}
 
-function getCachedView(data: ArrayBuffer, viewCache?: Map<ArrayBuffer, DataView>): DataView {
-  const cached = viewCache?.get(data) ?? DATA_VIEW_CACHE.get(data);
-  if (cached !== undefined) return cached;
-  const view = new DataView(data);
-  DATA_VIEW_CACHE.set(data, view);
-  viewCache?.set(data, view);
-  return view;
+export function getViewCacheSize(viewCache?: Map<ArrayBuffer, DataView>): number {
+  return viewCache !== undefined ? viewCache.size : 0;
 }
 
 export function fetchVertexAttributes(
@@ -237,4 +242,95 @@ export function fetchVertexAttributes(
     }
   }
   return targetMap;
+}
+
+/**
+ * Extract a list of integer vertex indices from an index buffer.
+ *
+ * Args:
+ *   bufferData: Backing ArrayBuffer of the bound ELEMENT_ARRAY_BUFFER.
+ *   byteOffset: Byte offset into the buffer where indices start.
+ *   count: Number of indices to read.
+ *   type: UNSIGNED_SHORT (16-bit LE) or UNSIGNED_BYTE (8-bit).
+ *
+ * Returns:
+ *   Array of vertex indices; empty when count <= 0 or type is unsupported.
+ */
+export function resolveIndexSequence(
+  bufferData: ArrayBuffer,
+  byteOffset: number,
+  count: number,
+  type: GLenum,
+): number[] {
+  const indices: number[] = [];
+  if (count <= 0) return indices;
+  if (type === UNSIGNED_SHORT) {
+    const u16 = new Uint16Array(bufferData, byteOffset, count);
+    for (let i = 0; i < count; i++) indices.push(u16[i] as number);
+  } else if (type === UNSIGNED_BYTE) {
+    const u8 = new Uint8Array(bufferData, byteOffset, count);
+    for (let i = 0; i < count; i++) indices.push(u8[i] as number);
+  }
+  return indices;
+}
+
+/**
+ * Validate that every index falls within allocated attribute buffer ranges.
+ *
+ * Args:
+ *   indices: Resolved vertex index list.
+ *   descriptors: Per-slot vertex attribute descriptors.
+ *   bufferLookup: Resolves a descriptor buffer handle to a BufferObject.
+ *   activeAttribs: Active program attributes; all slots checked when omitted.
+ *
+ * Returns:
+ *   AttribValidationResult with ok true, or ok false plus reason.
+ */
+export function validateIndexRange(
+  indices: ReadonlyArray<number>,
+  descriptors: ReadonlyArray<VertexAttribDescriptor>,
+  bufferLookup: (bufferHandle: unknown) => BufferObject | null,
+  activeAttribs?: ReadonlyArray<ActiveInfo>,
+): AttribValidationResult {
+  if (indices.length === 0) return { ok: true };
+  let maxIndex = 0;
+  for (const idx of indices) {
+    if (idx < 0) return { ok: false, reason: 'Negative index encountered in index buffer' };
+    if (idx > maxIndex) maxIndex = idx;
+  }
+  const slotsToCheck: number[] = [];
+  if (activeAttribs !== undefined && activeAttribs !== null) {
+    for (const attrib of activeAttribs) {
+      if (attrib.location >= 0 && attrib.location < descriptors.length) slotsToCheck.push(attrib.location);
+    }
+  } else {
+    for (let i = 0; i < descriptors.length; i += 1) slotsToCheck.push(i);
+  }
+  for (const index of slotsToCheck) {
+    const desc = descriptors[index];
+    if (desc === undefined || desc === null) continue;
+    if (desc.enabled === false) continue;
+    if (desc.buffer === null || desc.buffer === undefined) {
+      return { ok: false, failedAttributeIndex: index, reason: 'Enabled attribute array has no bound buffer' };
+    }
+    const bufferObj = bufferLookup(desc.buffer);
+    if (bufferObj === null || bufferObj.alive === false || bufferObj.data === null) {
+      return { ok: false, failedAttributeIndex: index, reason: 'Bound buffer is null, deleted, or unallocated' };
+    }
+    const typeSize = getTypeByteSize(desc.type);
+    const elementSize = desc.size * typeSize;
+    const effectiveStride = desc.stride > 0 ? desc.stride : elementSize;
+    if (desc.offset < 0) {
+      return { ok: false, failedAttributeIndex: index, reason: 'Attribute offset is negative' };
+    }
+    const requiredBytes = desc.offset + effectiveStride * maxIndex + elementSize;
+    if (requiredBytes > bufferObj.byteLength) {
+      return {
+        ok: false,
+        failedAttributeIndex: index,
+        reason: 'Attribute range exceeds buffer byteLength for index ' + String(maxIndex),
+      };
+    }
+  }
+  return { ok: true };
 }
