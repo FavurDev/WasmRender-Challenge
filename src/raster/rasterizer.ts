@@ -238,11 +238,7 @@ export function rasterizeTriangle(
           color[o + 2] = 255;
           color[o + 3] = 255;
         }
-        if (state.depthTestEnabled) {
-          if (state.depth.mask) {
-            ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
-          }
-        } else if (state.depth.mask) {
+        if (state.depth.mask) {
           ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
         }
       }

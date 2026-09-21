@@ -877,3 +877,24 @@ describe('Sprint 5 Task 6: M3 first-slice DoD verification suite (Demo Carrier)'
     expect(gl.getError()).toBe(NO_ERROR);
   });
 });
+
+describe('Sprint 6 Task 7: vertex-fetch DataView path regression', () => {
+  it('TC2-style multi-vertex byte-identical fetch across 3 vertices', () => {
+    // Arrange:
+    const storage = new ArrayBuffer(36);
+    new Float32Array(storage).set([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const bufferObj = makeBuffer(storage);
+    const descriptors = descriptors16();
+    descriptors[0] = { enabled: true, size: 3, type: FLOAT, normalized: false, stride: 0, offset: 0, buffer: bufferObj, divisor: 0, genericValue: [0, 0, 0, 1] };
+    const activeAttribs = [{ location: 0, name: 'a_pos', size: 3, type: FLOAT }];
+    // Act:
+    const results: number[][] = [];
+    for (let v = 0; v < 3; v += 1) {
+      const targetMap = new Map<number, Float32Array>([[0, new Float32Array([0, 0, 0, 1])]]);
+      fetchVertexAttributes(descriptors, () => bufferObj, v, activeAttribs, targetMap);
+      results.push([...(targetMap.get(0) as Float32Array)]);
+    }
+    // Assert:
+    expect(results).toEqual([[1, 2, 3, 1], [4, 5, 6, 1], [7, 8, 9, 1]]);
+  });
+});

@@ -193,3 +193,24 @@ describe('Sprint 5 Task 7 RED: depth-test fix Test Cases 3-8', () => {
     expect((ds[2 * W + 2] as number) >>> 0).toBe(clearWord >>> 0);
   });
 });
+describe('Sprint 6 Task 7: depth-write mask gating regression', () => {
+  it('enabled depth test with mask true writes q(0.5) and green pixel', () => {
+    // Arrange:
+    const { state, fb } = setup(true, LESS, true);
+    // Act:
+    rasterizeTriangle(...tri(0.5, [0, 1, 0, 1]), state, fb);
+    // Assert:
+    expect(pxColor(fb, 2, 2)).toEqual([0, 255, 0, 255]);
+    expect(Math.abs(depth24At(fb, 2, 2) - q(0.5))).toBeLessThanOrEqual(1);
+  });
+
+  it('disabled depth test with mask true writes q(0.3) and color', () => {
+    // Arrange:
+    const { state, fb } = setup(false, LESS, true);
+    // Act:
+    rasterizeTriangle(...tri(0.3, [0, 0, 1, 1]), state, fb);
+    // Assert:
+    expect(pxColor(fb, 2, 2)).toEqual([0, 0, 255, 255]);
+    expect(Math.abs(depth24At(fb, 2, 2) - q(0.3))).toBeLessThanOrEqual(1);
+  });
+});

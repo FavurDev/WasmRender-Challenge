@@ -162,12 +162,24 @@ export function validateVertexAttribRange(
   return { ok: true };
 }
 
+const DATA_VIEW_CACHE = new WeakMap<ArrayBuffer, DataView>();
+
+function getCachedView(data: ArrayBuffer, viewCache?: Map<ArrayBuffer, DataView>): DataView {
+  const cached = viewCache?.get(data) ?? DATA_VIEW_CACHE.get(data);
+  if (cached !== undefined) return cached;
+  const view = new DataView(data);
+  DATA_VIEW_CACHE.set(data, view);
+  viewCache?.set(data, view);
+  return view;
+}
+
 export function fetchVertexAttributes(
   descriptors: ReadonlyArray<VertexAttribDescriptor>,
   bufferLookup: (bufferHandle: unknown) => BufferObject | null,
   vertexIndex: number,
   activeAttribs: ReadonlyArray<ActiveInfo>,
   targetMap: Map<number, Float32Array>,
+  viewCache?: Map<ArrayBuffer, DataView>,
 ): Map<number, Float32Array> {
   for (const attrib of activeAttribs) {
     const slot = attrib.location;
@@ -204,7 +216,7 @@ export function fetchVertexAttributes(
     const elementSize = desc.size * typeSize;
     const effectiveStride = desc.stride > 0 ? desc.stride : elementSize;
     const vertexByteOffset = desc.offset + effectiveStride * vertexIndex;
-    const view = new DataView(bufferObj.data);
+    const view = getCachedView(bufferObj.data, viewCache);
     const numComponents = desc.size;
     targetVec[0] = extractComponent(view, vertexByteOffset + 0 * typeSize, desc.type, desc.normalized);
     if (numComponents >= 2) {
