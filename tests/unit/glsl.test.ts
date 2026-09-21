@@ -620,3 +620,310 @@ describe('GLSL __VERSION__ reseeding (Sprint 4 TD-008 TEST 8)', () => {
     expect(res300.ok).toBe(true);
   });
 });
+
+/* Sprint 4 Task 6 red-phase facade tests (TESTS T6-1..T6-10) — additive. */
+
+// IMPLEMENTATION DECISION: structural facade interface + unknown-cast keeps tsc
+// clean in red phase while missing methods throw TypeError at runtime.
+// Rationale: direct calls to non-existent methods break tsc; local interface is type-safe.
+// Alternatives: (a) direct untyped calls (tsc red), (b) // @ts-expect-error per call (noisy).
+import { createSoftwareWebGLContext } from '../../src/entry';
+import {
+  COMPILE_STATUS,
+  FRAGMENT_SHADER,
+  INVALID_OPERATION,
+  INVALID_VALUE,
+  LINK_STATUS,
+  VERTEX_SHADER,
+} from '../../src/gl/constants';
+import { executeFragment } from '../../src/glsl/interpreter';
+import type { InterpreterHost } from '../../src/glsl/interpreter';
+
+type ShaderHandleStub = { readonly __brand: 'shader' };
+type ProgramHandleStub = { readonly __brand: 'program' };
+type UniformLocStub = { readonly __brand: 'loc' };
+
+interface Task6Facade {
+  createShader(type: number): ShaderHandleStub;
+  shaderSource(shader: ShaderHandleStub, source: string): void;
+  compileShader(shader: ShaderHandleStub): void;
+  getShaderParameter(shader: ShaderHandleStub, pname: number): boolean;
+  getShaderInfoLog(shader: ShaderHandleStub): string;
+  createProgram(): ProgramHandleStub;
+  attachShader(program: ProgramHandleStub, shader: ShaderHandleStub): void;
+  linkProgram(program: ProgramHandleStub): void;
+  getProgramParameter(program: ProgramHandleStub, pname: number): boolean;
+  getProgramInfoLog(program: ProgramHandleStub): string;
+  useProgram(program: ProgramHandleStub | null): void;
+  getUniformLocation(program: ProgramHandleStub, name: string): UniformLocStub | null;
+  uniformMatrix4fv(loc: UniformLocStub | null, transpose: boolean, value: Float32Array): void;
+  uniform4fv(loc: UniformLocStub | null, v: Float32Array): void;
+  uniform4f(loc: UniformLocStub | null, x: number, y: number, z: number, w: number): void;
+  bindAttribLocation(program: ProgramHandleStub, index: number, name: string): void;
+  getActiveAttrib(program: ProgramHandleStub, index: number): { name: string } | null;
+  getAttribLocation(program: ProgramHandleStub, name: string): number;
+  getError(): number;
+}
+
+function facadeOf(ctx: NonNullable<ReturnType<typeof createSoftwareWebGLContext>>): Task6Facade {
+  return ctx as unknown as Task6Facade;
+}
+
+function linkPair(gl: Task6Facade, vsrc: string, fsrc: string): ProgramHandleStub {
+  const vs = gl.createShader(VERTEX_SHADER);
+  const fs = gl.createShader(FRAGMENT_SHADER);
+  const p = gl.createProgram();
+  gl.shaderSource(vs, vsrc);
+  gl.shaderSource(fs, fsrc);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  return p;
+}
+
+describe('Task6 facade - compile failure plumbing (T6-1, AC-1)', () => {
+  it('compileShader semantic error sets COMPILE_STATUS false and logs diagnostic without GL error', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const shader = gl.createShader(VERTEX_SHADER);
+    gl.shaderSource(shader, 'void main() { float x = true; }');
+    // Act:
+    gl.compileShader(shader);
+    const status = gl.getShaderParameter(shader, COMPILE_STATUS);
+    const log = gl.getShaderInfoLog(shader);
+    const err = gl.getError();
+    // Assert:
+    expect(status).toBe(false);
+    expect(log.startsWith('ERROR: 0:')).toBe(true);
+    expect(err).toBe(NO_ERROR);
+  });
+});
+
+describe('Task6 facade - compile success plumbing (T6-2, AC-2)', () => {
+  it('compileShader success sets COMPILE_STATUS true and empty log', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const shader = gl.createShader(FRAGMENT_SHADER);
+    gl.shaderSource(shader, 'precision mediump float; void main() { gl_FragColor = vec4(1.0); }');
+    // Act:
+    gl.compileShader(shader);
+    const status = gl.getShaderParameter(shader, COMPILE_STATUS);
+    const log = gl.getShaderInfoLog(shader);
+    const err = gl.getError();
+    // Assert:
+    expect(status).toBe(true);
+    expect(log).toBe('');
+    expect(err).toBe(NO_ERROR);
+  });
+});
+
+describe('Task6 facade - link unwritten varying (T6-3, AC-3)', () => {
+  it('linkProgram unwritten varying sets LINK_STATUS false with log', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const p = linkPair(
+      gl,
+      'void main() { gl_Position = vec4(0.0); }',
+      'precision mediump float; varying vec4 vColor; void main() { gl_FragColor = vColor; }',
+    );
+    void p;
+    const program = linkPair(
+      gl,
+      'void main() { gl_Position = vec4(0.0); }',
+      'precision mediump float; varying vec4 vColor; void main() { gl_FragColor = vColor; }',
+    );
+    void program;
+    // Act:
+    const prog = linkPair(
+      gl,
+      'void main() { gl_Position = vec4(0.0); }',
+      'precision mediump float; varying vec4 vColor; void main() { gl_FragColor = vColor; }',
+    );
+    const status = gl.getProgramParameter(prog, LINK_STATUS);
+    const log = gl.getProgramInfoLog(prog);
+    const err = gl.getError();
+    // Assert:
+    expect(status).toBe(false);
+    expect(log.startsWith('ERROR: 0:')).toBe(true);
+    expect(log).toContain('vColor');
+    expect(err).toBe(NO_ERROR);
+  });
+});
+
+describe('Task6 facade - link no shaders (T6-4, AC-3)', () => {
+  it('linkProgram with no attached shaders records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const program = gl.createProgram();
+    // Act:
+    gl.linkProgram(program);
+    const err = gl.getError();
+    const status = gl.getProgramParameter(program, LINK_STATUS);
+    // Assert:
+    expect(err).toBe(INVALID_OPERATION);
+    expect(status).toBe(false);
+  });
+});
+
+describe('Task6 facade - matrix transpose (T6-5, AC-4)', () => {
+  it('uniformMatrix4fv transpose=true records INVALID_VALUE and leaves store untouched', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const program = linkPair(
+      gl,
+      'uniform mat4 uMatrix; void main() { gl_Position = uMatrix * vec4(1.0); }',
+      'precision mediump float; void main() { gl_FragColor = vec4(1.0); }',
+    );
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uMatrix');
+    const linked0 = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle
+      .linkedProgram;
+    const before = Array.from(linked0.uniformStore.f32);
+    // Act:
+    gl.uniformMatrix4fv(loc, true, new Float32Array(16));
+    const err = gl.getError();
+    const linked1 = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle
+      .linkedProgram;
+    // Assert:
+    expect(err).toBe(INVALID_VALUE);
+    expect(Array.from(linked1.uniformStore.f32)).toEqual(before);
+  });
+});
+
+describe('Task6 facade - wrong program location (T6-6, AC-5)', () => {
+  it('uniform4fv wrong-program location records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const p1 = linkPair(
+      gl,
+      'attribute vec4 aPos; void main() { gl_Position = aPos; }',
+      'precision mediump float; uniform vec4 uColor1; void main() { gl_FragColor = uColor1; }',
+    );
+    const p2 = linkPair(
+      gl,
+      'attribute vec4 aPos; void main() { gl_Position = aPos; }',
+      'precision mediump float; uniform vec4 uColor2; void main() { gl_FragColor = uColor2; }',
+    );
+    gl.useProgram(p1);
+    const loc2 = gl.getUniformLocation(p2, 'uColor2');
+    // Act:
+    gl.uniform4fv(loc2, new Float32Array([1, 0, 0, 1]));
+    const err = gl.getError();
+    // Assert:
+    expect(err).toBe(INVALID_OPERATION);
+  });
+});
+
+describe('Task6 facade - array count mismatch (T6-7, AC-6)', () => {
+  it('uniform4fv array length mismatch records INVALID_VALUE', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const p = linkPair(
+      gl,
+      'attribute vec4 aPos; void main() { gl_Position = aPos; }',
+      'precision mediump float; uniform vec4 uColor; void main() { gl_FragColor = uColor; }',
+    );
+    gl.useProgram(p);
+    const loc = gl.getUniformLocation(p, 'uColor');
+    // Act:
+    gl.uniform4fv(loc, new Float32Array([1.0, 2.0, 3.0]));
+    const err = gl.getError();
+    // Assert:
+    expect(err).toBe(INVALID_VALUE);
+  });
+});
+
+describe('Task6 facade - bindAttribLocation (T6-8, AC-7)', () => {
+  it('bindAttribLocation pre-link affects next linkProgram reflection', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const vs = gl.createShader(VERTEX_SHADER);
+    const fs = gl.createShader(FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    gl.shaderSource(vs, 'attribute vec4 aPos; void main() { gl_Position = aPos; }');
+    gl.shaderSource(fs, 'precision mediump float; void main() { gl_FragColor = vec4(1.0); }');
+    gl.compileShader(vs);
+    gl.compileShader(fs);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    // Act:
+    gl.bindAttribLocation(program, 5, 'aPos');
+    gl.linkProgram(program);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    const err = gl.getError();
+    // Assert:
+    expect(loc).toBe(5);
+    expect(err).toBe(NO_ERROR);
+  });
+});
+
+describe('Task6 facade - useProgram unlinked (T6-9, AC-8)', () => {
+  it('useProgram unlinked program records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const program = gl.createProgram();
+    // Act:
+    gl.useProgram(program);
+    const err = gl.getError();
+    // Assert:
+    expect(err).toBe(INVALID_OPERATION);
+  });
+});
+
+describe('Task6 facade - uniform reaches executeFragment (T6-10, integration)', () => {
+  it('uniform4f values reach executeFragment', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const program = linkPair(
+      gl,
+      'attribute vec4 aPos; void main() { gl_Position = aPos; }',
+      'precision mediump float; uniform vec4 uColor; void main() { gl_FragColor = uColor; }',
+    );
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uColor');
+    gl.uniform4f(loc, 0.25, 0.5, 0.75, 1.0);
+    const linked = (program as unknown as { handle: { linkedProgram: Parameters<typeof executeFragment>[0] } }).handle
+      .linkedProgram;
+    const host: InterpreterHost = {
+      readUniform: (slot: number) => linked.uniformStore.f32.slice(slot, slot + 4),
+      sample: (_slot: number, _coord: Float32Array) => new Float32Array([0, 0, 0, 1]),
+    };
+    // Act:
+    const result = executeFragment(linked, new Map<string, Float32Array>(), host);
+    // Assert:
+    expect(Array.from(result.color)).toEqual([0.25, 0.5, 0.75, 1.0]);
+  });
+});
+
+describe('Task6 facade - hostile uniform input never throws (HIGH-001)', () => {
+  it('uniform4fv with null array records INVALID_VALUE without throwing or mutating store', () => {
+    // Arrange:
+    const gl = facadeOf(createSoftwareWebGLContext({ width: 8, height: 8 })!);
+    const program = linkPair(
+      gl,
+      'attribute vec4 aPos; void main() { gl_Position = aPos; }',
+      'precision mediump float; uniform vec4 uColor; void main() { gl_FragColor = uColor; }',
+    );
+    gl.useProgram(program);
+    const loc = gl.getUniformLocation(program, 'uColor');
+    const linked0 = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle
+      .linkedProgram;
+    const before = Array.from(linked0.uniformStore.f32);
+    // Act:
+    let threw = false;
+    try {
+      gl.uniform4fv(loc, null as unknown as Float32Array);
+    } catch {
+      threw = true;
+    }
+    const err = gl.getError();
+    const linked1 = (program as unknown as { handle: { linkedProgram: { uniformStore: { f32: Float32Array } } } }).handle
+      .linkedProgram;
+    // Assert:
+    expect(threw).toBe(false);
+    expect(err).toBe(INVALID_VALUE);
+    expect(Array.from(linked1.uniformStore.f32)).toEqual(before);
+  });
+});
