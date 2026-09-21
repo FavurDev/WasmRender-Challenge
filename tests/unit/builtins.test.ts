@@ -210,76 +210,130 @@ describe('Builtins - Edge cases', () => {
   });
 });
 
-/* Sprint 4 Task 3 — sampling red-phase tests (TEST 1-10). Appended; existing 16 tests untouched. */
+/* Sprint 6 Task 5 remediation (TD-010) — sampling tests on REAL TextureObject (TDD). Appended; existing tests above untouched. */
 import type { Value } from '../../src/glsl/builtins';
+import type { MipLevel, TextureObject } from '../../src/gl/texture';
+import {
+  CLAMP_TO_EDGE,
+  LINEAR,
+  LINEAR_MIPMAP_LINEAR,
+  NEAREST,
+  REPEAT,
+  RGBA,
+  TEXTURE_2D,
+  TEXTURE_CUBE_MAP,
+  TEXTURE_CUBE_MAP_NEGATIVE_X,
+  TEXTURE_CUBE_MAP_NEGATIVE_Y,
+  TEXTURE_CUBE_MAP_NEGATIVE_Z,
+  TEXTURE_CUBE_MAP_POSITIVE_X,
+  TEXTURE_CUBE_MAP_POSITIVE_Y,
+  TEXTURE_CUBE_MAP_POSITIVE_Z,
+  UNSIGNED_BYTE,
+} from '../../src/gl/constants';
 
-const T2D = 0x0de1;
-const TCUBE = 0x8513;
-const NEAREST = 0x2600;
-const LINEAR = 0x2601;
-const CLAMP = 0x812f;
-const REPEAT = 0x2901;
-const LMML = 0x2703;
-
-function tex2x2(filterMode: number) {
+function tex2x2(filterMode: number): Value {
   // Arrange helper: 2x2 fixture — (0,0) Red, (1,0) Green, (0,1) Blue, (1,1) Yellow.
-  const data = new Float32Array([1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1]);
-  return {
+  const data = new Uint8Array([
+    255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
+  ]);
+  const level0: MipLevel = {
+    width: 2,
+    height: 2,
+    internalFormat: RGBA,
+    type: UNSIGNED_BYTE,
+    data,
+  };
+  const tex: TextureObject = {
     id: 101,
     alive: true,
-    target: T2D,
-    levels: [{ width: 2, height: 2, data }],
-    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: filterMode, magFilter: filterMode },
+    target: TEXTURE_2D,
+    levels2D: new Map([[0, level0]]),
+    levelsCube: new Map(),
+    sampler: { wrapS: CLAMP_TO_EDGE, wrapT: CLAMP_TO_EDGE, minFilter: filterMode, magFilter: filterMode },
     isNPOT: false,
-  } as unknown as Value;
+    completeness: null,
+  };
+  return tex as unknown as Value;
 }
 
-function texMipped() {
+function texMipped(): Value {
   // Arrange helper: L0 4x4 Red, L1 2x2 Green, L2 1x1 Blue.
-  const red = new Float32Array(4 * 4 * 4).fill(0);
+  const red = new Uint8Array(4 * 4 * 4);
   for (let i = 0; i < 16; i++) {
-    red[i * 4] = 1;
-    red[i * 4 + 3] = 1;
+    red[i * 4] = 255;
+    red[i * 4 + 1] = 0;
+    red[i * 4 + 2] = 0;
+    red[i * 4 + 3] = 255;
   }
-  const green = new Float32Array(2 * 2 * 4).fill(0);
+  const green = new Uint8Array(2 * 2 * 4);
   for (let i = 0; i < 4; i++) {
-    green[i * 4 + 1] = 1;
-    green[i * 4 + 3] = 1;
+    green[i * 4] = 0;
+    green[i * 4 + 1] = 255;
+    green[i * 4 + 2] = 0;
+    green[i * 4 + 3] = 255;
   }
-  const blue = new Float32Array([0, 0, 1, 1]);
-  return {
+  const blue = new Uint8Array([0, 0, 255, 255]);
+  const lvl0: MipLevel = { width: 4, height: 4, internalFormat: RGBA, type: UNSIGNED_BYTE, data: red };
+  const lvl1: MipLevel = { width: 2, height: 2, internalFormat: RGBA, type: UNSIGNED_BYTE, data: green };
+  const lvl2: MipLevel = { width: 1, height: 1, internalFormat: RGBA, type: UNSIGNED_BYTE, data: blue };
+  const tex: TextureObject = {
     id: 102,
     alive: true,
-    target: T2D,
-    levels: [
-      { width: 4, height: 4, data: red },
-      { width: 2, height: 2, data: green },
-      { width: 1, height: 1, data: blue },
-    ],
-    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: 0x2703, magFilter: LINEAR },
+    target: TEXTURE_2D,
+    levels2D: new Map([
+      [0, lvl0],
+      [1, lvl1],
+      [2, lvl2],
+    ]),
+    levelsCube: new Map(),
+    sampler: { wrapS: CLAMP_TO_EDGE, wrapT: CLAMP_TO_EDGE, minFilter: LINEAR_MIPMAP_LINEAR, magFilter: LINEAR },
     isNPOT: false,
-  } as unknown as Value;
+    completeness: null,
+  };
+  return tex as unknown as Value;
 }
 
-function texCube() {
+function texCube(): Value {
   // Arrange helper: 6 1x1 faces — +X Red, -X Green, +Y Blue, -Y Yellow, +Z Magenta, -Z Cyan.
   const colors: number[][] = [
-    [1, 0, 0, 1],
-    [0, 1, 0, 1],
-    [0, 0, 1, 1],
-    [1, 1, 0, 1],
-    [1, 0, 1, 1],
-    [0, 1, 1, 1],
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 0, 255],
+    [255, 0, 255, 255],
+    [0, 255, 255, 255],
   ];
-  const faces = colors.map((c) => [{ width: 1, height: 1, data: new Float32Array(c) }]);
-  return {
+  const faces = [
+    TEXTURE_CUBE_MAP_POSITIVE_X,
+    TEXTURE_CUBE_MAP_NEGATIVE_X,
+    TEXTURE_CUBE_MAP_POSITIVE_Y,
+    TEXTURE_CUBE_MAP_NEGATIVE_Y,
+    TEXTURE_CUBE_MAP_POSITIVE_Z,
+    TEXTURE_CUBE_MAP_NEGATIVE_Z,
+  ];
+  const levelsCube = new Map<number, Map<number, MipLevel>>();
+  for (let i = 0; i < 6; i++) {
+    const c = colors[i]!;
+    const lvl: MipLevel = {
+      width: 1,
+      height: 1,
+      internalFormat: RGBA,
+      type: UNSIGNED_BYTE,
+      data: new Uint8Array(c),
+    };
+    levelsCube.set(faces[i]!, new Map([[0, lvl]]));
+  }
+  const tex: TextureObject = {
     id: 103,
     alive: true,
-    target: TCUBE,
-    levels: faces,
-    sampler: { wrapS: CLAMP, wrapT: CLAMP, minFilter: NEAREST, magFilter: NEAREST },
+    target: TEXTURE_CUBE_MAP,
+    levels2D: new Map(),
+    levelsCube,
+    sampler: { wrapS: CLAMP_TO_EDGE, wrapT: CLAMP_TO_EDGE, minFilter: NEAREST, magFilter: NEAREST },
     isNPOT: false,
-  } as unknown as Value;
+    completeness: null,
+  };
+  return tex as unknown as Value;
 }
 
 describe('Builtins - Sampling: NEAREST exact texel on 2x2 fixture', () => {
@@ -317,26 +371,55 @@ describe('Builtins - Sampling: LINEAR fround-normalized average of two texels', 
 describe('Builtins - Sampling: Incomplete texture [0,0,0,1] no-throw rule', () => {
   it('missing base level, NPOT-mipmap-REPEAT, and 1-face cube all yield opaque black', () => {
     // Arrange:
-    const t1 = { id: 1, alive: true, target: T2D, levels: [] } as unknown as Value;
-    const t2 = {
+    const t1: TextureObject = {
+      id: 1,
+      alive: true,
+      target: TEXTURE_2D,
+      levels2D: new Map(),
+      levelsCube: new Map(),
+      sampler: { wrapS: CLAMP_TO_EDGE, wrapT: CLAMP_TO_EDGE, minFilter: NEAREST, magFilter: NEAREST },
+      isNPOT: false,
+      completeness: null,
+    };
+    const npotLvl: MipLevel = {
+      width: 3,
+      height: 3,
+      internalFormat: RGBA,
+      type: UNSIGNED_BYTE,
+      data: new Uint8Array(3 * 3 * 4),
+    };
+    const t2: TextureObject = {
       id: 2,
       alive: true,
-      target: T2D,
-      levels: [{ width: 3, height: 3, data: new Float32Array(36) }],
+      target: TEXTURE_2D,
+      levels2D: new Map([[0, npotLvl]]),
+      levelsCube: new Map(),
+      sampler: { wrapS: REPEAT, wrapT: REPEAT, minFilter: LINEAR_MIPMAP_LINEAR, magFilter: LINEAR },
       isNPOT: true,
-      sampler: { minFilter: LMML, magFilter: LINEAR, wrapS: REPEAT, wrapT: REPEAT },
-    } as unknown as Value;
-    const t3 = {
+      completeness: null,
+    };
+    const oneFace: MipLevel = {
+      width: 2,
+      height: 2,
+      internalFormat: RGBA,
+      type: UNSIGNED_BYTE,
+      data: new Uint8Array(2 * 2 * 4),
+    };
+    const t3: TextureObject = {
       id: 3,
       alive: true,
-      target: TCUBE,
-      levels: [[{ width: 2, height: 2, data: new Float32Array(16) }]],
-    } as unknown as Value;
+      target: TEXTURE_CUBE_MAP,
+      levels2D: new Map(),
+      levelsCube: new Map([[TEXTURE_CUBE_MAP_POSITIVE_X, new Map([[0, oneFace]])]]),
+      sampler: { wrapS: CLAMP_TO_EDGE, wrapT: CLAMP_TO_EDGE, minFilter: NEAREST, magFilter: NEAREST },
+      isNPOT: false,
+      completeness: null,
+    };
     const coord = new Float32Array([0.5, 0.5]);
     // Act:
-    const r1 = evaluateBuiltin('texture2D', [t1, coord], 100) as Float32Array;
-    const r2 = evaluateBuiltin('texture2D', [t2, coord], 100) as Float32Array;
-    const r3 = evaluateBuiltin('textureCube', [t3, new Float32Array([1, 0, 0])], 100) as Float32Array;
+    const r1 = evaluateBuiltin('texture2D', [t1 as unknown as Value, coord], 100) as Float32Array;
+    const r2 = evaluateBuiltin('texture2D', [t2 as unknown as Value, coord], 100) as Float32Array;
+    const r3 = evaluateBuiltin('textureCube', [t3 as unknown as Value, new Float32Array([1, 0, 0])], 100) as Float32Array;
     // Assert:
     for (const r of [r1, r2, r3]) {
       expect(r).toBeInstanceOf(Float32Array);
@@ -389,7 +472,6 @@ describe('Builtins - Sampling: Hostile input never throws on sampling paths', ()
       () => evaluateBuiltin('texture2D', [], 100),
       () => evaluateBuiltin('texture2D', [null as unknown as Value, undefined as unknown as Value], 100),
       () => evaluateBuiltin('texture2D', ['notAnObject' as unknown as Value, 123 as unknown as Value], 100),
-      () => evaluateBuiltin('texture', [tex, new Float32Array([NaN, Infinity])], 300),
       () => evaluateBuiltin('textureProj', [tex, new Float32Array([1.0, 1.0, 0.0])], 300),
       () => evaluateBuiltin('texelFetch', [tex, new Int32Array([-10, 100]), 0], 300),
     ];
@@ -402,6 +484,14 @@ describe('Builtins - Sampling: Hostile input never throws on sampling paths', ()
       expect(out).toBeInstanceOf(Float32Array);
       expect(Array.from(out as Float32Array)).toEqual([0, 0, 0, 1]);
     }
+    // Arrange: NaN/Infinity coords must also never throw (result asserted only as Float32Array).
+    let nanOut: unknown;
+    // Act:
+    expect(() => {
+      nanOut = evaluateBuiltin('texture', [tex, new Float32Array([NaN, Infinity])], 300);
+    }).not.toThrow();
+    // Assert:
+    expect(nanOut).toBeInstanceOf(Float32Array);
   });
 });
 
@@ -433,6 +523,41 @@ describe('Builtins - Sampling: textureLod explicit mip-level selection', () => {
     expect(Array.from(r0)).toEqual([1, 0, 0, 1]);
     expect(Array.from(r1)).toEqual([0, 1, 0, 1]);
     expect(Array.from(r2)).toEqual([0, 0, 1, 1]);
+  });
+});
+
+describe('Builtins - Sampling: Legacy placeholder symbols absent from builtins.ts', () => {
+  it('no legacy function/const/interface declarations remain in builtins.ts source', async () => {
+    // Arrange:
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('src/glsl/builtins.ts', 'utf8');
+    const names = [
+      'asTex',
+      'samplerOf',
+      'applyWrap',
+      'isPow2',
+      'isMipFilter',
+      'sampleMipLevel',
+      'fetchTexel',
+      'W_CLAMP',
+      'W_REPEAT',
+      'W_MIRROR',
+      'F_NMN',
+      'F_LMN',
+      'F_NML',
+      'F_LML',
+      'MipLevel',
+      'SamplerParams',
+      'TextureObject',
+    ];
+    // Act:
+    const hits: string[] = [];
+    for (const name of names) {
+      const re = new RegExp(`(?:function|const|interface)\\s+${name}\\b`);
+      if (re.test(src)) hits.push(name);
+    }
+    // Assert:
+    expect(hits).toEqual([]);
   });
 });
 
