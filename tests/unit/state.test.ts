@@ -483,3 +483,226 @@ describe('PipelineState - restore', () => {
     expect(state.snapshot()).toEqual(original);
   });
 });
+/** Sprint 5 Task 3 TDD RED-phase tests — vertex attrib state + buffer facade wiring. Appended; lines above untouched. */
+import { WebGL1Context } from '../../src/gl/webgl1-context';
+import {
+  ARRAY_BUFFER,
+  BUFFER_SIZE,
+  BUFFER_USAGE,
+  FLOAT,
+  SHORT,
+  STATIC_DRAW,
+} from '../../src/gl/constants';
+
+function createBoundContext(): WebGL1Context {
+  // Arrange helper: fresh context with an ARRAY_BUFFER bound.
+  const gl = new WebGL1Context();
+  const buf = (gl as unknown as { createBuffer: () => unknown }).createBuffer() as never;
+  (gl as unknown as { bindBuffer: (t: number, b: unknown) => void }).bindBuffer(ARRAY_BUFFER, buf);
+  return gl;
+}
+
+describe('Sprint 5 Task 3 - vertex attrib state (RED)', () => {
+  it('TEST 1: descriptor capture at pointer time records size/stride/offset/buffer', () => {
+    // Arrange:
+    const gl = new WebGL1Context();
+    const buf = (gl as unknown as { createBuffer: () => unknown }).createBuffer();
+    (gl as unknown as { bindBuffer: (t: number, b: unknown) => void }).bindBuffer(ARRAY_BUFFER, buf);
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 3, FLOAT, false, 12, 4);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    const desc = (gl as unknown as { getVertexAttribDescriptor: (i: number) => { size: number; type: number; normalized: boolean; stride: number; offset: number; buffer: unknown } }).getVertexAttribDescriptor(0);
+    expect(desc.size).toBe(3);
+    expect(desc.type).toBe(FLOAT);
+    expect(desc.normalized).toBe(false);
+    expect(desc.stride).toBe(12);
+    expect(desc.offset).toBe(4);
+    expect(desc.buffer).toBe(buf);
+  });
+
+  it('TEST 2: stride 256 rejected with INVALID_VALUE, descriptor stays default', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 3, FLOAT, false, 256, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    const desc = (gl as unknown as { getVertexAttribDescriptor: (i: number) => { buffer: unknown } }).getVertexAttribDescriptor(0);
+    expect(desc.buffer).toBeNull();
+  });
+
+  it('TEST 3: misaligned offset on FLOAT rejected with INVALID_VALUE', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 3, FLOAT, false, 16, 2);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    const desc = (gl as unknown as { getVertexAttribDescriptor: (i: number) => { buffer: unknown } }).getVertexAttribDescriptor(0);
+    expect(desc.buffer).toBeNull();
+  });
+
+  it('TEST 4: misaligned stride on SHORT rejected with INVALID_VALUE', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 2, SHORT, false, 3, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    const desc = (gl as unknown as { getVertexAttribDescriptor: (i: number) => { buffer: unknown } }).getVertexAttribDescriptor(0);
+    expect(desc.buffer).toBeNull();
+  });
+
+  it('TEST 5: index 16 rejected with INVALID_VALUE across all four method families', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    const g = gl as unknown as {
+      vertexAttribPointer: (...a: unknown[]) => void;
+      enableVertexAttribArray: (i: number) => void;
+      disableVertexAttribArray: (i: number) => void;
+      vertexAttrib4f: (...a: unknown[]) => void;
+    };
+    // Act:
+    g.vertexAttribPointer(16, 4, FLOAT, false, 0, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    // Act:
+    g.enableVertexAttribArray(16);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    // Act:
+    g.disableVertexAttribArray(16);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    // Act:
+    g.vertexAttrib4f(16, 1, 2, 3, 4);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+  });
+
+  it('TEST 6: bad size 0 and 5 rejected with INVALID_VALUE', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    const g = gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void };
+    // Act:
+    g.vertexAttribPointer(0, 0, FLOAT, false, 0, 0);
+    const err1 = gl.getError();
+    g.vertexAttribPointer(0, 5, FLOAT, false, 0, 0);
+    const err2 = gl.getError();
+    // Assert:
+    expect(err1).toBe(INVALID_VALUE);
+    expect(err2).toBe(INVALID_VALUE);
+  });
+
+  it('TEST 7: bad type rejected with INVALID_ENUM', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 3, 0x1234, false, 0, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_ENUM);
+  });
+
+  it('TEST 8: no ARRAY_BUFFER bound records INVALID_OPERATION', () => {
+    // Arrange:
+    const gl = new WebGL1Context();
+    // Act:
+    (gl as unknown as { vertexAttribPointer: (...a: unknown[]) => void }).vertexAttribPointer(0, 3, FLOAT, false, 0, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+  });
+
+  it('TEST 9: enable and disable vertex attrib array toggles enabled flag', () => {
+    // Arrange:
+    const gl = new WebGL1Context();
+    const g = gl as unknown as {
+      enableVertexAttribArray: (i: number) => void;
+      disableVertexAttribArray: (i: number) => void;
+      getVertexAttribDescriptor: (i: number) => { enabled: boolean };
+    };
+    // Act:
+    g.enableVertexAttribArray(2);
+    const state1 = g.getVertexAttribDescriptor(2).enabled;
+    g.disableVertexAttribArray(2);
+    const state2 = g.getVertexAttribDescriptor(2).enabled;
+    // Assert:
+    expect(state1).toBe(true);
+    expect(state2).toBe(false);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it('TEST 10: generic value writes include component defaults', () => {
+    // Arrange:
+    const gl = new WebGL1Context();
+    const g = gl as unknown as {
+      vertexAttrib1f: (i: number, x: number) => void;
+      vertexAttrib2f: (i: number, x: number, y: number) => void;
+      vertexAttrib3f: (i: number, x: number, y: number, z: number) => void;
+      vertexAttrib4f: (i: number, x: number, y: number, z: number, w: number) => void;
+      getVertexAttribDescriptor: (i: number) => { genericValue: readonly number[] };
+    };
+    // Act:
+    g.vertexAttrib1f(1, 5.0);
+    const val1 = g.getVertexAttribDescriptor(1).genericValue;
+    g.vertexAttrib2f(2, 3.0, 4.0);
+    const val2 = g.getVertexAttribDescriptor(2).genericValue;
+    g.vertexAttrib3f(3, 1.0, 2.0, 3.0);
+    const val3 = g.getVertexAttribDescriptor(3).genericValue;
+    g.vertexAttrib4f(4, 7.0, 8.0, 9.0, 10.0);
+    const val4 = g.getVertexAttribDescriptor(4).genericValue;
+    // Assert:
+    expect([...val1]).toEqual([5.0, 0.0, 0.0, 1.0]);
+    expect([...val2]).toEqual([3.0, 4.0, 0.0, 1.0]);
+    expect([...val3]).toEqual([1.0, 2.0, 3.0, 1.0]);
+    expect([...val4]).toEqual([7.0, 8.0, 9.0, 10.0]);
+  });
+
+  it('TEST 11: atomicity - rejected call leaves prior descriptor intact', () => {
+    // Arrange:
+    const gl = createBoundContext();
+    const g = gl as unknown as {
+      vertexAttribPointer: (...a: unknown[]) => void;
+      getVertexAttribDescriptor: (i: number) => Record<string, unknown>;
+    };
+    g.vertexAttribPointer(0, 2, FLOAT, false, 8, 0);
+    const originalDesc = JSON.parse(JSON.stringify(g.getVertexAttribDescriptor(0))) as Record<string, unknown>;
+    // Act:
+    g.vertexAttribPointer(0, 5, FLOAT, false, 8, 0);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(JSON.parse(JSON.stringify(g.getVertexAttribDescriptor(0))) as Record<string, unknown>).toEqual(originalDesc);
+  });
+
+  it('TEST 12: buffer facade delegation smoke cases', () => {
+    // Arrange:
+    const gl = new WebGL1Context();
+    const g = gl as unknown as {
+      createBuffer: () => unknown;
+      isBuffer: (b: unknown) => boolean;
+      bindBuffer: (t: number, b: unknown) => void;
+      bufferData: (t: number, d: unknown, u: number) => void;
+      bufferSubData: (t: number, o: number, d: unknown) => void;
+      getBufferParameter: (t: number, p: number) => unknown;
+      deleteBuffer: (b: unknown) => void;
+    };
+    // Act:
+    const buf = g.createBuffer();
+    const isBuf = g.isBuffer(buf);
+    g.bindBuffer(ARRAY_BUFFER, buf);
+    const data = new Float32Array([1.0, 2.0, 3.0, 4.0]);
+    g.bufferData(ARRAY_BUFFER, data, STATIC_DRAW);
+    const size = g.getBufferParameter(ARRAY_BUFFER, BUFFER_SIZE);
+    const usage = g.getBufferParameter(ARRAY_BUFFER, BUFFER_USAGE);
+    const sub = new Float32Array([9.0]);
+    g.bufferSubData(ARRAY_BUFFER, 0, sub);
+    g.deleteBuffer(buf);
+    const isBufAfter = g.isBuffer(buf);
+    // Assert:
+    expect(isBuf).toBe(true);
+    expect(size).toBe(16);
+    expect(usage).toBe(STATIC_DRAW);
+    expect(isBufAfter).toBe(false);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});

@@ -120,6 +120,7 @@ export const RGBA: GLenum = 0x1908;
 export const LUMINANCE: GLenum = 0x1909;
 export const LUMINANCE_ALPHA: GLenum = 0x190a;
 export const UNSIGNED_BYTE: GLenum = 0x1401;
+export const FIXED: GLenum = 0x140c;
 export const UNSIGNED_SHORT: GLenum = 0x1403;
 export const UNSIGNED_INT: GLenum = 0x1405;
 export const FLOAT: GLenum = 0x1406;

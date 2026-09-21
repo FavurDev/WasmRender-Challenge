@@ -4,13 +4,17 @@
 import {
   ACTIVE_ATTRIBUTES,
   ACTIVE_UNIFORMS,
+  ARRAY_BUFFER,
   ATTACHED_SHADERS,
+  BYTE,
   COLOR_BUFFER_BIT,
   COLOR_CLEAR_VALUE,
   COMPILE_STATUS,
   DELETE_STATUS,
   DEPTH_BUFFER_BIT,
   DEPTH_CLEAR_VALUE,
+  FIXED,
+  FLOAT,
   FRAGMENT_SHADER,
   INVALID_ENUM,
   INVALID_OPERATION,
@@ -18,19 +22,24 @@ import {
   LINK_STATUS,
   SCISSOR_BOX,
   SHADER_TYPE,
+  SHORT,
   STENCIL_BUFFER_BIT,
   STENCIL_CLEAR_VALUE,
   TRIANGLES,
   VALIDATE_STATUS,
   VERSION,
   VERSION_STRING_WEBGL1,
+  UNSIGNED_BYTE,
+  UNSIGNED_SHORT,
   VERTEX_SHADER,
   VIEWPORT,
 } from './constants';
 import type { GLenum } from './constants';
 import { ErrorSink } from './errors';
 import { GLState } from './state';
-import type { CanvasDimensions } from './state';
+import type { CanvasDimensions, VertexAttribDescriptor } from './state';
+import { BufferManager } from './buffer';
+import type { BufferObject } from './buffer';
 import { DrawingBuffer } from './framebuffer';
 import { resolveContextAttributes } from './context-attributes';
 import type { WebGLContextAttributes } from './context-attributes';
@@ -108,6 +117,7 @@ export class WebGL1Context {
   private readonly drawingBuffer: DrawingBuffer;
   private readonly contextAttributes: WebGLContextAttributes;
   private readonly programRegistry = new ProgramRegistry();
+  private readonly bufferManager: BufferManager;
   private readonly shaders = new Map<number, WebGLShader>();
   private readonly programs = new Map<number, WebGLProgram>();
   private nextShaderId = 1;
@@ -136,6 +146,7 @@ export class WebGL1Context {
     this.errorSink = new ErrorSink();
     this.glState = new GLState(this.errorSink, this.canvas);
     this.drawingBuffer = new DrawingBuffer(this.errorSink, this.canvas);
+    this.bufferManager = new BufferManager(this.errorSink);
   }
 
   /** Set the clear color. */
@@ -301,6 +312,182 @@ export class WebGL1Context {
       return;
     }
     this.drawingBuffer.readPixels(x, y, width, height, format as GLenum, type as GLenum, pixels, dstOffset);
+  }
+
+  // ---- Sprint 5 Task 3: buffer facade + vertex attribute API ----
+
+  /** Create a buffer via BufferManager. */
+  createBuffer(): BufferObject | null {
+    return this.bufferManager.createBuffer();
+  }
+
+  /** Delete a buffer via BufferManager. */
+  deleteBuffer(buffer: BufferObject | null): void {
+    this.bufferManager.deleteBuffer(buffer);
+  }
+
+  /** True iff buffer is a live managed buffer. */
+  isBuffer(buffer: unknown): boolean {
+    return this.bufferManager.isBuffer(buffer);
+  }
+
+  /** Bind a buffer via BufferManager. */
+  bindBuffer(target: number, buffer: BufferObject | null): void {
+    this.bufferManager.bindBuffer(target as GLenum, buffer);
+  }
+
+  /** Allocate/fill bound buffer storage via BufferManager. */
+  bufferData(target: number, dataOrSize: number | ArrayBufferView | ArrayBuffer | null, usage: number): void {
+    this.bufferManager.bufferData(target as GLenum, dataOrSize, usage as GLenum);
+  }
+
+  /** Update a sub-range of bound buffer storage via BufferManager. */
+  bufferSubData(target: number, offset: number, data: ArrayBufferView | ArrayBuffer): void {
+    this.bufferManager.bufferSubData(target as GLenum, offset, data);
+  }
+
+  /** Query bound buffer parameter via BufferManager. */
+  getBufferParameter(target: number, pname: number): number | GLenum | null {
+    return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
+  }
+
+  /** Return the vertex attribute descriptor for index (delegates to GLState). */
+  getVertexAttribDescriptor(index: number): Readonly<VertexAttribDescriptor> | null {
+    return this.glState.getVertexAttrib(index);
+  }
+
+  /**
+   * Set a vertex attribute pointer with strict WebGL 1.0 validation.
+   * Validates everything before any mutation (atomic).
+   */
+  vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(size) || size < 1 || size > 4) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (type !== BYTE && type !== UNSIGNED_BYTE && type !== SHORT && type !== UNSIGNED_SHORT && type !== FIXED && type !== FLOAT) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    let componentSize = 4;
+    if (type === BYTE || type === UNSIGNED_BYTE) componentSize = 1;
+    else if (type === SHORT || type === UNSIGNED_SHORT) componentSize = 2;
+    if (!Number.isFinite(stride) || stride < 0 || stride > 255) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (stride % componentSize !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isFinite(offset) || offset < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (offset % componentSize !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const boundBuffer = this.bufferManager.getBoundBuffer(ARRAY_BUFFER);
+    if (boundBuffer === null) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.glState.setVertexAttribPointer(index, size, type as GLenum, normalized, stride, offset, boundBuffer);
+  }
+
+  /** Enable a vertex attribute array; out-of-range records INVALID_VALUE. */
+  enableVertexAttribArray(index: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.enableVertexAttribArray(index);
+  }
+
+  /** Disable a vertex attribute array; out-of-range records INVALID_VALUE. */
+  disableVertexAttribArray(index: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.disableVertexAttribArray(index);
+  }
+
+  /** Set generic attrib to [x, 0, 0, 1]. */
+  vertexAttrib1f(index: number, x: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.setVertexAttribGeneric(index, [x, 0, 0, 1]);
+  }
+
+  /** Set generic attrib to [x, y, 0, 1]. */
+  vertexAttrib2f(index: number, x: number, y: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.setVertexAttribGeneric(index, [x, y, 0, 1]);
+  }
+
+  /** Set generic attrib to [x, y, z, 1]. */
+  vertexAttrib3f(index: number, x: number, y: number, z: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.setVertexAttribGeneric(index, [x, y, z, 1]);
+  }
+
+  /** Set generic attrib to [x, y, z, w]. */
+  vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void {
+    if (!Number.isFinite(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.setVertexAttribGeneric(index, [x, y, z, w]);
+  }
+
+  /** Vector form of vertexAttrib1f; short arrays record INVALID_VALUE. */
+  vertexAttrib1fv(index: number, values: ArrayLike<number>): void {
+    if (values === null || values === undefined || values.length < 1) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.vertexAttrib1f(index, values[0] as number);
+  }
+
+  /** Vector form of vertexAttrib2f; short arrays record INVALID_VALUE. */
+  vertexAttrib2fv(index: number, values: ArrayLike<number>): void {
+    if (values === null || values === undefined || values.length < 2) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.vertexAttrib2f(index, values[0] as number, values[1] as number);
+  }
+
+  /** Vector form of vertexAttrib3f; short arrays record INVALID_VALUE. */
+  vertexAttrib3fv(index: number, values: ArrayLike<number>): void {
+    if (values === null || values === undefined || values.length < 3) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.vertexAttrib3f(index, values[0] as number, values[1] as number, values[2] as number);
+  }
+
+  /** Vector form of vertexAttrib4f; short arrays record INVALID_VALUE. */
+  vertexAttrib4fv(index: number, values: ArrayLike<number>): void {
+    if (values === null || values === undefined || values.length < 4) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.vertexAttrib4f(index, values[0] as number, values[1] as number, values[2] as number, values[3] as number);
   }
 
   // ---- Sprint 4 Task 6: shader/program/uniform-setter surface (additive) ----

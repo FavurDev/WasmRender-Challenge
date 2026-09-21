@@ -46,8 +46,21 @@ import {
   VALID_STENCIL_OP_SET,
   ZERO,
 } from './constants';
+import { FLOAT } from './constants';
 import type { GLenum } from './constants';
 import type { IErrorSink as IErrSink } from './errors';
+
+export interface VertexAttribDescriptor {
+  enabled: boolean;
+  size: number;
+  type: GLenum;
+  normalized: boolean;
+  stride: number;
+  offset: number;
+  buffer: unknown | null;
+  divisor: number;
+  genericValue: [number, number, number, number];
+}
 
 export interface ViewportRect {
   readonly x: number;
@@ -172,6 +185,11 @@ export interface IGLState {
   getActiveTexture(): GLenum;
   useProgram(program: unknown | null): void;
   getCurrentProgram(): unknown | null;
+  getVertexAttrib(index: number): Readonly<VertexAttribDescriptor> | null;
+  setVertexAttribPointer(index: number, size: number, type: GLenum, normalized: boolean, stride: number, offset: number, buffer: unknown | null): void;
+  enableVertexAttribArray(index: number): void;
+  disableVertexAttribArray(index: number): void;
+  setVertexAttribGeneric(index: number, value: readonly [number, number, number, number]): void;
   snapshot(): PipelineState;
   restore(snapshot: PipelineState): void;
 }
@@ -243,6 +261,7 @@ export class GLState implements IGLState {
   private boundFramebuffer: unknown | null = null;
   private boundRenderbuffer: unknown | null = null;
   private currentProgram: unknown | null = null;
+  private attribs: VertexAttribDescriptor[] = [];
   private textureUnits: Array<{ binding2D: unknown | null; bindingCube: unknown | null }> = [];
 
   constructor(errorSink: IErrSink, canvas?: CanvasDimensions) {
@@ -256,6 +275,10 @@ export class GLState implements IGLState {
     this.viewport = { x: 0, y: 0, width: w, height: h };
     this.scissorBox = { x: 0, y: 0, width: w, height: h };
     this.textureUnits = Array.from({ length: 32 }, () => ({ binding2D: null, bindingCube: null }));
+    this.attribs = Array.from({ length: 16 }, () => ({
+      enabled: false, size: 4, type: FLOAT as GLenum, normalized: false,
+      stride: 0, offset: 0, buffer: null, divisor: 0, genericValue: [0, 0, 0, 1] as [number, number, number, number],
+    }));
     void ACTIVE_TEXTURE; void ARRAY_BUFFER; void ELEMENT_ARRAY_BUFFER; void FRAMEBUFFER;
     void RENDERBUFFER; void TEXTURE_2D; void TEXTURE_CUBE_MAP;
   }
@@ -521,6 +544,33 @@ export class GLState implements IGLState {
   }
 
   getCurrentProgram(): unknown | null { return this.currentProgram; }
+
+  getVertexAttrib(index: number): Readonly<VertexAttribDescriptor> | null {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return null; }
+    return this.attribs[index] as VertexAttribDescriptor;
+  }
+
+  setVertexAttribPointer(index: number, size: number, type: GLenum, normalized: boolean, stride: number, offset: number, buffer: unknown | null): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    const desc = this.attribs[index] as VertexAttribDescriptor;
+    desc.size = size; desc.type = type; desc.normalized = normalized;
+    desc.stride = stride; desc.offset = offset; desc.buffer = buffer;
+  }
+
+  enableVertexAttribArray(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    (this.attribs[index] as VertexAttribDescriptor).enabled = true;
+  }
+
+  disableVertexAttribArray(index: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    (this.attribs[index] as VertexAttribDescriptor).enabled = false;
+  }
+
+  setVertexAttribGeneric(index: number, value: readonly [number, number, number, number]): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    (this.attribs[index] as VertexAttribDescriptor).genericValue = [value[0], value[1], value[2], value[3]];
+  }
 
   snapshot(): PipelineState {
     const snap: PipelineState = {
