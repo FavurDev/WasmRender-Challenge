@@ -1,9 +1,14 @@
-// Sprint 6 Task 9 smoke test (Node, CJS): loads C:/app/renderer.js bundle,
+// Sprint 6 Task 9 smoke test (Node, CJS): loads the renderer.js bundle,
 // asserts the context factory, VERSION string, and texture API round-trip.
+//
+// Artifact path resolution (Sprint 7 Task 10, TD-014):
+//   RENDERER_ARTIFACT env var overrides; default follows build-renderer.mjs
+//   win32 mapping (C:/app/renderer.js on win32, /app/renderer.js elsewhere).
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-const BUNDLE = "C:/app/renderer.js";
+const DEFAULT_BUNDLE = process.platform === "win32" ? "C:/app/renderer.js" : "/app/renderer.js";
+const BUNDLE = process.env.RENDERER_ARTIFACT || DEFAULT_BUNDLE;
 
 function fail(msg) {
   console.error(`SMOKE_FAILED: ${msg}`);
