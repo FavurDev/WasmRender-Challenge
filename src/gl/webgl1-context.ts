@@ -608,6 +608,11 @@ export class WebGL1Context {
     return this.textureManager.getTexParameter(target as GLenum, pname as GLenum);
   }
 
+  /** Generate mipmap chain via TextureManager. */
+  generateMipmap(target: number): void {
+    this.textureManager.generateMipmap(target as GLenum);
+  }
+
   /** Return the vertex attribute descriptor for index (delegates to GLState). */
   getVertexAttribDescriptor(index: number): Readonly<VertexAttribDescriptor> | null {
     return this.glState.getVertexAttrib(index);

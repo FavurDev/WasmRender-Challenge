@@ -67,6 +67,110 @@ export interface TextureObject {
   completeness: GLenum | null;
 }
 
+export function isMipmapFilter(f: GLenum): boolean {
+  return f === NEAREST_MIPMAP_NEAREST || f === LINEAR_MIPMAP_NEAREST || f === NEAREST_MIPMAP_LINEAR || f === LINEAR_MIPMAP_LINEAR;
+}
+
+export function computeExpectedLevels(w: number, h: number): number {
+  let count = 1;
+  let cw = w;
+  let ch = h;
+  while (cw > 1 || ch > 1) {
+    cw = Math.max(1, Math.floor(cw / 2));
+    ch = Math.max(1, Math.floor(ch / 2));
+    count += 1;
+  }
+  return count;
+}
+
+/** Pure completeness evaluation — never writes to texture. Canonical logic (H4). Defaults to WebGL1 (H1). */
+export function evaluateTextureCompleteness(texture: TextureObject, contextVersion?: 1 | 2): boolean {
+  const version: 1 | 2 = contextVersion ?? 1;
+  if (texture === null || texture === undefined || texture.alive !== true) return false;
+  if (texture.target === TEXTURE_2D || texture.target === 0) {
+    const base = texture.levels2D.get(0);
+    if (base === undefined || base.width <= 0 || base.height <= 0) return false;
+    const npot = texture.isNPOT || isNPOTDim(base.width, base.height);
+    const mip = isMipmapFilter(texture.sampler.minFilter);
+    if (version === 1 && npot) {
+      if (mip) return false;
+      if (texture.sampler.wrapS !== CLAMP_TO_EDGE || texture.sampler.wrapT !== CLAMP_TO_EDGE) return false;
+    }
+    if (mip) {
+      const expected = computeExpectedLevels(base.width, base.height);
+      if (texture.levels2D.size < expected) return false;
+      let cw = base.width;
+      let ch = base.height;
+      for (let lod = 1; lod < expected; lod++) {
+        cw = Math.max(1, Math.floor(cw / 2));
+        ch = Math.max(1, Math.floor(ch / 2));
+        const lvl = texture.levels2D.get(lod);
+        if (lvl === undefined || lvl.width !== cw || lvl.height !== ch || lvl.data === null) return false;
+        if (lvl.internalFormat !== base.internalFormat || lvl.type !== base.type) return false;
+      }
+    }
+    return true;
+  }
+  if (texture.target === TEXTURE_CUBE_MAP) {
+    const refBase = texture.levelsCube.get(TEXTURE_CUBE_MAP_POSITIVE_X)?.get(0);
+    if (refBase === undefined || refBase.width <= 0 || refBase.width !== refBase.height) return false;
+    for (const face of CUBE_FACES) {
+      const fBase = texture.levelsCube.get(face)?.get(0);
+      if (fBase === undefined || fBase.width !== refBase.width || fBase.height !== refBase.height) return false;
+      if (fBase.internalFormat !== refBase.internalFormat || fBase.type !== refBase.type) return false;
+    }
+    if (isMipmapFilter(texture.sampler.minFilter)) {
+      const expected = computeExpectedLevels(refBase.width, refBase.height);
+      for (const face of CUBE_FACES) {
+        const fMap = texture.levelsCube.get(face);
+        let cs = refBase.width;
+        for (let lod = 1; lod < expected; lod++) {
+          cs = Math.max(1, Math.floor(cs / 2));
+          const lvl = fMap?.get(lod);
+          if (lvl === undefined || lvl.width !== cs || lvl.height !== cs || lvl.data === null) return false;
+          if (lvl.internalFormat !== refBase.internalFormat || lvl.type !== refBase.type) return false;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+/** Caching wrapper — the ONLY place that writes texture.completeness. Sampler never caches (H2). */
+export function isTextureComplete(texture: TextureObject, contextVersion?: 1 | 2): boolean {
+  const ok = evaluateTextureCompleteness(texture, contextVersion ?? 1);
+  if (texture !== null && texture !== undefined && texture.alive === true) {
+    texture.completeness = (ok ? 1 : 0) as GLenum;
+  }
+  return ok;
+}
+
+// IMPLEMENTATION DECISION (M1): box average uses Math.round, not Math.floor. Rationale: pseudocode AC TEST1 requires Math.round(mean) within 1 LSB and sampler t04 expects 128 for mean 127.5; floor would bias -0.5 LSB per level and compound down the chain. Alternatives: floor (rejected — fails AC-1), trunc (rejected — same bias).
+function downsampleBoxFilter(src: MipLevel): MipLevel {
+  const dstW = Math.max(1, Math.floor(src.width / 2));
+  const dstH = Math.max(1, Math.floor(src.height / 2));
+  const bpp = bytesPerPixel(src.internalFormat, src.type);
+  const dstData = new Uint8Array(dstW * dstH * bpp);
+  for (let dstY = 0; dstY < dstH; dstY++) {
+    const srcY0 = dstY * 2;
+    const srcY1 = Math.min(srcY0 + 1, src.height - 1);
+    for (let dstX = 0; dstX < dstW; dstX++) {
+      const srcX0 = dstX * 2;
+      const srcX1 = Math.min(srcX0 + 1, src.width - 1);
+      const dstOffset = (dstY * dstW + dstX) * bpp;
+      for (let c = 0; c < bpp; c++) {
+        const v00 = src.data[(srcY0 * src.width + srcX0) * bpp + c]!;
+        const v10 = src.data[(srcY0 * src.width + srcX1) * bpp + c]!;
+        const v01 = src.data[(srcY1 * src.width + srcX0) * bpp + c]!;
+        const v11 = src.data[(srcY1 * src.width + srcX1) * bpp + c]!;
+        dstData[dstOffset + c] = Math.round((v00 + v10 + v01 + v11) / 4);
+      }
+    }
+  }
+  return { width: dstW, height: dstH, internalFormat: src.internalFormat, type: src.type, data: dstData };
+}
+
 export interface ITextureManager {
   createTexture(): TextureObject | null;
   deleteTexture(texture: TextureObject | null): void;
@@ -81,6 +185,7 @@ export interface ITextureManager {
   texParameteri(target: GLenum, pname: GLenum, param: number): void;
   texParameterf(target: GLenum, pname: GLenum, param: number): void;
   getTexParameter(target: GLenum, pname: GLenum): number | GLenum | null;
+  generateMipmap(target: GLenum): void;
 }
 
 const MAX_TEXTURE_BYTES = 256 * 1024 * 1024;
@@ -473,6 +578,83 @@ export class TextureManager implements ITextureManager {
     if (pname === TEXTURE_MAG_FILTER) return bound.sampler.magFilter;
     this.errorSink.recordError(INVALID_ENUM);
     return null;
+  }
+
+  generateMipmap(target: GLenum): void {
+    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bound = this.resolveBound(target);
+    if (bound === null || bound === undefined || bound.alive !== true) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (target === TEXTURE_2D) {
+      const base = bound.levels2D.get(0);
+      if (base === undefined) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (isNPOTDim(base.width, base.height)) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      let current: MipLevel = base;
+      let cw = base.width;
+      let ch = base.height;
+      let lod = 0;
+      while (cw > 1 || ch > 1) {
+        const next = downsampleBoxFilter(current);
+        lod += 1;
+        bound.levels2D.set(lod, next);
+        current = next;
+        cw = next.width;
+        ch = next.height;
+      }
+      bound.completeness = null;
+      return;
+    }
+    for (const face of CUBE_FACES) {
+      const faceBase = bound.levelsCube.get(face)?.get(0);
+      if (faceBase === undefined) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (faceBase.width !== faceBase.height) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (isNPOTDim(faceBase.width, faceBase.height)) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+    }
+    const refBase = bound.levelsCube.get(TEXTURE_CUBE_MAP_POSITIVE_X)?.get(0);
+    if (refBase === undefined) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    for (const face of CUBE_FACES) {
+      const faceMap = bound.levelsCube.get(face);
+      if (faceMap === undefined) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      let current = faceMap.get(0);
+      if (current === undefined) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      let lod = 0;
+      while (current.width > 1 || current.height > 1) {
+        const next = downsampleBoxFilter(current);
+        lod += 1;
+        faceMap.set(lod, next);
+        current = next;
+      }
+    }
+    bound.completeness = null;
   }
 }
 
