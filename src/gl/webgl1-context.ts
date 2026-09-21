@@ -15,6 +15,12 @@ import {
   DEPTH_CLEAR_VALUE,
   FIXED,
   FLOAT,
+  FLOAT_MAT2,
+  FLOAT_MAT3,
+  FLOAT_MAT4,
+  FLOAT_VEC2,
+  FLOAT_VEC3,
+  FLOAT_VEC4,
   FRAGMENT_SHADER,
   FRAMEBUFFER_COMPLETE,
   INVALID_ENUM,
@@ -28,11 +34,21 @@ import {
   STENCIL_BUFFER_BIT,
   STENCIL_CLEAR_VALUE,
   TRIANGLES,
+  VALID_DEPTH_FUNC_SET,
   VALIDATE_STATUS,
   VERSION,
   VERSION_STRING_WEBGL1,
   UNSIGNED_BYTE,
+  UNSIGNED_INT_VEC2,
+  UNSIGNED_INT_VEC3,
+  UNSIGNED_INT_VEC4,
   UNSIGNED_SHORT,
+  INT_VEC2,
+  INT_VEC3,
+  INT_VEC4,
+  BOOL_VEC2,
+  BOOL_VEC3,
+  BOOL_VEC4,
   VERTEX_SHADER,
   VIEWPORT,
 } from './constants';
@@ -157,6 +173,30 @@ export class WebGL1Context {
   /** Set the clear color. */
   clearColor(red: number, green: number, blue: number, alpha: number): void {
     this.glState.setClearColor(red, green, blue, alpha);
+  }
+
+  /** Set the depth range mapping; values clamp to [0, 1] per spec (no error). */
+  depthRange(zNear: number, zFar: number): void {
+    this.glState.setDepthRange(zNear, zFar);
+  }
+
+  /** Set the depth comparison function; invalid enums record INVALID_ENUM with no state change. */
+  depthFunc(func: number): void {
+    if (!VALID_DEPTH_FUNC_SET.has(func as GLenum)) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    this.glState.setDepthFunc(func as GLenum);
+  }
+
+  /** Set the clear depth value; clamps to [0, 1] per spec (no error). */
+  clearDepth(depth: number): void {
+    this.glState.setClearDepth(depth);
+  }
+
+  /** Enable or disable depth buffer writes. */
+  depthMask(flag: boolean): void {
+    this.glState.setDepthMask(flag);
   }
 
   /** Clear buffers selected by mask; invalid bits record INVALID_VALUE. */
@@ -387,7 +427,7 @@ export class WebGL1Context {
   private readDrawUniform(linked: LinkedProgram, slot: number): number | Float32Array | Int32Array | Uint32Array {
     const info = linked.activeUniforms.find((u) => u.slot === slot) ?? null;
     if (info === null) return 0;
-    const width = info.size > 1 ? info.size : 1;
+    const width = uniformElementWidth(info.type) * Math.max(info.size, 1);
     if (info.typeKind === 'int' || info.typeKind === 'sampler') {
       if (width <= 1) return linked.uniformStore.i32[slot] as number;
       return linked.uniformStore.i32.subarray(slot, slot + width);
@@ -1204,6 +1244,16 @@ export class WebGL1Context {
       validated.linkedProgram.uniformStore.f32[validated.uniform.slot + i] = validated.values[i] as number;
     }
   }
+}
+
+function uniformElementWidth(type: GLenum): number {
+  if (type === FLOAT_VEC2 || type === INT_VEC2 || type === UNSIGNED_INT_VEC2 || type === BOOL_VEC2) return 2;
+  if (type === FLOAT_VEC3 || type === INT_VEC3 || type === UNSIGNED_INT_VEC3 || type === BOOL_VEC3) return 3;
+  if (type === FLOAT_VEC4 || type === INT_VEC4 || type === UNSIGNED_INT_VEC4 || type === BOOL_VEC4) return 4;
+  if (type === FLOAT_MAT2) return 4;
+  if (type === FLOAT_MAT3) return 9;
+  if (type === FLOAT_MAT4) return 16;
+  return 1;
 }
 
 function toClipVertex(g: DirectVertex): ClipVertex {

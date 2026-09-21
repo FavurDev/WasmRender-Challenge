@@ -653,3 +653,227 @@ describe('Sprint 5 Task 5 Group 3: TD-009 validateUniform regressions (RED)', ()
     expect(Array.from(linked.uniformStore.f32.slice(0, 9))).toEqual([1, 0, 0, 0, 1, 0, 0, 0, 1]);
   });
 });
+/** Sprint 5 Task 6 Group 4: M3 first-slice DoD verification suite (Demo Carrier). Appended; lines 1-655 untouched. */
+import {
+  DEPTH_BUFFER_BIT,
+  DEPTH_TEST,
+  LESS,
+} from '../../src/gl/constants';
+
+type T6DepthFacade = {
+  depthFunc(func: number): void;
+  clearDepth(depth: number): void;
+  depthRange(zNear: number, zFar: number): void;
+};
+
+function t6DepthRange(gl: WebGL1Context, near: number, far: number): void {
+  // Arrange helper: drive TD-002 through the PUBLIC facade shape (depthRange).
+  // Typed cast keeps tsc green; if the facade lacks the method this throws at
+  // runtime, which is the genuine RED-phase implementation gap to report.
+  (gl as unknown as T6DepthFacade).depthRange(near, far);
+}
+
+function t6DepthFunc(gl: WebGL1Context, func: number): void {
+  (gl as unknown as T6DepthFacade).depthFunc(func);
+}
+
+function t6ClearDepth(gl: WebGL1Context, depth: number): void {
+  (gl as unknown as T6DepthFacade).clearDepth(depth);
+}
+
+describe('Sprint 5 Task 6: M3 first-slice DoD verification suite (Demo Carrier)', () => {
+  it('DoD Fixture 1: buffer-backed, shader-driven triangle renders to framebuffer with deterministic pixel readback', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const positionBuffer = gl.createBuffer();
+    expect(positionBuffer).not.toBeNull();
+    gl.bindBuffer(ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const { program } = t5LinkPair(
+      gl,
+      'attribute vec2 aPos; void main() { gl_Position = vec4(aPos, 0.0, 1.0); }',
+      'precision mediump float; void main() { gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0); }',
+    );
+    gl.useProgram(program);
+    const posLoc = gl.getAttribLocation(program, 'aPos');
+    expect(posLoc).toBeGreaterThanOrEqual(0);
+    gl.vertexAttribPointer(posLoc, 2, FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Assert: full-screen triangle covers all 64 pixels with green.
+    const full = t5Snapshot(gl);
+    expect(full.length).toBe(T5_W * T5_H * 4);
+    for (let i = 0; i < T5_W * T5_H; i += 1) {
+      expect([full[i * 4], full[i * 4 + 1], full[i * 4 + 2], full[i * 4 + 3]]).toEqual([0, 255, 0, 255]);
+    }
+    // Arrange (partial triangle):
+    gl.clearColor(1, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1]), STATIC_DRAW);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Assert: covered pixel green, uncovered pixel retains clear red.
+    expect(t5Pixel(gl, 0, 0)).toEqual([0, 255, 0, 255]);
+    expect(t5Pixel(gl, 7, 7)).toEqual([255, 0, 0, 255]);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it('DoD Fixture 2: two interleaved buffer attributes interpolate colors across triangle surface', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    const interleaved = new ArrayBuffer(36);
+    const view = new DataView(interleaved);
+    const positions: Array<[number, number]> = [[-1, -1], [3, -1], [-1, 3]];
+    const colors: Array<[number, number, number, number]> = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
+    for (let v = 0; v < 3; v += 1) {
+      const pos = positions[v] as [number, number];
+      const col = colors[v] as [number, number, number, number];
+      view.setFloat32(v * 12, pos[0], true);
+      view.setFloat32(v * 12 + 4, pos[1], true);
+      view.setUint8(v * 12 + 8, col[0]);
+      view.setUint8(v * 12 + 9, col[1]);
+      view.setUint8(v * 12 + 10, col[2]);
+      view.setUint8(v * 12 + 11, col[3]);
+    }
+    const interleavedBuffer = gl.createBuffer();
+    if (interleavedBuffer === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, interleavedBuffer);
+    gl.bufferData(ARRAY_BUFFER, interleaved, STATIC_DRAW);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const { program } = t5LinkPair(
+      gl,
+      'attribute vec2 aPos; attribute vec4 aCol; varying vec4 vCol; void main() { vCol = aCol; gl_Position = vec4(aPos, 0.0, 1.0); }',
+      'precision mediump float; varying vec4 vCol; void main() { gl_FragColor = vCol; }',
+    );
+    gl.useProgram(program);
+    const posLoc = gl.getAttribLocation(program, 'aPos');
+    const colLoc = gl.getAttribLocation(program, 'aCol');
+    expect(posLoc).toBeGreaterThanOrEqual(0);
+    expect(colLoc).toBeGreaterThanOrEqual(0);
+    gl.vertexAttribPointer(posLoc, 2, FLOAT, false, 12, 0);
+    gl.vertexAttribPointer(colLoc, 4, UNSIGNED_BYTE, true, 12, 8);
+    gl.enableVertexAttribArray(posLoc);
+    gl.enableVertexAttribArray(colLoc);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Assert: near-vertex pixels match analytic barycentric blends. Vertex 1
+    // (3,-1) and vertex 2 (-1,3) lie off-screen, so the green/blue dominance
+    // regions fall outside the viewport; edge pixels carry the exact blend:
+    // (7,0): w=[0.5,0.46875,0.03125] -> [128,120,8]; (0,7): mirrored.
+    const nearRed = t5Pixel(gl, 0, 0);
+    expect(nearRed[0]).toBeGreaterThan(200);
+    expect(nearRed[1]).toBeLessThan(50);
+    expect(nearRed[2]).toBeLessThan(50);
+    expect(nearRed[3]).toBe(255);
+    const nearGreen = t5Pixel(gl, 7, 0);
+    expect(nearGreen[0]).toBeGreaterThanOrEqual(120);
+    expect(nearGreen[0]).toBeLessThanOrEqual(135);
+    expect(nearGreen[1]).toBeGreaterThanOrEqual(112);
+    expect(nearGreen[1]).toBeLessThanOrEqual(128);
+    expect(nearGreen[2]).toBeLessThanOrEqual(16);
+    expect(nearGreen[3]).toBe(255);
+    const nearBlue = t5Pixel(gl, 0, 7);
+    expect(nearBlue[0]).toBeGreaterThanOrEqual(120);
+    expect(nearBlue[0]).toBeLessThanOrEqual(135);
+    expect(nearBlue[2]).toBeGreaterThanOrEqual(112);
+    expect(nearBlue[2]).toBeLessThanOrEqual(128);
+    expect(nearBlue[1]).toBeLessThanOrEqual(16);
+    expect(nearBlue[3]).toBe(255);
+    const center = t5Pixel(gl, 2, 2);
+    expect(center[3]).toBe(255);
+    expect(center[0]).toBeGreaterThan(center[1]);
+    expect(center[0]).toBeGreaterThan(center[2]);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it('DoD Fixture 3: disabled attribute array shades with vertexAttrib4f generic value', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    const posBuffer = gl.createBuffer();
+    if (posBuffer === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, posBuffer);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const { program } = t5LinkPair(
+      gl,
+      'attribute vec2 aPos; attribute vec4 aColor; varying vec4 vColor; void main() { vColor = aColor; gl_Position = vec4(aPos, 0.0, 1.0); }',
+      'precision mediump float; varying vec4 vColor; void main() { gl_FragColor = vColor; }',
+    );
+    gl.useProgram(program);
+    const posLoc = gl.getAttribLocation(program, 'aPos');
+    const colLoc = gl.getAttribLocation(program, 'aColor');
+    expect(posLoc).toBeGreaterThanOrEqual(0);
+    expect(colLoc).toBeGreaterThanOrEqual(0);
+    gl.vertexAttribPointer(posLoc, 2, FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(colLoc);
+    gl.vertexAttrib4f(colLoc, 0.25, 0.5, 0.75, 1.0);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Assert: center pixel equals the generic value converted to bytes.
+    expect(t5Pixel(gl, 4, 4)).toEqual([64, 128, 191, 255]);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+
+  it('DoD Fixture 4: depthRange modifies PipelineState and controls depth test pass/fail visibility', () => {
+    // Arrange:
+    const gl = t5Context();
+    gl.enable(DEPTH_TEST);
+    t6DepthFunc(gl, LESS);
+    t6ClearDepth(gl, 1.0);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const { program } = t5LinkPair(
+      gl,
+      'attribute vec3 aPos; void main() { gl_Position = vec4(aPos, 1.0); }',
+      'precision mediump float; uniform vec4 uColor; void main() { gl_FragColor = uColor; }',
+    );
+    gl.useProgram(program);
+    const uColorLoc = gl.getUniformLocation(program, 'uColor');
+    if (uColorLoc === null) throw new Error('arrange: uColor location null');
+    const posLoc = gl.getAttribLocation(program, 'aPos');
+    expect(posLoc).toBeGreaterThanOrEqual(0);
+    const posBuffer = gl.createBuffer();
+    if (posBuffer === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, posBuffer);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), STATIC_DRAW);
+    gl.vertexAttribPointer(posLoc, 3, FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act & Assert step 1: depthRange(0,1) maps NDC z=0 to window depth 0.5; red draws.
+    t6DepthRange(gl, 0.0, 1.0);
+    gl.uniform4f(uColorLoc, 1, 0, 0, 1);
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(t5Pixel(gl, 4, 4)).toEqual([255, 0, 0, 255]);
+    // Act & Assert step 2: depthRange(0.6,1.0) maps to 0.8; LESS rejects; stays red.
+    t6DepthRange(gl, 0.6, 1.0);
+    gl.uniform4f(uColorLoc, 0, 1, 0, 1);
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(t5Pixel(gl, 4, 4)).toEqual([255, 0, 0, 255]);
+    // Act & Assert step 3: depthRange(0,0.4) maps to 0.2; LESS passes; blue wins.
+    t6DepthRange(gl, 0.0, 0.4);
+    gl.uniform4f(uColorLoc, 0, 0, 1, 1);
+    gl.drawArrays(TRIANGLES, 0, 3);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(t5Pixel(gl, 4, 4)).toEqual([0, 0, 255, 255]);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
