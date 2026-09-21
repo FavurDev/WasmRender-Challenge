@@ -16,6 +16,7 @@
  */
 // CHANGELOG:
 // - Sprint 3 (2026-09-20): C-style macro preprocessor with expansion caps and line-accurate diagnostics.
+// - Sprint 6 (2026-09-21): Shared setVersionMacro helper in #version handler (Task 6, TD-011).
 import { formatDiagnostic, tokenize } from './tokenizer';
 import type { CompileResult, Token } from './tokenizer';
 

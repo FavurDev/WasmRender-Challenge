@@ -1,5 +1,6 @@
 // CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T3 edge-function traversal rasterizer with top-left fill rule
 // CHANGELOG: Sprint 5 (2026-09-21): TD-002 depth-range mapping, TD-004 w-guard epsilon, TD-005 0-varying default, per-fragment depth test with depthMask gating
+// CHANGELOG: Sprint 6 (2026-09-21): Real texture sampling in fragment path (Task 5), deduped depth-write mask branches (Task 7)
 /** Edge-function traversal rasterizer with top-left fill rule (L4 raster, ADR-012 float32).
 
 Maps clip-space vertices to 1/16th subpixel screen vertices and rasterizes

@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 6 (2026-09-21): TextureObject and texture API family (Tasks 1-2), pixel unpack flags (Task 4)
 /** TextureManager — WebGL 1.0 texture lifecycle, binding, image spec, subimage, copy, sampler params. L2: imports constants + errors only. */
 import {
   ALPHA,

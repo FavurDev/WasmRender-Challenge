@@ -1,6 +1,7 @@
 // CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T4 minimal WebGL1 context facade composition root
 // CHANGELOG: Sprint 4 Task 6: additive shader/program/uniform-setter API surface (compile/link/useProgram/reflection/uniform setters)
 // CHANGELOG: Sprint 5 (2026-09-21): vertexAttribPointer/drawArrays orchestrator, validateUniform extraction (TD-009), depth-state facade methods
+// CHANGELOG: Sprint 6 (2026-09-21): Texture/sampler facade wiring — texture API family, sampler params, unpack flags, fragment-path sampling (Tasks 1-2, 4-5)
 /** WebGL1Context — minimal WebGL 1.0 facade; composition root (ADR-013). */
 import {
   ACTIVE_ATTRIBUTES,

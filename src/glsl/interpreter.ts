@@ -17,6 +17,7 @@
  */
 // CHANGELOG:
 // - Sprint 4 (2026-09-20): New AST interpreter (Task 5).
+// - Sprint 6 (2026-09-21): Real texture sampling hookup in fragment path (Task 5).
 import type {
   AssignmentExpression,
   BinaryExpression,

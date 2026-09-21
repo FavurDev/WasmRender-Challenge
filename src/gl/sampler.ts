@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 6 (2026-09-21): New pure 2D sampler core with generateMipmap box-filter chain, NPOT completeness, NEAREST/LINEAR and wrap modes (Task 2)
 /** Pure 2D sampler core — read-only sampling, wrap math, mip filtering. L2: runtime imports constants + pure evaluator only. */
 import {
   ALPHA,
