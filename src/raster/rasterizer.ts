@@ -5,7 +5,7 @@ Maps clip-space vertices to 1/16th subpixel screen vertices and rasterizes
 triangles with integer orient2d edge functions, incremental scan stepping, and
 a single reused Fragment record (zero per-fragment allocation).
  */
-import { BACK, CCW, FRONT, FRONT_AND_BACK } from '../gl/constants';
+import { ALWAYS, BACK, CCW, EQUAL, FRONT, FRONT_AND_BACK, GEQUAL, GREATER, LEQUAL, LESS, NEVER, NOTEQUAL } from '../gl/constants';
 import type { ClipVertex } from './clipper';
 import type { DrawingBuffer } from '../gl/framebuffer';
 import type { PipelineState } from '../gl/state';
@@ -50,6 +50,19 @@ function orient2d(ax: number, ay: number, bx: number, by: number, cx: number, cy
 /** Top-left tie-break: covered if strictly inside, or exactly on a top-left edge. */
 function isCovered(w: number, isTopLeft: boolean): boolean {
   return w > 0 || (w === 0 && isTopLeft);
+}
+
+/** Evaluate depth comparison predicate on 24-bit quantized depths. Zero allocation. */
+function passesDepthTest(func: number, incomingDepth: number, storedDepth: number): boolean {
+  if (func === NEVER) return false;
+  if (func === LESS) return incomingDepth < storedDepth;
+  if (func === EQUAL) return incomingDepth === storedDepth;
+  if (func === LEQUAL) return incomingDepth <= storedDepth;
+  if (func === GREATER) return incomingDepth > storedDepth;
+  if (func === NOTEQUAL) return incomingDepth !== storedDepth;
+  if (func === GEQUAL) return incomingDepth >= storedDepth;
+  if (func === ALWAYS) return true;
+  return incomingDepth < storedDepth;
 }
 
 export function mapClipToScreen(clipVertex: ClipVertex, state: PipelineState): ScreenVertex {
@@ -192,6 +205,18 @@ export function rasterizeTriangle(
         frag.y = py;
         frag.depth = interpolateDepth(bary, zVals);
         const idx = frag.y * bufW + frag.x;
+        const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
+        let testPassed = true;
+        if (state.depthTestEnabled) {
+          const storedDepth24 = (((ds[idx] as number) >>> 8) & DEPTH_MAX_24) >>> 0;
+          testPassed = passesDepthTest(state.depth.func, depth24, storedDepth24);
+          if (!testPassed) {
+            w0 += e0stepX;
+            w1 += e1stepX;
+            w2 += e2stepX;
+            continue;
+          }
+        }
         const n = fragVaryings.length;
         if (n >= 4) {
           const o = idx * 4;
@@ -212,8 +237,13 @@ export function rasterizeTriangle(
           color[o + 2] = 255;
           color[o + 3] = 255;
         }
-        const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
-        ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
+        if (state.depthTestEnabled) {
+          if (state.depth.mask) {
+            ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
+          }
+        } else {
+          ds[idx] = ((depth24 * 256) | ((ds[idx] as number) & 0xff)) >>> 0;
+        }
       }
       w0 += e0stepX;
       w1 += e1stepX;
