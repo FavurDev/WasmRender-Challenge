@@ -622,3 +622,344 @@ describe('Sprint 6 pixel unpack flags', () => {
     expect(Array.from(f(new Uint8Array([10, 20, 30, 40, 50, 60]), 2, 1, RGB, UNSIGNED_BYTE, false, true))).toEqual([10, 20, 30, 40, 50, 60]);
   });
 });
+import {
+  COMPILE_STATUS,
+  FLOAT,
+  FRAGMENT_SHADER,
+  LINK_STATUS,
+  STATIC_DRAW,
+  TRIANGLES,
+  VERTEX_SHADER,
+} from '../../src/gl/constants';
+import { createSoftwareWebGLContext } from '../../src/entry';
+
+/** Sprint 6 Task 4 sampling integration TDD RED-phase tests — real TextureObject sampling through the full public API. Appended; lines 1-624 untouched. */
+const S6_VS =
+  'attribute vec2 a_position; attribute vec2 a_texCoord; varying vec2 v_texCoord; ' +
+  'void main() { v_texCoord = a_texCoord; gl_Position = vec4(a_position, 0.0, 1.0); }';
+const S6_FS =
+  'precision mediump float; varying vec2 v_texCoord; uniform sampler2D u_sampler; ' +
+  'void main() { gl_FragColor = texture2D(u_sampler, v_texCoord); }';
+
+function s6Context(w: number, h: number): WebGL1Context {
+  const gl = createSoftwareWebGLContext({ width: w, height: h });
+  if (gl === null) throw new Error('s6Context: factory returned null');
+  return gl;
+}
+
+function s6Link(gl: WebGL1Context, vsrc = S6_VS, fsrc = S6_FS): NonNullable<ReturnType<WebGL1Context['createProgram']>> {
+  const vs = gl.createShader(VERTEX_SHADER);
+  const fs = gl.createShader(FRAGMENT_SHADER);
+  if (vs === null || fs === null) throw new Error('s6Link: shader creation failed');
+  gl.shaderSource(vs, vsrc);
+  gl.shaderSource(fs, fsrc);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  if (gl.getShaderParameter(vs, COMPILE_STATUS) !== true) throw new Error('s6Link: VS failed: ' + gl.getShaderInfoLog(vs));
+  if (gl.getShaderParameter(fs, COMPILE_STATUS) !== true) throw new Error('s6Link: FS failed: ' + gl.getShaderInfoLog(fs));
+  const program = gl.createProgram();
+  if (program === null) throw new Error('s6Link: program creation failed');
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (gl.getProgramParameter(program, LINK_STATUS) !== true) throw new Error('s6Link: link failed: ' + gl.getProgramInfoLog(program));
+  return program;
+}
+
+function s6FullQuad(gl: WebGL1Context, program: NonNullable<ReturnType<WebGL1Context['createProgram']>>): void {
+  // Arrange helper: full-screen triangle with texcoords spanning [0..2] so every pixel is covered.
+  const posBuf = gl.createBuffer();
+  const texBuf = gl.createBuffer();
+  if (posBuf === null || texBuf === null) throw new Error('s6FullQuad: createBuffer failed');
+  gl.bindBuffer(ARRAY_BUFFER, posBuf);
+  gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+  gl.bindBuffer(ARRAY_BUFFER, texBuf);
+  gl.bufferData(ARRAY_BUFFER, new Float32Array([0, 0, 2, 0, 0, 2]), STATIC_DRAW);
+  gl.useProgram(program);
+  const posLoc = gl.getAttribLocation(program, 'a_position');
+  const texLoc = gl.getAttribLocation(program, 'a_texCoord');
+  if (posLoc < 0 || texLoc < 0) throw new Error('s6FullQuad: attrib locations not found');
+  gl.bindBuffer(ARRAY_BUFFER, posBuf);
+  gl.vertexAttribPointer(posLoc, 2, FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(posLoc);
+  gl.bindBuffer(ARRAY_BUFFER, texBuf);
+  gl.vertexAttribPointer(texLoc, 2, FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(texLoc);
+  const samplerLoc = gl.getUniformLocation(program, 'u_sampler');
+  if (samplerLoc === null) throw new Error('s6FullQuad: u_sampler location null');
+  gl.uniform1i(samplerLoc, 0);
+  if (gl.getError() !== NO_ERROR) throw new Error('s6FullQuad: setup errored');
+}
+
+describe('Sprint 6 Task 4 sampling integration (RED)', () => {
+  it('Test 1 (AC-1): NEAREST exact-texel 2x2 sampling through full public API', () => {
+    // Arrange:
+    const gl = s6Context(2, 2);
+    const program = s6Link(gl);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(
+      TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE,
+      new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]),
+    );
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    s6FullQuad(gl, program);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = new Uint8Array(2 * 2 * 4);
+    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, pixels);
+    // Assert: exact uploaded texel colors, no deviation.
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(Array.from(pixels)).toEqual([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+  });
+
+  it('Test 2 (AC-2): LINEAR midpoint averaging against analytic float32 value', () => {
+    // Arrange:
+    const gl = s6Context(1, 1);
+    const program = s6Link(gl);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 1, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+    s6FullQuad(gl, program);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, RGBA, UNSIGNED_BYTE, pixels);
+    // Assert: float32 average 0.5*255 = 127.5 rounds to 127 or 128.
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect([127, 128]).toContain(pixels[0]);
+    expect([127, 128]).toContain(pixels[1]);
+    expect([127, 128]).toContain(pixels[2]);
+    expect(pixels[3]).toBe(255);
+  });
+
+  it('Test 3 (AC-3): unbound texture unit sampling yields opaque black without error', () => {
+    // Arrange:
+    const gl = s6Context(1, 1);
+    const program = s6Link(gl);
+    gl.useProgram(program);
+    const samplerLoc = gl.getUniformLocation(program, 'u_sampler');
+    if (samplerLoc === null) throw new Error('arrange: u_sampler location null');
+    gl.uniform1i(samplerLoc, 0);
+    // NOTE: no texture bound to unit 0.
+    const posBuf = gl.createBuffer();
+    if (posBuf === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, posBuf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const posLoc = gl.getAttribLocation(program, 'a_position');
+    if (posLoc < 0) throw new Error('arrange: a_position not found');
+    gl.vertexAttribPointer(posLoc, 2, FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, RGBA, UNSIGNED_BYTE, pixels);
+    const err = gl.getError();
+    // Assert:
+    expect(Array.from(pixels)).toEqual([0, 0, 0, 255]);
+    expect(err).toBe(NO_ERROR);
+  });
+
+  it('Test 4 (AC-4): mipmap level selection at minified scale with LINEAR_MIPMAP_LINEAR', () => {
+    // Arrange:
+    const gl = s6Context(1, 1);
+    const program = s6Link(gl);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, new Uint8Array(4 * 4 * 4).fill(0).map((_, i) => (i % 4 === 0 ? 255 : i % 4 === 3 ? 255 : 0)));
+    gl.texImage2D(TEXTURE_2D, 1, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255]));
+    gl.texImage2D(TEXTURE_2D, 2, RGBA, 1, 1, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+    s6FullQuad(gl, program);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, RGBA, UNSIGNED_BYTE, pixels);
+    // Assert: sampled color comes from a lower mip (green/blue dominant, red attenuated).
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(pixels[0]).toBeLessThan(128);
+    expect(pixels[1] as number + (pixels[2] as number)).toBeGreaterThan(200);
+  });
+
+  it('Test 5 (AC-5): determinism — same scene in two fresh contexts byte-identical', () => {
+    // Arrange: shared scene parameters.
+    const renderScene = (): Uint8Array => {
+      const gl = s6Context(4, 4);
+      const program = s6Link(gl);
+      const tex = gl.createTexture();
+      if (tex === null) throw new Error('arrange: createTexture failed');
+      gl.bindTexture(TEXTURE_2D, tex);
+      const data = new Uint8Array(4 * 4 * 4);
+      for (let i = 0; i < 16; i += 1) data.set([(i * 37) % 256, (i * 91) % 256, (i * 53) % 256, 255], i * 4);
+      gl.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, data);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+      gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+      s6FullQuad(gl, program);
+      // Act:
+      gl.drawArrays(TRIANGLES, 0, 3);
+      const out = new Uint8Array(4 * 4 * 4);
+      gl.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, out);
+      if (gl.getError() !== NO_ERROR) throw new Error('renderScene: error recorded');
+      return out;
+    };
+    const pixelsA = renderScene();
+    const pixelsB = renderScene();
+    // Assert:
+    expect(Array.from(pixelsA)).toEqual(Array.from(pixelsB));
+    // Non-trivial scene: output must not be uniformly clear-black.
+    expect(Array.from(pixelsA).some((b) => b !== 0)).toBe(true);
+  });
+
+  it('Test 6 (AC-6): draw-top texture-unit snapshot resolution', async () => {
+    // Arrange:
+    const mod = (await import('../../src/gl/webgl1-context')) as unknown as Record<string, unknown>;
+    // Act: resolveDrawTextures must exist (red phase: missing export fails here).
+    const fn = mod['resolveDrawTextures'] as unknown;
+    // Assert:
+    expect(typeof fn).toBe('function');
+    const resolve = fn as (linked: unknown, mgr: unknown) => Map<number, unknown>;
+    const texA = { id: 1, alive: true };
+    const fakeLinked = { activeUniforms: [{ slot: 0, typeKind: 'sampler', type: 0x8b5e }, { slot: 1, typeKind: 'sampler', type: 0x8b5e }], uniformStore: { i32: new Int32Array([0, 0, 0, 3]) } };
+    const fakeMgr = { getBoundTexture: (_t: unknown, u?: number): unknown => (u === 0 ? texA : null) };
+    const snapshot = resolve(fakeLinked, fakeMgr);
+    expect(snapshot.get(0)).toBe(texA);
+    expect(snapshot.get(1)).toBeNull();
+    (fakeMgr as { getBoundTexture: unknown }).getBoundTexture = (): unknown => null;
+    expect(snapshot.get(0)).toBe(texA);
+  });
+
+  it('Test 7 (AC-7): contextVersion threading — NPOT incomplete under v1, complete under v2', async () => {
+    // Arrange:
+    const texMod = (await import('../../src/gl/texture')) as unknown as {
+      evaluateTextureCompleteness: (t: unknown, v?: 1 | 2) => boolean;
+    };
+    const sampMod = (await import('../../src/gl/sampler')) as unknown as {
+      sample2D: (t: unknown, c: Float32Array, lod?: number | null, v?: 1 | 2) => Float32Array;
+    };
+    const gl = s6Context(1, 1);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 3, 3, 0, RGBA, UNSIGNED_BYTE, new Uint8Array(3 * 3 * 4).fill(200));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR);
+    gl.texImage2D(TEXTURE_2D, 1, RGBA, 1, 1, 0, RGBA, UNSIGNED_BYTE, new Uint8Array(4).fill(200));
+    const coord = new Float32Array([0.5, 0.5]);
+    // Act:
+    const completeV1 = texMod.evaluateTextureCompleteness(tex, 1);
+    const colorV1 = sampMod.sample2D(tex, coord, null, 1);
+    const completeV2 = texMod.evaluateTextureCompleteness(tex, 2);
+    const colorV2 = sampMod.sample2D(tex, coord, null, 2);
+    // Assert:
+    expect(completeV1).toBe(false);
+    expect(Array.from(colorV1)).toEqual([0, 0, 0, 1]);
+    expect(completeV2).toBe(true);
+    expect(colorV2[0]).toBeCloseTo(Math.fround(200 / 255), 5);
+  });
+
+  it('Test 8 (AC-8): builtins read-only sampling regression', async () => {
+    // Arrange:
+    const builtins = (await import('../../src/glsl/builtins')) as unknown as {
+      evaluateBuiltin: (name: string, args: unknown[], version: 100 | 300) => unknown;
+    };
+    const gl = s6Context(1, 1);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    const before = JSON.stringify(tex, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v instanceof Map ? [...v] : v));
+    Object.freeze(tex);
+    // Act:
+    const color = builtins.evaluateBuiltin('texture2D', [tex, new Float32Array([0.25, 0.25])], 100) as Float32Array;
+    const after = JSON.stringify(tex, (_k, v) => (v instanceof Uint8Array ? Array.from(v) : v instanceof Map ? [...v] : v));
+    // Assert: real texel sampled (red) and TextureObject never mutated.
+    expect(Array.from(color.slice(0, 3))).toEqual([1, 0, 0]);
+    expect(color[3]).toBe(1);
+    expect(after).toBe(before);
+  });
+});
+
+describe('Sprint 6 Task 4 fix-loop regressions (HIGH-1/2/3)', () => {
+  it('HIGH-2: textureLod on real texture selects the specified mip level', async () => {
+    // Arrange:
+    const builtins = (await import('../../src/glsl/builtins')) as unknown as {
+      evaluateBuiltin: (name: string, args: unknown[], version: 100 | 300) => unknown;
+    };
+    const gl = s6Context(1, 1);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, new Uint8Array(4 * 4 * 4).fill(0).map((_, i) => (i % 4 === 0 ? 255 : i % 4 === 3 ? 255 : 0)));
+    gl.texImage2D(TEXTURE_2D, 1, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, new Uint8Array(2 * 2 * 4).fill(0).map((_, i) => (i % 4 === 1 ? 255 : i % 4 === 3 ? 255 : 0)));
+    gl.texImage2D(TEXTURE_2D, 2, RGBA, 1, 1, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST_MIPMAP_NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    // Act:
+    const lod0 = builtins.evaluateBuiltin('textureLod', [tex, new Float32Array([0.1, 0.1]), 0], 300) as Float32Array;
+    const lod2 = builtins.evaluateBuiltin('textureLod', [tex, new Float32Array([0.1, 0.1]), 2], 300) as Float32Array;
+    // Assert: lod 0 red, lod 2 blue (real branch reachable).
+    expect(Array.from(lod0.slice(0, 3))).toEqual([1, 0, 0]);
+    expect(Array.from(lod2.slice(0, 3))).toEqual([0, 0, 1]);
+  });
+
+  it('HIGH-1: textureProj on real texture performs perspective divide', async () => {
+    // Arrange:
+    const builtins = (await import('../../src/glsl/builtins')) as unknown as {
+      evaluateBuiltin: (name: string, args: unknown[], version: 100 | 300) => unknown;
+    };
+    const gl = s6Context(1, 1);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]));
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, NEAREST);
+    // Act: (0.5,0.5,2.0) divides to (0.25,0.25) -> red texel; q==0 yields black.
+    const divided = builtins.evaluateBuiltin('textureProj', [tex, new Float32Array([0.5, 0.5, 2.0])], 300) as Float32Array;
+    const zeroQ = builtins.evaluateBuiltin('textureProj', [tex, new Float32Array([0.5, 0.5, 0.0])], 300) as Float32Array;
+    // Assert:
+    expect(Array.from(divided.slice(0, 3))).toEqual([1, 0, 0]);
+    expect(Array.from(zeroQ)).toEqual([0, 0, 0, 1]);
+  });
+
+  it('HIGH-3: textureCube on real cube texture selects face from direction', async () => {
+    // Arrange:
+    const builtins = (await import('../../src/glsl/builtins')) as unknown as {
+      evaluateBuiltin: (name: string, args: unknown[], version: 100 | 300) => unknown;
+    };
+    const gl = s6Context(1, 1);
+    const tex = gl.createTexture();
+    if (tex === null) throw new Error('arrange: createTexture failed');
+    gl.bindTexture(TEXTURE_CUBE_MAP, tex);
+    const face = (r: number, g: number, b: number): Uint8Array => {
+      const d = new Uint8Array(2 * 2 * 4);
+      for (let i = 0; i < 4; i++) d.set([r, g, b, 255], i * 4);
+      return d;
+    };
+    gl.texImage2D(TEXTURE_CUBE_MAP_POSITIVE_X, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(255, 0, 0));
+    gl.texImage2D(TEXTURE_CUBE_MAP_NEGATIVE_X, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(0, 255, 0));
+    gl.texImage2D(TEXTURE_CUBE_MAP_POSITIVE_Y, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(0, 0, 255));
+    gl.texImage2D(TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(255, 255, 0));
+    gl.texImage2D(TEXTURE_CUBE_MAP_POSITIVE_Z, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(255, 0, 255));
+    gl.texImage2D(TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, RGBA, 2, 2, 0, RGBA, UNSIGNED_BYTE, face(0, 255, 255));
+    gl.texParameteri(TEXTURE_CUBE_MAP, TEXTURE_MIN_FILTER, NEAREST);
+    gl.texParameteri(TEXTURE_CUBE_MAP, TEXTURE_MAG_FILTER, NEAREST);
+    // Act:
+    const px = builtins.evaluateBuiltin('textureCube', [tex, new Float32Array([1, 0, 0])], 100) as Float32Array;
+    const ny = builtins.evaluateBuiltin('textureCube', [tex, new Float32Array([0, -1, 0])], 100) as Float32Array;
+    // Assert: +X red, -Y yellow (face selection, not 2D slice).
+    expect(Array.from(px.slice(0, 3))).toEqual([1, 0, 0]);
+    expect(Array.from(ny.slice(0, 3))).toEqual([1, 1, 0]);
+  });
+});

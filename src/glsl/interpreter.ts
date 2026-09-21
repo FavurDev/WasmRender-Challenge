@@ -58,7 +58,7 @@ import { getCheckedAST } from './checker';
 
 export interface InterpreterHost {
   readUniform(slot: number): number | Float32Array | Int32Array | Uint32Array;
-  sample(slot: number, coord: Float32Array, biasOrLod?: number): Float32Array;
+  sample(slot: number, coord: Float32Array, biasOrLod?: number, contextVersion?: 1 | 2): Float32Array;
 }
 
 export interface ClipVertex {
@@ -791,7 +791,9 @@ function evalTextureCall(callee: string, args: Value[], ctx: EvalContext): Value
       }
     }
     void callee;
-    const sampled = ctx.host.sample(slot, coord);
+    const rawBias = args.length > 2 ? (args[2] as Value) : undefined;
+    const biasOrLod = typeof rawBias === 'number' && Number.isFinite(rawBias) ? rawBias : undefined;
+    const sampled = ctx.host.sample(slot, coord, biasOrLod, ctx.version === 300 ? 2 : 1);
     if (sampled instanceof Float32Array && sampled.length === 4) return sampled;
     const out = new Float32Array(4);
     for (let i = 0; i < 4; i++) out[i] = i < sampled.length ? (sampled[i] as number) : i === 3 ? 1 : 0;

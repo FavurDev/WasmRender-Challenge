@@ -1,21 +1,168 @@
-/** GLSL ES builtin function library — non-sampling core, L3, total dispatch.
+/** GLSL ES builtin function library — non-sampling core + real TextureObject sampling, L3, total dispatch.
  *
  * Responsibility: pure total builtin implementations for GLSL ES 1.00/3.00
  * (math, geometric, trig/exp, constructors, swizzles, transpose/inverse,
- * relational) with Math.fround float32 normalization (ADR-012) and
+ * relational, texture sampling) with Math.fround float32 normalization (ADR-012) and
  * version-gated dispatch tables consumed by the interpreter.
  *
- * Scope: no sampling builtins (Task 3), no interpreter loop (Task 5).
+ * Sampling: real TextureObject sampling (Sprint 6 Task 4, ADR-S6-01) routes
+ * through the pure sampler core (texture.ts/sampler.ts, read-only); legacy
+ * Sprint 4 placeholder shapes are preserved for pre-existing sampling tests.
  * Never throws: unknown names, wrong arity, wrong types all yield
  * deterministic fallbacks (0.0 or zeroed typed arrays).
  */
 // CHANGELOG:
 // - Sprint 4 (2026-09-20): Non-sampling builtin library core (Task 2).
 // - Sprint 4 (2026-09-20): Texture sampling entry points (Task 3).
+// - Sprint 6 (2026-09-21): Real TextureObject sampling via texture.ts/sampler.ts (Task 4).
+
+import { evaluateTextureCompleteness } from '../gl/texture';
+import type { TextureObject as RealTextureObject } from '../gl/texture';
+import { fetchTexel2D, sample2D, sampleMipLevel2D } from '../gl/sampler';
+import {
+  LINEAR,
+  NEAREST,
+  NEAREST_MIPMAP_LINEAR,
+  NEAREST_MIPMAP_NEAREST,
+  LINEAR_MIPMAP_NEAREST,
+  LINEAR_MIPMAP_LINEAR,
+  TEXTURE_CUBE_MAP_POSITIVE_X,
+  TEXTURE_CUBE_MAP_NEGATIVE_X,
+  TEXTURE_CUBE_MAP_POSITIVE_Y,
+  TEXTURE_CUBE_MAP_NEGATIVE_Y,
+  TEXTURE_CUBE_MAP_POSITIVE_Z,
+  TEXTURE_CUBE_MAP_NEGATIVE_Z,
+} from '../gl/constants';
 
 export type Value = number | boolean | Float32Array | Int32Array | Uint32Array | boolean[];
 
 export type BuiltinFn = (...args: Value[]) => Value;
+
+// Sprint 6 Task 4: real TextureObject-backed sampling (ADR-S6-01). The legacy
+// Sprint 4 placeholder shape (array `.levels`) is preserved below for the
+// pre-existing sampling tests; real textures (Map-based `.levels2D`) branch
+// to the pure sampler core and are never mutated.
+/** Detect a real TextureObject (Map-based levels2D) versus the legacy placeholder shape. */
+function asRealTexture(v: Value): RealTextureObject | null {
+  try {
+    if (v === null || v === undefined || typeof v !== 'object') return null;
+    const t = v as unknown as Record<string, unknown>;
+    if (!(t['levels2D'] instanceof Map)) return null;
+    if (typeof t['id'] !== 'number') return null;
+    return v as unknown as RealTextureObject;
+  } catch (_e) {
+    void _e;
+    return null;
+  }
+}
+
+/** Sample a real TextureObject through the pure sampler core (read-only). */
+function sampleReal2D(
+  tex: RealTextureObject,
+  coords: Value,
+  lod: number | null,
+  contextVersion: 1 | 2,
+): Float32Array {
+  try {
+    if (!(coords instanceof Float32Array) || coords.length < 2) return black();
+    if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
+    return sample2D(tex, coords.slice(0, 2), lod, contextVersion);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
+
+/** Extract an optional numeric bias/lod argument (read-only, no mutation). */
+function realBias(args: Value[], index: number): number | null {
+  return args.length > index && isNum(args[index] as Value) ? (args[index] as number) : null;
+}
+
+const REAL_CUBE_FACES = [
+  TEXTURE_CUBE_MAP_POSITIVE_X,
+  TEXTURE_CUBE_MAP_NEGATIVE_X,
+  TEXTURE_CUBE_MAP_POSITIVE_Y,
+  TEXTURE_CUBE_MAP_NEGATIVE_Y,
+  TEXTURE_CUBE_MAP_POSITIVE_Z,
+  TEXTURE_CUBE_MAP_NEGATIVE_Z,
+] as const;
+
+/** Sample a real cube TextureObject via major-axis face selection (read-only). */
+function sampleRealCube(
+  tex: RealTextureObject,
+  dir: Value,
+  lod: number | null,
+  contextVersion: 1 | 2,
+): Float32Array {
+  try {
+    if (!(dir instanceof Float32Array) || dir.length < 3) return black();
+    if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
+    const sel = selectCubeFace(dir);
+    const faceKey = REAL_CUBE_FACES[sel.faceIndex] as number;
+    const faceMap = tex.levelsCube.get(faceKey as never);
+    if (faceMap === undefined || faceMap.size === 0) return black();
+    const base = faceMap.get(0);
+    if (base === undefined) return black();
+    const lodV = computeLod(lod ?? null, null, null, null, base.width, base.height);
+    const maxLod = faceMap.size - 1;
+    const clamped = Math.fround(Math.max(0, Math.min(maxLod, lodV)));
+    if (!Number.isFinite(clamped)) return sampleMipLevel2D(base, sel.u, sel.v, tex.sampler.magFilter);
+    const minFilter = tex.sampler.minFilter;
+    const magFilter = tex.sampler.magFilter;
+    if (clamped <= 0) return sampleMipLevel2D(base, sel.u, sel.v, magFilter);
+    if (minFilter === NEAREST || minFilter === LINEAR) {
+      return sampleMipLevel2D(base, sel.u, sel.v, minFilter);
+    }
+    if (minFilter === NEAREST_MIPMAP_NEAREST || minFilter === LINEAR_MIPMAP_NEAREST) {
+      const d = Math.min(maxLod, Math.max(0, Math.round(clamped)));
+      return sampleMipLevel2D(faceMap.get(d) ?? base, sel.u, sel.v, minFilter === NEAREST_MIPMAP_NEAREST ? NEAREST : LINEAR);
+    }
+    if (minFilter === NEAREST_MIPMAP_LINEAR || minFilter === LINEAR_MIPMAP_LINEAR) {
+      const intra = minFilter === NEAREST_MIPMAP_LINEAR ? NEAREST : LINEAR;
+      const d0 = Math.floor(clamped);
+      const d1 = Math.min(maxLod, d0 + 1);
+      const frac = Math.fround(clamped - d0);
+      const om = Math.fround(1 - frac);
+      const c0 = sampleMipLevel2D(faceMap.get(d0) ?? base, sel.u, sel.v, intra);
+      const c1 = sampleMipLevel2D(faceMap.get(d1) ?? base, sel.u, sel.v, intra);
+      const out = new Float32Array(4);
+      for (let i = 0; i < 4; i++) {
+        out[i] = Math.fround(Math.fround((c0[i] as number) * om) + Math.fround((c1[i] as number) * frac));
+      }
+      return out;
+    }
+    return sampleMipLevel2D(base, sel.u, sel.v, NEAREST);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
+
+/** Fetch a texel from a real TextureObject (read-only, OOB yields black). */
+function fetchRealTexel(tex: RealTextureObject, coords: Value, lod: number): Float32Array {
+  try {
+    if (!evaluateTextureCompleteness(tex, 2)) return black();
+    if (
+      !(coords instanceof Int32Array) &&
+      !(coords instanceof Float32Array) &&
+      !(coords instanceof Uint32Array)
+    ) {
+      return black();
+    }
+    const level = Number.isFinite(lod) ? Math.trunc(lod) : 0;
+    if (level < 0) return black();
+    const c = coords as unknown as ArrayLike<number>;
+    const x = Math.trunc(c[0] as number);
+    const y = Math.trunc(c[1] as number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return black();
+    const lvl = tex.levels2D.get(level);
+    if (lvl === undefined || x < 0 || x >= lvl.width || y < 0 || y >= lvl.height) return black();
+    return fetchTexel2D(tex, level, x, y);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
 
 function isNum(v: Value): v is number {
   return typeof v === 'number';
@@ -1224,6 +1371,11 @@ function sample(
 function evalTexture2D(...args: Value[]): Value {
   try {
     if (args.length < 2) return black();
+    const real = asRealTexture(args[0] as Value);
+    if (real !== null) {
+      const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
+      return sampleReal2D(real, args[1] as Value, bias, 1);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1237,6 +1389,10 @@ function evalTexture2D(...args: Value[]): Value {
 function evalTextureCube(...args: Value[]): Value {
   try {
     if (args.length < 2) return black();
+    const real = asRealTexture(args[0] as Value);
+    if (real !== null) {
+      return sampleRealCube(real, args[1] as Value, realBias(args, 2), 1);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1250,6 +1406,11 @@ function evalTextureCube(...args: Value[]): Value {
 function evalTexture(...args: Value[]): Value {
   try {
     if (args.length < 2) return black();
+    const real = asRealTexture(args[0] as Value);
+    if (real !== null) {
+      const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
+      return sampleReal2D(real, args[1] as Value, bias, 2);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1263,6 +1424,16 @@ function evalTexture(...args: Value[]): Value {
 function evalTextureProj(...args: Value[]): Value {
   try {
     if (args.length < 2) return black();
+    const realProj = asRealTexture(args[0] as Value);
+    if (realProj !== null) {
+      const coords = args[1] as Value;
+      if (!(coords instanceof Float32Array) || coords.length < 3) return black();
+      const q = Math.fround(coords[coords.length - 1] as number);
+      if (q === 0.0 || !Number.isFinite(q)) return black();
+      const proj = new Float32Array(coords.length - 1);
+      for (let i = 0; i < coords.length - 1; i++) proj[i] = Math.fround((coords[i] as number) / q);
+      return sampleReal2D(realProj, proj, realBias(args, 2), 2);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1280,6 +1451,13 @@ function evalTextureProj(...args: Value[]): Value {
 function evalTextureLod(...args: Value[]): Value {
   try {
     if (args.length < 3) return black();
+    const realLod = asRealTexture(args[0] as Value);
+    if (realLod !== null) {
+      const coords = args[1] as Value;
+      if (!(coords instanceof Float32Array)) return black();
+      const lod = isNum(args[2] as Value) ? (args[2] as number) : 0.0;
+      return sampleReal2D(realLod, coords, lod, 2);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1293,6 +1471,17 @@ function evalTextureLod(...args: Value[]): Value {
 function evalTextureGrad(...args: Value[]): Value {
   try {
     if (args.length < 4) return black();
+    const realGrad = asRealTexture(args[0] as Value);
+    if (realGrad !== null) {
+      const coords = args[1] as Value;
+      if (!(coords instanceof Float32Array)) return black();
+      const gx = args[2] instanceof Float32Array ? (args[2] as Float32Array) : null;
+      const gy = args[3] instanceof Float32Array ? (args[3] as Float32Array) : null;
+      if (gx === null || gy === null) return sampleReal2D(realGrad, coords, null, 2);
+      const base = realGrad.levels2D.get(0);
+      const lod = base === undefined ? 0 : computeLod(null, null, gx, gy, base.width, base.height);
+      return sampleReal2D(realGrad, coords, lod, 2);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     const coords = args[1] as Value;
@@ -1310,6 +1499,11 @@ function evalTextureGrad(...args: Value[]): Value {
 function evalTexelFetch(...args: Value[]): Value {
   try {
     if (args.length < 3) return black();
+    const realFetch = asRealTexture(args[0] as Value);
+    if (realFetch !== null) {
+      const lodFetch = isNum(args[2] as Value) ? Math.trunc(args[2] as number) : 0;
+      return fetchRealTexel(realFetch, args[1] as Value, lodFetch);
+    }
     const tex = asTex(args[0] as Value);
     if (tex === null) return black();
     if (!isTextureComplete(tex, 2)) return black();

@@ -95,12 +95,20 @@ export function mapClipToScreen(clipVertex: ClipVertex, state: PipelineState): S
   };
 }
 
+/** Optional per-fragment shader hook (Sprint 6 Task 4): receives the interpolated varyings and pixel coords, returns 0..1 RGBA or null to keep the default varying-as-color write. */
+export type FragmentShader = (
+  varyings: Float32Array,
+  x: number,
+  y: number,
+) => Float32Array | readonly [number, number, number, number] | null;
+
 export function rasterizeTriangle(
   v0: ScreenVertex,
   v1: ScreenVertex,
   v2: ScreenVertex,
   state: PipelineState,
   fb: DrawingBuffer,
+  shade?: FragmentShader | null,
 ): void {
   let ax = v0;
   let bx = v1;
@@ -218,8 +226,15 @@ export function rasterizeTriangle(
             continue;
           }
         }
+        const shaded = shade !== undefined && shade !== null ? shade(fragVaryings, px, py) : null;
         const n = fragVaryings.length;
-        if (n >= 4) {
+        if (shaded !== null && shaded !== undefined) {
+          const o = idx * 4;
+          color[o] = Math.round(clamp01(shaded[0] as number) * 255);
+          color[o + 1] = Math.round(clamp01(shaded[1] as number) * 255);
+          color[o + 2] = Math.round(clamp01(shaded[2] as number) * 255);
+          color[o + 3] = Math.round(clamp01(shaded[3] as number) * 255);
+        } else if (n >= 4) {
           const o = idx * 4;
           color[o] = Math.round(clamp01(fragVaryings[0] as number) * 255);
           color[o + 1] = Math.round(clamp01(fragVaryings[1] as number) * 255);

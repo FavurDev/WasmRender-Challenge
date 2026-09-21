@@ -32,11 +32,15 @@ import {
   UNPACK_FLIP_Y_WEBGL,
   UNPACK_PREMULTIPLY_ALPHA_WEBGL,
   LINK_STATUS,
+  SAMPLER_CUBE,
   SCISSOR_BOX,
   SHADER_TYPE,
   SHORT,
   STENCIL_BUFFER_BIT,
   STENCIL_CLEAR_VALUE,
+  TEXTURE0,
+  TEXTURE_2D,
+  TEXTURE_CUBE_MAP,
   TRIANGLES,
   VALID_DEPTH_FUNC_SET,
   VALIDATE_STATUS,
@@ -62,8 +66,9 @@ import { GLState } from './state';
 import type { CanvasDimensions, VertexAttribDescriptor } from './state';
 import { BufferManager } from './buffer';
 import type { BufferObject } from './buffer';
-import { TextureManager } from './texture';
+import { TextureManager, isMipmapFilter } from './texture';
 import type { PixelStoreStateProvider, TextureObject } from './texture';
+import { sample2D } from './sampler';
 import { DrawingBuffer } from './framebuffer';
 import { resolveContextAttributes } from './context-attributes';
 import type { WebGLContextAttributes } from './context-attributes';
@@ -135,6 +140,147 @@ const DEFAULT_HEIGHT = 150;
 const POINT_SIZE_DEFAULT = 1.0;
 const DEFAULT_VARYING: readonly [number, number, number, number] = [1, 1, 1, 1];
 const MAX_VERTEX_ATTRIBS = 16;
+
+/** Maximum texture unit index (WebGL 1.0 guarantees at least 8; implementation supports 32). */
+const MAX_TEXTURE_UNITS = 32;
+
+/**
+ * Resolve sampler uniforms to bound textures for a draw call (Sprint 6 Task 4).
+ *
+ * Builds a per-draw snapshot mapping texture unit -> bound TextureObject (or
+ * null when unbound, dead, or the unit index is invalid). The snapshot is
+ * frozen at draw time so later binding changes cannot affect in-flight
+ * fragments. Accepts both the real TextureManager (active-unit save/set/
+ * restore dance) and minimal test doubles exposing getBoundTexture.
+ *
+ * Args:
+ *   linked: Linked program owning the sampler uniforms and uniform store.
+ *   textureManager: Texture binding source.
+ *
+ * Returns:
+ *   Map from unit (0..31, pre-filled with null) to TextureObject or null.
+ */
+export function resolveDrawTextures(
+  linked: LinkedProgram,
+  textureManager: {
+    getBoundTexture(target: number, unit?: number): TextureObject | null;
+    getActiveTexture?: () => number;
+    setActiveTexture?: (unit: number) => void;
+  },
+): Map<number, TextureObject | null> {
+  const snapshot = new Map<number, TextureObject | null>();
+  for (let unit = 0; unit < MAX_TEXTURE_UNITS; unit++) snapshot.set(unit, null);
+  try {
+    const canDance =
+      typeof textureManager.getActiveTexture === 'function' &&
+      typeof textureManager.setActiveTexture === 'function';
+    const savedActive = canDance ? (textureManager.getActiveTexture as () => number)() : TEXTURE0;
+    for (const info of linked.activeUniforms) {
+      if (info.typeKind !== 'sampler') continue;
+      let unit = -1;
+      try {
+        // Sprint 6 Task 4: sampler units live in samplerUnits; fall back to
+        // i32 for minimal test doubles that only provide an i32 store.
+        const samplerUnits = (linked.uniformStore as unknown as { samplerUnits?: Int32Array }).samplerUnits;
+        unit =
+          samplerUnits !== undefined && samplerUnits !== null
+            ? (samplerUnits[info.slot] as number)
+            : (linked.uniformStore.i32[info.slot] as number);
+      } catch (_e) {
+        void _e;
+        continue;
+      }
+      if (!Number.isInteger(unit) || unit < 0 || unit >= MAX_TEXTURE_UNITS) continue;
+      const target = info.type === SAMPLER_CUBE ? TEXTURE_CUBE_MAP : TEXTURE_2D;
+      let tex: TextureObject | null = null;
+      try {
+        if (canDance) {
+          (textureManager.setActiveTexture as (unit: number) => void)(TEXTURE0 + unit);
+          tex = textureManager.getBoundTexture(target as number);
+        } else {
+          tex = textureManager.getBoundTexture(target as number, unit);
+        }
+      } catch (_e) {
+        void _e;
+        tex = null;
+      }
+      snapshot.set(unit, tex);
+    }
+    if (canDance) {
+      try {
+        (textureManager.setActiveTexture as (unit: number) => void)(savedActive);
+      } catch (_e) {
+        void _e;
+      }
+    }
+  } catch (_e) {
+    void _e;
+  }
+  return snapshot;
+}
+
+/**
+ * Estimate a per-draw LOD for minification (Sprint 6 Task 4).
+ *
+ * Approximates log2(max(texW/vpW, texH/vpH)) clamped at >= 0 so minified
+ * draws select smaller mip levels while 1:1 or magnified draws stay on
+ * level 0. Returns 0 when sizes are degenerate.
+ */
+export function estimateDrawLod(texWidth: number, texHeight: number, vpWidth: number, vpHeight: number): number {
+  try {
+    if (
+      !Number.isFinite(texWidth) ||
+      !Number.isFinite(texHeight) ||
+      !Number.isFinite(vpWidth) ||
+      !Number.isFinite(vpHeight) ||
+      texWidth <= 0 ||
+      texHeight <= 0 ||
+      vpWidth <= 0 ||
+      vpHeight <= 0
+    ) {
+      return 0;
+    }
+    return Math.max(0, Math.log2(Math.max(texWidth / vpWidth, texHeight / vpHeight)));
+  } catch (_e) {
+    void _e;
+    return 0;
+  }
+}
+
+/**
+ * Sample a snapshot texture for the fragment host (Sprint 6 Task 4).
+ *
+ * Looks the texture up by unit (falling back to slot when they differ),
+ * returns opaque black for unbound/dead textures, and otherwise delegates
+ * to the pure sampler core. Never mutates the TextureObject. A minification
+ * LOD estimate is added on top of the shader bias only for mipmap min
+ * filters; non-mipmap filters always sample level 0.
+ */
+export function sampleSnapshotTexture(
+  snapshot: Map<number, TextureObject | null>,
+  slotOrUnit: number,
+  coord: Float32Array,
+  biasOrLod: number | undefined,
+  contextVersion: 1 | 2,
+  lodEstimate: number,
+): Float32Array {
+  try {
+    const unit = Math.trunc(slotOrUnit);
+    const tex = snapshot.get(unit) ?? null;
+    if (tex === null || tex === undefined || tex.alive !== true) return new Float32Array([0, 0, 0, 1]);
+    const bias = typeof biasOrLod === 'number' && Number.isFinite(biasOrLod) ? biasOrLod : 0;
+    let lod = bias;
+    try {
+      if (isMipmapFilter(tex.sampler.minFilter)) lod = bias + lodEstimate;
+    } catch (_e) {
+      void _e;
+    }
+    return sample2D(tex, coord.slice(0, 2), lod, contextVersion);
+  } catch (_e) {
+    void _e;
+    return new Float32Array([0, 0, 0, 1]);
+  }
+}
 
 /** Minimal WebGL 1.0 context facade composing ErrorSink, GLState, DrawingBuffer, raster core. */
 export class WebGL1Context {
@@ -360,9 +506,34 @@ export class WebGL1Context {
     }
     const pipelineState = this.glState.snapshot();
     const targetMap = createVertexAttribTargetMap(linked.activeAttribs);
+    const textureSnapshot = resolveDrawTextures(linked, this.textureManager);
+    const viewportWidth = pipelineState.viewport.width;
+    const viewportHeight = pipelineState.viewport.height;
     const host: InterpreterHost = {
       readUniform: (slot: number) => this.readDrawUniform(linked, slot),
-      sample: () => new Float32Array([0, 0, 0, 1]),
+      sample: (slot: number, coord: Float32Array, biasOrLod?: number, contextVersion?: 1 | 2) => {
+        const ver: 1 | 2 = contextVersion === 2 ? 2 : 1;
+        let unit = Math.trunc(slot);
+        try {
+          const samplerUnits = (linked.uniformStore as unknown as { samplerUnits?: Int32Array }).samplerUnits;
+          const raw =
+            samplerUnits !== undefined && samplerUnits !== null
+              ? (samplerUnits[unit] as number)
+              : (linked.uniformStore.i32[unit] as number);
+          if (Number.isInteger(raw) && raw >= 0 && raw < MAX_TEXTURE_UNITS) unit = raw;
+        } catch (_e) {
+          void _e;
+        }
+        let lodEstimate = 0;
+        try {
+          const tex = textureSnapshot.get(unit) ?? null;
+          const base = tex !== null && tex !== undefined && tex.alive === true ? tex.levels2D.get(0) : undefined;
+          if (base !== undefined) lodEstimate = estimateDrawLod(base.width, base.height, viewportWidth, viewportHeight);
+        } catch (_e) {
+          void _e;
+        }
+        return sampleSnapshotTexture(textureSnapshot, unit, coord, biasOrLod, ver, lodEstimate);
+      },
     };
     const layout = linked.varyingLayout;
     const flatWidth = layout.length > 0 ? layout.length * 4 : 4;
@@ -422,7 +593,24 @@ export class WebGL1Context {
         const sv0 = mapClipToScreen(clippedFan[0] as ClipVertex, pipelineState);
         const sv1 = mapClipToScreen(clippedFan[fanIdx] as ClipVertex, pipelineState);
         const sv2 = mapClipToScreen(clippedFan[fanIdx + 1] as ClipVertex, pipelineState);
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer);
+        // Sprint 6 Task 4: per-pixel fragment shading so sampled textures reach the framebuffer.
+        const shade = (fragVaryings: Float32Array): Float32Array | null => {
+          try {
+            const varyingMap = new Map<string, Float32Array>();
+            for (let li = 0; li < layout.length; li++) {
+              const item = layout[li] as { name: string };
+              const o = li * 4;
+              varyingMap.set(item.name, fragVaryings.slice(o, o + 4));
+            }
+            const frag = executeFragment(linked, varyingMap, host, true);
+            if (frag.discarded === true) return null;
+            return frag.color;
+          } catch (_e) {
+            void _e;
+            return null;
+          }
+        };
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.drawingBuffer, shade);
       }
     }
   }
