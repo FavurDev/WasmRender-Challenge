@@ -7,6 +7,7 @@ import {
   ARRAY_BUFFER,
   BACK,
   BLEND,
+  BACK as BACK_ALIAS,
   BROWSER_DEFAULT_WEBGL,
   CCW,
   CULL_FACE,
@@ -61,6 +62,7 @@ export interface VertexAttribDescriptor {
   buffer: unknown | null;
   divisor: number;
   genericValue: [number, number, number, number];
+  isInteger?: boolean;
 }
 
 export interface VertexArrayObject {
@@ -80,6 +82,7 @@ function cloneAttrib(desc: VertexAttribDescriptor): VertexAttribDescriptor {
     buffer: desc.buffer,
     divisor: desc.divisor,
     genericValue: [desc.genericValue[0], desc.genericValue[1], desc.genericValue[2], desc.genericValue[3]],
+    isInteger: desc.isInteger ?? false,
   };
 }
 
@@ -88,6 +91,7 @@ function defaultAttrib(): VertexAttribDescriptor {
     enabled: false, size: 4, type: FLOAT as GLenum, normalized: false,
     stride: 0, offset: 0, buffer: null, divisor: 0,
     genericValue: [0, 0, 0, 1] as [number, number, number, number],
+    isInteger: false,
   };
 }
 
@@ -159,6 +163,8 @@ export interface PipelineState {
   readonly sampleCoverageEnabled: boolean;
   readonly colorMask: readonly [boolean, boolean, boolean, boolean];
   readonly clearValues: ClearValues;
+  readonly drawBuffers: readonly GLenum[];
+  readonly readBuffer: GLenum;
 }
 
 export interface CanvasDimensions {
@@ -301,6 +307,8 @@ export class GLState implements IGLState {
   private textureUnits: Array<{ binding2D: unknown | null; bindingCube: unknown | null }> = [];
   private canvasWidth = 300;
   private canvasHeight = 150;
+  private drawBuffersState: GLenum[] = [BACK];
+  private readBufferState: GLenum = BACK;
 
   constructor(errorSink: IErrSink, canvas?: CanvasDimensions) {
     this.errorSink = errorSink;
@@ -610,6 +618,30 @@ export class GLState implements IGLState {
     (this.attribs[index] as VertexAttribDescriptor).genericValue = [value[0], value[1], value[2], value[3]];
   }
 
+  /** Sprint 8 Task 10 (MRT): mark an attribute descriptor as integer-typed (vertexAttribIPointer). */
+  setVertexAttribInteger(index: number, isInteger: boolean): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    (this.attribs[index] as VertexAttribDescriptor).isInteger = isInteger;
+  }
+
+  /** Sprint 8 Task 10 (MRT): current draw-buffers list (WebGL2 drawBuffers state). */
+  getDrawBuffersList(): GLenum[] {
+    return [...this.drawBuffersState];
+  }
+
+  setDrawBuffersList(list: GLenum[]): void {
+    this.drawBuffersState = [...list];
+  }
+
+  /** Sprint 8 Task 10 (MRT): current read-buffer source (WebGL2 readBuffer state). */
+  getReadBufferSource(): GLenum {
+    return this.readBufferState;
+  }
+
+  setReadBufferSource(src: GLenum): void {
+    this.readBufferState = src;
+  }
+
   setVertexAttribDivisor(index: number, divisor: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
     (this.attribs[index] as VertexAttribDescriptor).divisor = divisor;
@@ -682,6 +714,8 @@ export class GLState implements IGLState {
         clearColor: [...this.clearColor] as [number, number, number, number],
         clearDepth: this.clearDepth, clearStencil: this.clearStencil,
       },
+      drawBuffers: [...this.drawBuffersState],
+      readBuffer: this.readBufferState,
     };
     deepFreeze(snap);
     return snap;
@@ -787,5 +821,7 @@ export class GLState implements IGLState {
     this.clearColor = [...snapshot.clearValues.clearColor] as [number, number, number, number];
     this.clearDepth = snapshot.clearValues.clearDepth;
     this.clearStencil = snapshot.clearValues.clearStencil;
+    this.drawBuffersState = [...snapshot.drawBuffers];
+    this.readBufferState = snapshot.readBuffer;
   }
 }

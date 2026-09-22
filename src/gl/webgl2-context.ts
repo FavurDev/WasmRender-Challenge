@@ -10,9 +10,14 @@
 import {
   CURRENT_QUERY,
   CURRENT_VERTEX_ATTRIB,
+  ELEMENT_ARRAY_BUFFER,
   INVALID_ENUM,
   INVALID_OPERATION,
   INVALID_VALUE,
+  TRIANGLES,
+  UNSIGNED_BYTE,
+  UNSIGNED_INT,
+  UNSIGNED_SHORT,
   UNPACK_IMAGE_HEIGHT,
   UNPACK_ROW_LENGTH,
   UNPACK_SKIP_IMAGES,
@@ -36,6 +41,7 @@ import { WebGL1Context } from './webgl1-context';
 import { QuerySyncManager } from './query-sync';
 import type { WebGLQuery, WebGLSync } from './query-sync';
 import type { ErrorSink } from './errors';
+import { resolveIndexSequence } from './vertex-fetch';
 import { SamplerManager } from './sampler-manager';
 import type { WebGLSampler } from './sampler-manager';
 import type { SamplerParams } from './texture';
@@ -196,7 +202,114 @@ export class WebGL2Context extends WebGL1Context {
   /** Set the per-attribute instance divisor. */
   vertexAttribDivisor(index: number, divisor: number): void {
     if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!Number.isInteger(index) || index < 0 || index >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(divisor) || divisor < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
     (this as unknown as GLStateInternals).glState.setVertexAttribDivisor(index, divisor);
+  }
+
+  /** Draw multiple instances from array data (outer instance loop, snapshot once). */
+  drawArraysInstanced(mode: number, first: number, count: number, instanceCount: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (mode !== TRIANGLES) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (first < 0 || count < 0 || instanceCount < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (count === 0 || instanceCount === 0) return;
+    this.drawBufferedTrianglesCore(null, first, count, instanceCount);
+  }
+
+  /** Draw multiple instances from element indices. */
+  drawElementsInstanced(mode: number, count: number, type: number, offset: number, instanceCount: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (mode !== TRIANGLES) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (count < 0 || offset < 0 || instanceCount < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (type !== UNSIGNED_SHORT && type !== UNSIGNED_BYTE && type !== UNSIGNED_INT) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (count === 0 || instanceCount === 0) return;
+    const internals = this as unknown as {
+      bufferManager: import('./buffer').BufferManager;
+    };
+    const bound = internals.bufferManager.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    if (bound === null || bound.alive !== true || bound.data === null) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const typeByteSize = type === UNSIGNED_SHORT ? 2 : type === UNSIGNED_INT ? 4 : 1;
+    if (offset % typeByteSize !== 0) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (offset + count * typeByteSize > bound.byteLength) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const indexList = resolveIndexSequence(bound.data, offset, count, type);
+    this.drawBufferedTrianglesCore(indexList, 0, count, instanceCount);
+  }
+
+  /** Draw elements constrained to index range [start, end]. */
+  drawRangeElements(mode: number, start: number, end: number, count: number, type: number, offset: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (mode !== TRIANGLES) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (start < 0 || end < 0 || count < 0 || offset < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (end < start) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (type !== UNSIGNED_SHORT && type !== UNSIGNED_BYTE && type !== UNSIGNED_INT) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (count === 0) return;
+    const internals = this as unknown as {
+      bufferManager: import('./buffer').BufferManager;
+    };
+    const bound = internals.bufferManager.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+    if (bound === null || bound.alive !== true || bound.data === null) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const typeByteSize = type === UNSIGNED_SHORT ? 2 : type === UNSIGNED_INT ? 4 : 1;
+    if (offset % typeByteSize !== 0 || offset + count * typeByteSize > bound.byteLength) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const indexList = resolveIndexSequence(bound.data, offset, count, type);
+    for (const idx of indexList) {
+      if (idx < start || idx > end) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+    }
+    this.drawBufferedTrianglesCore(indexList, 0, count, 1);
   }
 
   /** Create a fence sync object. */
@@ -490,4 +603,8 @@ export class WebGL2Context extends WebGL1Context {
     if (this.isContextLost()) return null;
     return this.getSamplers().getSamplerParameter(sampler, pname as GLenum);
   }
+
+  drawBuffers(buffers: number[]): void {}
+
+  readBuffer(src: number): void {}
 }

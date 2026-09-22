@@ -3,6 +3,9 @@
 /** DrawingBuffer — default WebGL drawing buffer: RGBA8 color + packed DEPTH24_STENCIL8. L2: imports constants + errors + state only. */
 import {
   COLOR_ATTACHMENT0,
+  COLOR_ATTACHMENT1,
+  COLOR_ATTACHMENT2,
+  COLOR_ATTACHMENT3,
   COLOR_BUFFER_BIT,
   DEPTH_ATTACHMENT,
   DEPTH_BUFFER_BIT,
@@ -513,7 +516,8 @@ export class FramebufferManager {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
-    if (attachment !== COLOR_ATTACHMENT0 && attachment !== DEPTH_ATTACHMENT && attachment !== STENCIL_ATTACHMENT) {
+    if (attachment !== COLOR_ATTACHMENT0 && attachment !== DEPTH_ATTACHMENT && attachment !== STENCIL_ATTACHMENT
+      && attachment !== COLOR_ATTACHMENT1 && attachment !== COLOR_ATTACHMENT2 && attachment !== COLOR_ATTACHMENT3) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }

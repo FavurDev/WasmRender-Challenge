@@ -725,6 +725,8 @@ export function check(
     if (stage === 'vertex') {
       ctx.declare('gl_Position', { typeName: 'vec4', readOnly: false, declLine: 0 }, 0);
       ctx.declare('gl_PointSize', { typeName: 'float', readOnly: false, declLine: 0 }, 0);
+      ctx.declare('gl_VertexID', { typeName: 'int', readOnly: true, declLine: 0 }, 0);
+      ctx.declare('gl_InstanceID', { typeName: 'int', readOnly: true, declLine: 0 }, 0);
     } else {
       ctx.declare('gl_FragColor', { typeName: 'vec4', readOnly: false, declLine: 0 }, 0);
       ctx.declare('gl_FragCoord', { typeName: 'vec4', readOnly: true, declLine: 0 }, 0);
@@ -735,6 +737,7 @@ export function check(
     }
     // Pass 1: register globals + function signatures.
     const globalVars: CheckedDeclaration[] = [];
+    const uniformBlocks: Array<{ name: string; members: CheckedDeclaration[] }> = [];
     for (const d of decls) {
       if (ctx.errors.length > 0) break;
       if (typeof d !== 'object' || d === null) {
@@ -835,6 +838,32 @@ export function check(
         if (typeof p.typeName === 'string' && p.typeName === 'float') ctx.hasDefaultFloatPrecision = true;
       } else if (n.kind === 'StructDefinition') {
         continue;
+      } else if (n.kind === 'UniformBlockDeclaration') {
+        const b = d as { name?: unknown; layout?: { name?: unknown } | null; members?: unknown };
+        const bline = line;
+        if (version === 100) {
+          ctx.fail(bline, 'Uniform blocks not supported in GLSL ES 1.00');
+          break;
+        }
+        const lname = typeof b.layout === 'object' && b.layout !== null ? (b.layout as { name?: unknown }).name : null;
+        if (lname === 'packed' || lname === 'shared') {
+          ctx.fail(bline, "Uniform block layout '" + String(lname) + "' is not supported (std140 only)");
+          break;
+        }
+        const bname = typeof b.name === 'string' ? b.name : '';
+        const rawMembers = Array.isArray(b.members) ? (b.members as Array<{ name?: unknown; typeName?: unknown; arraySize?: unknown }>) : [];
+        const checkedMembers: CheckedDeclaration[] = [];
+        for (const m of rawMembers) {
+          const tname = typeof m.typeName === 'string' ? m.typeName : '';
+          const mname = typeof m.name === 'string' ? m.name : '';
+          if (tname.toLowerCase().indexOf('sampler') >= 0) {
+            ctx.fail(bline, "Sampler type '" + tname + "' not allowed in uniform block");
+            break;
+          }
+          checkedMembers.push({ name: mname, typeName: tname, storage: 'uniform', precision: null, arraySize: evalArraySize(m.arraySize), location: null, interpolation: null });
+        }
+        if (ctx.errors.length > 0) break;
+        uniformBlocks.push({ name: bname, members: checkedMembers });
       } else {
         ctx.fail(line, "Unknown declaration kind '" + n.kind + "'");
         break;
@@ -945,7 +974,7 @@ export function check(
     const declaredOutputs = globalVars.filter((g) => g.storage === 'varying' || g.storage === 'out');
     const uniforms = globalVars.filter((g) => g.storage === 'uniform');
     const functions = [...ctx.funcs.keys()];
-    const checked: CheckedShader = { stage, version, declaredInputs, declaredOutputs, uniforms, functions };
+    const checked: CheckedShader = { stage, version, declaredInputs, declaredOutputs, uniforms, functions, uniformBlocks };
     try { checkedASTs.set(checked, ast); } catch (_e) { void _e; }
     return { ok: true, tokens: checked };
   } catch (err) {

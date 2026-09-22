@@ -8,10 +8,11 @@ import type { CompileResult, Token } from './tokenizer';
 export const MAX_PARSER_DEPTH = 64;
 
 export interface AstNode { kind: string; line: number; }
-export interface LayoutQualifier extends AstNode { kind: 'LayoutQualifier'; location: number; }
+export interface LayoutQualifier extends AstNode { kind: 'LayoutQualifier'; location: number; name?: string | null; }
+export interface UniformBlockDeclaration extends AstNode { kind: 'UniformBlockDeclaration'; name: string; layout: LayoutQualifier | null; members: VariableDeclaration[]; instanceName: string | null; }
 export interface TypeSpecifier extends AstNode { kind: 'TypeSpecifier'; name: string; }
 export interface TranslationUnit extends AstNode { kind: 'TranslationUnit'; declarations: Declaration[]; }
-export type Declaration = FunctionDefinition | VariableDeclaration | StructDefinition | PrecisionStatement | FunctionPrototype;
+export type Declaration = FunctionDefinition | VariableDeclaration | StructDefinition | PrecisionStatement | FunctionPrototype | UniformBlockDeclaration;
 export interface FunctionPrototype extends AstNode { kind: 'FunctionPrototype'; returnType: TypeSpecifier; name: string; params: VariableDeclaration[]; }
 export interface FunctionDefinition extends AstNode { kind: 'FunctionDefinition'; returnType: TypeSpecifier; name: string; params: VariableDeclaration[]; body: CompoundStatement; }
 export interface VariableDeclaration extends AstNode { kind: 'VariableDeclaration'; typeName: string; name: string; layout: LayoutQualifier | null; storage: string | null; precision: string | null; interpolation: string | null; arraySize: Expression | null; initializer: Expression | null; }
@@ -216,25 +217,44 @@ class Parser {
       if (o.kind !== 'OPERATOR' || o.text !== '(') { this.releaseDepth(); return this.fail(o.line, "Expected '(' after 'layout'"); }
       this.pos += 1;
       o = this.current();
-      if (o.text !== 'location') { this.releaseDepth(); return this.fail(o.line, "Expected 'location' in layout qualifier, found '" + o.text + "'"); }
-      this.pos += 1;
-      o = this.current();
-      if (o.kind !== 'OPERATOR' || o.text !== '=') { this.releaseDepth(); return this.fail(o.line, "Expected '=' in layout qualifier"); }
-      this.pos += 1;
-      o = this.current();
-      if (o.kind !== 'INT_CONSTANT' && o.kind !== 'UINT_CONSTANT') { this.releaseDepth(); return this.fail(o.line, "Expected integer location value"); }
-      const loc = parseInt(o.text, 10);
-      this.pos += 1;
-      o = this.current();
-      if (o.kind !== 'OPERATOR' || o.text !== ')') { this.releaseDepth(); return this.fail(o.line, "Expected ')'"); }
-      this.pos += 1;
-      layout = { kind: 'LayoutQualifier', line: lc.line, location: loc };
+      if (o.text === 'std140' || o.text === 'packed' || o.text === 'shared') {
+        const lname = o.text; this.pos += 1;
+        o = this.current();
+        if (o.kind !== 'OPERATOR' || o.text !== ')') { this.releaseDepth(); return this.fail(o.line, "Expected ')'"); }
+        this.pos += 1;
+        layout = { kind: 'LayoutQualifier', line: lc.line, location: -1, name: lname };
+        const ub = this.tryParseUniformBlock(layout, startLine);
+        if (ub !== undefined) { this.releaseDepth(); if (ub === null) return null; return ub; }
+      } else {
+        if (o.text !== 'location') { this.releaseDepth(); return this.fail(o.line, "Expected 'location' in layout qualifier, found '" + o.text + "'"); }
+        this.pos += 1;
+        o = this.current();
+        if (o.kind !== 'OPERATOR' || o.text !== '=') { this.releaseDepth(); return this.fail(o.line, "Expected '=' in layout qualifier"); }
+        this.pos += 1;
+        o = this.current();
+        if (o.kind !== 'INT_CONSTANT' && o.kind !== 'UINT_CONSTANT') { this.releaseDepth(); return this.fail(o.line, "Expected integer location value"); }
+        const loc = parseInt(o.text, 10);
+        this.pos += 1;
+        o = this.current();
+        if (o.kind !== 'OPERATOR' || o.text !== ')') { this.releaseDepth(); return this.fail(o.line, "Expected ')'"); }
+        this.pos += 1;
+        layout = { kind: 'LayoutQualifier', line: lc.line, location: loc };
+      }
     }
     // interpolation
     let ic = this.current();
     if (INTERP.has(ic.text) && (ic.kind === 'KEYWORD' || ic.kind === 'IDENTIFIER' || ic.kind === 'RESERVED')) {
       if (this.version === 100) { this.releaseDepth(); return this.fail(ic.line, "Interpolation qualifier '" + ic.text + "' not supported in GLSL ES 1.00"); }
       interpolation = ic.text; this.pos += 1;
+    }
+    // bare uniform block: uniform Name { ... };
+    {
+      const t0 = this.current(); const t1 = this.peek(1); const t2 = this.peek(2);
+      const isUniformKw = (t0.kind === 'KEYWORD' || t0.kind === 'IDENTIFIER') && t0.text === 'uniform';
+      if (layout === null && isUniformKw && t1.kind === 'IDENTIFIER' && t2.kind === 'OPERATOR' && t2.text === '{') {
+        const ub = this.tryParseUniformBlock(null, startLine);
+        if (ub !== undefined) { this.releaseDepth(); if (ub === null) return null; return ub; }
+      }
     }
     // storage
     let sc = this.current();
@@ -311,6 +331,40 @@ class Parser {
     this.releaseDepth();
     if (r === null) return null;
     return r;
+  }
+
+  tryParseUniformBlock(layout: LayoutQualifier | null, startLine: number): UniformBlockDeclaration | null | undefined {
+    const u = this.current();
+    if (!((u.kind === 'KEYWORD' || u.kind === 'IDENTIFIER') && u.text === 'uniform')) return undefined;
+    const nm = this.peek(1); const br = this.peek(2);
+    if (!(nm.kind === 'IDENTIFIER' && br.kind === 'OPERATOR' && br.text === '{')) return undefined;
+    this.pos += 1; this.pos += 1; this.pos += 1; // uniform Name {
+    const members: VariableDeclaration[] = [];
+    while (!this.isEOF() && this.errorMessage === null) {
+      const cc = this.current();
+      if (cc.kind === 'OPERATOR' && cc.text === '}') break;
+      const m = this.parseMemberDeclaration();
+      if (m === null) return null;
+      members.push(m);
+    }
+    const cl = this.current();
+    if (cl.kind !== 'OPERATOR' || cl.text !== '}') { this.fail(cl.line, 'Unexpected end of file inside uniform block'); return null; }
+    this.pos += 1;
+    let instanceName: string | null = null;
+    const maybeInst = this.current();
+    if (maybeInst.kind === 'IDENTIFIER') { instanceName = maybeInst.text; this.pos += 1; }
+    if (this.current().kind === 'OPERATOR' && this.current().text === '[') {
+      this.pos += 1;
+      const sz = this.parseExpression();
+      if (sz === null) return null;
+      const rb = this.current();
+      if (rb.kind !== 'OPERATOR' || rb.text !== ']') { this.fail(rb.line, "Expected ']'"); return null; }
+      this.pos += 1;
+    }
+    const sc = this.current();
+    if (sc.kind !== 'OPERATOR' || sc.text !== ';') { this.fail(sc.line, "Expected ';' after declaration"); return null; }
+    this.pos += 1;
+    return { kind: 'UniformBlockDeclaration', line: startLine, name: nm.text, layout, members, instanceName };
   }
 
   parseParam(): VariableDeclaration | null {

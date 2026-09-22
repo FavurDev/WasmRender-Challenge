@@ -116,9 +116,12 @@ export function validateVertexAttribRange(
   first: number,
   count: number,
   activeAttribs?: ReadonlyArray<ActiveInfo>,
+  instanceCount?: number,
 ): AttribValidationResult {
   if (count <= 0) return { ok: true };
+  if (instanceCount !== undefined && instanceCount <= 0) return { ok: true };
   if (first < 0) return { ok: false, reason: 'Negative first index' };
+  const effectiveInstances = instanceCount ?? 1;
   const lastIndex = first + count - 1;
   const slotsToCheck: number[] = [];
   if (activeAttribs !== undefined && activeAttribs !== null) {
@@ -148,7 +151,9 @@ export function validateVertexAttribRange(
     if (desc.offset < 0) {
       return { ok: false, failedAttributeIndex: index, reason: 'Attribute offset is negative' };
     }
-    const requiredBytes = desc.offset + effectiveStride * lastIndex + elementSize;
+    const divisor = (desc as { divisor?: number }).divisor ?? 0;
+    const maxAccessedIndex = divisor === 0 ? lastIndex : Math.floor((effectiveInstances - 1) / divisor);
+    const requiredBytes = desc.offset + effectiveStride * maxAccessedIndex + elementSize;
     if (requiredBytes > bufferObj.byteLength) {
       return {
         ok: false,
@@ -201,7 +206,9 @@ export function fetchVertexAttributes(
   activeAttribs: ReadonlyArray<ActiveInfo>,
   targetMap: Map<number, Float32Array>,
   viewCache?: Map<ArrayBuffer, DataView>,
+  instanceIndex?: number,
 ): Map<number, Float32Array> {
+  const effectiveInstance = instanceIndex ?? 0;
   for (const attrib of activeAttribs) {
     const slot = attrib.location;
     if (slot < 0) continue;
@@ -236,7 +243,9 @@ export function fetchVertexAttributes(
     const typeSize = getTypeByteSize(desc.type);
     const elementSize = desc.size * typeSize;
     const effectiveStride = desc.stride > 0 ? desc.stride : elementSize;
-    const vertexByteOffset = desc.offset + effectiveStride * vertexIndex;
+    const divisor = (desc as { divisor?: number }).divisor ?? 0;
+    const effectiveAttributeIndex = divisor === 0 ? vertexIndex : Math.floor(effectiveInstance / divisor);
+    const vertexByteOffset = desc.offset + effectiveStride * effectiveAttributeIndex;
     const view = getCachedView(bufferObj.data, viewCache);
     const numComponents = desc.size;
     targetVec[0] = extractComponent(view, vertexByteOffset + 0 * typeSize, desc.type, desc.normalized);
@@ -285,6 +294,9 @@ export function resolveIndexSequence(
   } else if (type === UNSIGNED_BYTE) {
     const u8 = new Uint8Array(bufferData, byteOffset, count);
     for (let i = 0; i < count; i++) indices.push(u8[i] as number);
+  } else if (type === UNSIGNED_INT) {
+    const u32 = new Uint32Array(bufferData, byteOffset, count);
+    for (let i = 0; i < count; i++) indices.push(u32[i] as number);
   }
   return indices;
 }
@@ -306,8 +318,10 @@ export function validateIndexRange(
   descriptors: ReadonlyArray<VertexAttribDescriptor>,
   bufferLookup: (bufferHandle: unknown) => BufferObject | null,
   activeAttribs?: ReadonlyArray<ActiveInfo>,
+  instanceCount?: number,
 ): AttribValidationResult {
   if (indices.length === 0) return { ok: true };
+  if (instanceCount !== undefined && instanceCount <= 0) return { ok: true };
   let maxIndex = 0;
   for (const idx of indices) {
     if (idx < 0) return { ok: false, reason: 'Negative index encountered in index buffer' };
@@ -338,7 +352,12 @@ export function validateIndexRange(
     if (desc.offset < 0) {
       return { ok: false, failedAttributeIndex: index, reason: 'Attribute offset is negative' };
     }
-    const requiredBytes = desc.offset + effectiveStride * maxIndex + elementSize;
+    const divisor = (desc as { divisor?: number }).divisor ?? 0;
+    const effectiveInstances = instanceCount ?? 1;
+    const maxVertexBytes = desc.offset + effectiveStride * maxIndex + elementSize;
+    const maxInstanceIdx = divisor === 0 ? 0 : Math.floor((effectiveInstances - 1) / divisor);
+    const maxInstanceBytes = divisor === 0 ? 0 : desc.offset + effectiveStride * maxInstanceIdx + elementSize;
+    const requiredBytes = Math.max(maxVertexBytes, maxInstanceBytes);
     if (requiredBytes > bufferObj.byteLength) {
       return {
         ok: false,

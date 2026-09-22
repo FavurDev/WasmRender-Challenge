@@ -58,6 +58,34 @@ export interface DerivativeContext {
 }
 import { getCheckedAST } from './checker';
 
+/**
+ * Component count for a GL attribute type enum (FLOAT/FLOAT_VEC2/FLOAT_VEC3/
+ * FLOAT_VEC4 and the int/uint variants). Returns 0 for unknown types, which
+ * callers treat as "do not slice".
+ */
+function glAttribComponentCount(type: number): number {
+  switch (type) {
+    case 0x1404 /* FLOAT */:
+    case 0x140b /* INT */:
+    case 0x140c /* UNSIGNED_INT */:
+      return 1;
+    case 0x8b50 /* FLOAT_VEC2 */:
+    case 0x8b53 /* INT_VEC2 */:
+    case 0x8dc6 /* UNSIGNED_INT_VEC2 */:
+      return 2;
+    case 0x8b51 /* FLOAT_VEC3 */:
+    case 0x8b54 /* INT_VEC3 */:
+    case 0x8dc7 /* UNSIGNED_INT_VEC3 */:
+      return 3;
+    case 0x8b52 /* FLOAT_VEC4 */:
+    case 0x8b55 /* INT_VEC4 */:
+    case 0x8dc8 /* UNSIGNED_INT_VEC4 */:
+      return 4;
+    default:
+      return 0;
+  }
+}
+
 export interface InterpreterHost {
   readUniform(slot: number): number | Float32Array | Int32Array | Uint32Array;
   sample(slot: number, coord: Float32Array, biasOrLod?: number, contextVersion?: 1 | 2): Float32Array;
@@ -1319,6 +1347,7 @@ export function executeVertex(
   vertexId: number,
   attribs: Map<number, Float32Array>,
   host: InterpreterHost,
+  instanceId?: number,
 ): ClipVertex {
   try {
     const version = program.vs.version === 300 ? 300 : 100;
@@ -1327,11 +1356,19 @@ export function executeVertex(
     env.define('gl_Position', new Float32Array([0, 0, 0, 1]));
     env.define('gl_PointSize', 1);
     env.define('gl_VertexID', vertexId | 0);
-    env.define('gl_InstanceID', 0);
+    env.define('gl_InstanceID', (instanceId ?? 0) | 0);
     for (const a of program.activeAttribs) {
       const supplied = attribs.get(a.location);
       if (supplied !== undefined) {
-        env.define(a.name, new Float32Array(supplied));
+        // Slice the fetched vec4 to the attribute's declared component count so
+        // padding components (z=0, w=1) never leak into vector arithmetic on
+        // smaller declared types (e.g. vec2 + vec2 must not become vec4 + vec4).
+        const comps = glAttribComponentCount(a.type);
+        if (comps > 0 && comps < supplied.length) {
+          env.define(a.name, new Float32Array(supplied.subarray(0, comps)));
+        } else {
+          env.define(a.name, new Float32Array(supplied));
+        }
       } else {
         env.define(a.name, attribDefaultFor('vec4'));
       }

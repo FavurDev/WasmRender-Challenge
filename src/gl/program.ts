@@ -36,6 +36,7 @@ import {
   VERTEX_SHADER,
 } from './constants';
 import type { CheckedDeclaration, CheckedShader, ShaderStage, GlslVersion } from '../glsl/checker';
+import { computeStd140Layout } from './ubo-layout';
 
 export type { CheckedDeclaration, CheckedShader };
 
@@ -177,43 +178,8 @@ function getBaseTypeName(typeName: string): string {
 export function computeStd140Offsets(
   members: Array<{ name: string; typeName: string; arraySize?: number }>,
 ): { dataSize: number; members: UniformBlockMember[] } {
-  let currentOffset = 0;
-  const layoutMembers: UniformBlockMember[] = [];
-  for (const m of members) {
-    const baseType = getBaseTypeName(m.typeName);
-    const isArray = m.arraySize !== undefined && m.arraySize !== null && m.arraySize > 0;
-    let baseAlignment: number;
-    let matrixStride = 0;
-    let arrayStride = 0;
-    let memberSize: number;
-    if (baseType === 'mat4' || baseType === 'mat3' || baseType === 'mat2') {
-      baseAlignment = 16;
-      matrixStride = 16;
-      const cols = baseType === 'mat2' ? 2 : baseType === 'mat3' ? 3 : 4;
-      memberSize = 64;
-      if (baseType !== 'mat4') memberSize = cols * 16;
-      if (isArray) {
-        arrayStride = 16;
-        memberSize = (m.arraySize as number) * memberSize;
-      }
-    } else if (baseType === 'vec3' || baseType === 'vec4') {
-      baseAlignment = 16;
-      arrayStride = isArray ? 16 : 0;
-      memberSize = isArray ? 16 * (m.arraySize as number) : 16;
-    } else if (baseType === 'vec2') {
-      baseAlignment = isArray ? 16 : 8;
-      arrayStride = isArray ? 16 : 0;
-      memberSize = isArray ? 16 * (m.arraySize as number) : 8;
-    } else {
-      baseAlignment = isArray ? 16 : 4;
-      arrayStride = isArray ? 16 : 0;
-      memberSize = isArray ? 16 * (m.arraySize as number) : 4;
-    }
-    currentOffset = roundUp(currentOffset, baseAlignment);
-    layoutMembers.push({ name: m.name, offset: currentOffset, arrayStride, matrixStride });
-    currentOffset += memberSize;
-  }
-  return { dataSize: roundUp(currentOffset, 16), members: layoutMembers };
+  void getBaseTypeName;
+  return computeStd140Layout(members.map((m) => ({ name: m.name, typeName: m.typeName, arraySize: m.arraySize })));
 }
 
 export function link(
@@ -326,10 +292,27 @@ export function link(
     const uniformStore = new UniformStore(nextFloatSlot, nextIntSlot, nextUintSlot, nextSamplerUnit);
 
     const uniformBlocks: UniformBlockInfo[] = [];
-    const blocks = [...(vs.uniformBlocks ?? []), ...(fs.uniformBlocks ?? [])];
-    for (const block of blocks) {
-      const layout = computeStd140Offsets(block.members.map((m) => ({ name: m.name, typeName: m.typeName, arraySize: m.arraySize ?? undefined })));
-      uniformBlocks.push({ name: block.name, index: uniformBlocks.length, binding: 0, dataSize: layout.dataSize, members: layout.members });
+    const merged = new Map<string, CheckedDeclaration[]>();
+    for (const block of [...(vs.uniformBlocks ?? []), ...(fs.uniformBlocks ?? [])]) {
+      const prev = merged.get(block.name);
+      if (prev === undefined) {
+        merged.set(block.name, block.members);
+      } else {
+        const same =
+          prev.length === block.members.length &&
+          prev.every((m, i) => {
+            const o = (block.members[i] as CheckedDeclaration);
+            return m.name === o.name && m.typeName === o.typeName && (m.arraySize ?? null) === (o.arraySize ?? null);
+          });
+        if (!same) {
+          errorLog.push("ERROR: 0:1: Uniform block '" + block.name + "' member mismatch between vertex and fragment stages");
+        }
+      }
+    }
+    if (errorLog.length > 0) return { ok: false, log: errorLog.join('\n') };
+    for (const [blockName, blockMembers] of merged) {
+      const layout = computeStd140Layout(blockMembers.map((m) => ({ name: m.name, typeName: m.typeName, arraySize: m.arraySize ?? undefined })));
+      uniformBlocks.push({ name: blockName, index: uniformBlocks.length, binding: 0, dataSize: layout.dataSize, members: layout.members });
     }
 
     const program: LinkedProgram = {
