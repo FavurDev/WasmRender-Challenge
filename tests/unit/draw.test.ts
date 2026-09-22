@@ -1061,3 +1061,146 @@ describe('TD-013 Group 2: behavioral preservation', () => {
     expect(Array.from(t5Snapshot(gl))).toEqual(Array.from(before));
   });
 });
+/** Sprint 8 Task 6 TD-018 bounded LRU cache TDD RED-phase tests. Appended; lines 1-1063 untouched. */
+
+// Collect-safe access to the not-yet-existing export: static import would break
+// whole-file collection; dynamic lookup yields undefined -> assertion RED.
+async function getViewCacheMaxEntries(): Promise<number> {
+  // Arrange helper: resolve the future VIEW_CACHE_MAX_ENTRIES export at runtime.
+  const mod = (await import('../../src/gl/vertex-fetch')) as unknown as Record<string, unknown>;
+  return mod['VIEW_CACHE_MAX_ENTRIES'] as number;
+}
+
+describe('TD-018 Group 1: bounded LRU cache across multi-buffer draws', () => {
+  it('TD-018 Regression 1: long-lived viewCache across 300 buffers never exceeds VIEW_CACHE_MAX_ENTRIES', async () => {
+    // Arrange:
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    const buffers: ArrayBuffer[] = Array.from({ length: 300 }, () => new ArrayBuffer(32));
+    // Act:
+    for (const buf of buffers) getCachedView(buf, viewCache);
+    // Assert:
+    expect(getViewCacheSize(viewCache)).toBe(VIEW_CACHE_MAX_ENTRIES);
+    expect(viewCache.size).toBe(VIEW_CACHE_MAX_ENTRIES);
+  });
+
+  it('TD-018 Regression 2: LRU eviction order strictly discards oldest touched entry', async () => {
+    // Arrange:
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    const bufs: ArrayBuffer[] = Array.from({ length: VIEW_CACHE_MAX_ENTRIES }, () => new ArrayBuffer(16));
+    for (const b of bufs) getCachedView(b, viewCache);
+    expect(getViewCacheSize(viewCache)).toBe(256);
+    const buf0 = bufs[0] as ArrayBuffer;
+    const buf1 = bufs[1] as ArrayBuffer;
+    getCachedView(buf0, viewCache);
+    const newBuf = new ArrayBuffer(16);
+    // Act:
+    getCachedView(newBuf, viewCache);
+    // Assert:
+    expect(getViewCacheSize(viewCache)).toBe(256);
+    expect(viewCache.has(buf1)).toBe(false);
+    expect(viewCache.has(buf0)).toBe(true);
+    expect(viewCache.has(newBuf)).toBe(true);
+  });
+
+  it('TD-018 Regression 3: evicted-then-refetched buffer returns byte-identical values', async () => {
+    // Arrange:
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    const targetBuffer = new ArrayBuffer(16);
+    new Float32Array(targetBuffer).set([1.5, -2.25, 42.0, 99.125]);
+    const firstView = getCachedView(targetBuffer, viewCache);
+    const firstVal = [firstView.getFloat32(0, true), firstView.getFloat32(4, true), firstView.getFloat32(8, true), firstView.getFloat32(12, true)];
+    for (let i = 0; i < VIEW_CACHE_MAX_ENTRIES; i += 1) getCachedView(new ArrayBuffer(16), viewCache);
+    expect(viewCache.has(targetBuffer)).toBe(false);
+    // Act:
+    const secondView = getCachedView(targetBuffer, viewCache);
+    const secondVal = [secondView.getFloat32(0, true), secondView.getFloat32(4, true), secondView.getFloat32(8, true), secondView.getFloat32(12, true)];
+    // Assert:
+    expect(secondView).not.toBe(firstView);
+    expect(secondVal).toEqual(firstVal);
+    expect(viewCache.has(targetBuffer)).toBe(true);
+  });
+
+  it('TD-018 Regression 4: repeated access of existing buffer does not change cache size', () => {
+    // Arrange:
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    const buf = new ArrayBuffer(64);
+    const view1 = getCachedView(buf, viewCache);
+    // Act:
+    const view2 = getCachedView(buf, viewCache);
+    const view3 = getCachedView(buf, viewCache);
+    // Assert:
+    expect(getViewCacheSize(viewCache)).toBe(1);
+    expect(view1).toBe(view2);
+    expect(view2).toBe(view3);
+  });
+
+  it('TD-018 Regression 5: standalone getCachedView without cache returns fresh instance', () => {
+    // Arrange:
+    const buf = new ArrayBuffer(32);
+    // Act:
+    const v1 = getCachedView(buf);
+    const v2 = getCachedView(buf, undefined);
+    // Assert:
+    expect(v1).toBeInstanceOf(DataView);
+    expect(v2).toBeInstanceOf(DataView);
+    expect(v1).not.toBe(v2);
+    expect(getViewCacheSize(undefined)).toBe(0);
+  });
+
+  it('TD-018 Regression 6: multi-draw sequence on shared viewCache maintains bounded cap', async () => {
+    // Arrange:
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    // Act: 50 draws x 10 distinct buffers each via fetchVertexAttributes on shared cache.
+    for (let draw = 0; draw < 50; draw += 1) {
+      for (let a = 0; a < 10; a += 1) {
+        const storage = new ArrayBuffer(16);
+        new Float32Array(storage).set([draw, a, 1, 2]);
+        const bufferObj = makeBuffer(storage);
+        const descriptors = descriptors16();
+        descriptors[0] = { enabled: true, size: 3, type: FLOAT, normalized: false, stride: 0, offset: 0, buffer: bufferObj, divisor: 0, genericValue: [0, 0, 0, 1] };
+        const activeAttribs = [{ location: 0, name: 'a_pos', size: 3, type: FLOAT }];
+        const targetMap = new Map<number, Float32Array>([[0, new Float32Array([0, 0, 0, 1])]]);
+        fetchVertexAttributes(descriptors, () => bufferObj, 0, activeAttribs, targetMap, viewCache);
+      }
+    }
+    // Assert:
+    expect(getViewCacheSize(viewCache)).toBe(VIEW_CACHE_MAX_ENTRIES);
+  });
+
+  it('TD-018 Regression 7: boundary condition at cap - 1 and cap', async () => {
+    // Arrange:
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    for (let i = 0; i < VIEW_CACHE_MAX_ENTRIES - 1; i += 1) getCachedView(new ArrayBuffer(8), viewCache);
+    // Act & Assert:
+    expect(getViewCacheSize(viewCache)).toBe(255);
+    getCachedView(new ArrayBuffer(8), viewCache);
+    expect(getViewCacheSize(viewCache)).toBe(256);
+    getCachedView(new ArrayBuffer(8), viewCache);
+    expect(getViewCacheSize(viewCache)).toBe(256);
+  });
+
+  it('TD-018 Regression 8: Sprint 7 TD-013 suite regression invariance', async () => {
+    // Arrange: TD-013 behavioral surface (standalone fallback + zero-cache size).
+    const VIEW_CACHE_MAX_ENTRIES = await getViewCacheMaxEntries();
+    // Act:
+    const data = new ArrayBuffer(32);
+    const v1 = getCachedView(data);
+    const v2 = getCachedView(data);
+    // Assert: TD-013 Regression 3 semantics preserved + TD-018 cap exported.
+    expect(v1).toBeInstanceOf(DataView);
+    expect(v2).toBeInstanceOf(DataView);
+    expect(v1).not.toBe(v2);
+    expect(getViewCacheSize(undefined)).toBe(0);
+    expect(VIEW_CACHE_MAX_ENTRIES).toBe(256);
+  });
+});

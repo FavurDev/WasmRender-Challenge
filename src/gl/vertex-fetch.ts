@@ -1,6 +1,7 @@
 // CHANGELOG: Sprint 5 (2026-09-21): Sprint 5 vertex fetch stage with per-attribute bounds validation
 // CHANGELOG: Sprint 6 (2026-09-21): Hoisted vertex-fetch DataView (Task 7 Sprint 5 LOW nits)
 // CHANGELOG: Sprint 7 Tasks 4, 9 (2026-09-21): Index-fetch path for drawElements + TD-013 cache bounding.
+// CHANGELOG: Sprint 8 Task 6 (2026-09-22): TD-018 bounded LRU cap (VIEW_CACHE_MAX_ENTRIES=256) in getCachedView.
 /** Vertex fetch — WebGL 1.0 attribute extraction, normalization, bounds validation. L2: imports constants + buffer/state/program types only. Pure: never calls ErrorSink, never throws. */
 import {
   BYTE,
@@ -164,16 +165,29 @@ export function validateVertexAttribRange(
   return { ok: true };
 }
 
+// AD-1 rationale: typical WebGL scenes batch dozens of distinct geometry buffers per draw;
+// 256 entries gives headroom against thrashing while bounding memory (~16 KB shallow heap for DataView wrappers).
+export const VIEW_CACHE_MAX_ENTRIES = 256;
+
 export function getCachedView(data: ArrayBuffer, viewCache?: Map<ArrayBuffer, DataView>): DataView {
-  if (viewCache !== undefined) {
-    let view = viewCache.get(data);
-    if (view === undefined) {
-      view = new DataView(data);
-      viewCache.set(data, view);
-    }
-    return view;
+  if (viewCache === undefined) {
+    return new DataView(data);
   }
-  return new DataView(data);
+  const existingView = viewCache.get(data);
+  if (existingView !== undefined) {
+    viewCache.delete(data);
+    viewCache.set(data, existingView);
+    return existingView;
+  }
+  if (viewCache.size >= VIEW_CACHE_MAX_ENTRIES) {
+    const oldestKey = viewCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      viewCache.delete(oldestKey);
+    }
+  }
+  const newView = new DataView(data);
+  viewCache.set(data, newView);
+  return newView;
 }
 
 export function getViewCacheSize(viewCache?: Map<ArrayBuffer, DataView>): number {
