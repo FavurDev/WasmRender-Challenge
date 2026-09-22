@@ -18,8 +18,8 @@
 // - Sprint 6 (2026-09-21): Legacy placeholder sampling subsystem removed; helpers relocated (Task 5, TD-010).
 
 import { evaluateTextureCompleteness } from '../gl/texture';
-import type { TextureObject as RealTextureObject } from '../gl/texture';
-import { fetchTexel2D, sample2D, sampleMipLevel2D } from '../gl/sampler';
+import type { TextureObject as RealTextureObject, SamplerParams } from '../gl/texture';
+import { fetchTexel2D, fetchTexel3D, sample2D, sample2DArray, sample3D, sampleMipLevel2D } from '../gl/sampler';
 import {
   LINEAR,
   NEAREST,
@@ -33,6 +33,8 @@ import {
   TEXTURE_CUBE_MAP_NEGATIVE_Y,
   TEXTURE_CUBE_MAP_POSITIVE_Z,
   TEXTURE_CUBE_MAP_NEGATIVE_Z,
+  TEXTURE_2D_ARRAY,
+  TEXTURE_3D,
 } from '../gl/constants';
 
 export type Value = number | boolean | Float32Array | Int32Array | Uint32Array | boolean[];
@@ -62,11 +64,67 @@ function sampleReal2D(
   coords: Value,
   lod: number | null,
   contextVersion: 1 | 2,
+  effectiveSampler?: SamplerParams,
 ): Float32Array {
   try {
     if (!(coords instanceof Float32Array) || coords.length < 2) return black();
     if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
-    return sample2D(tex, coords.slice(0, 2), lod, contextVersion);
+    if (tex.target === TEXTURE_3D) return sample3D(tex, coords, lod, contextVersion);
+    if (tex.target === TEXTURE_2D_ARRAY) return sample2DArray(tex, coords, lod, contextVersion);
+    return sample2D(tex, coords.slice(0, 2), lod, contextVersion, effectiveSampler);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
+
+/** Sample a real 3D/array TextureObject through the volume sampler core (read-only). */
+function sampleRealVolume(
+  tex: RealTextureObject,
+  coords: Value,
+  lod: number | null,
+  contextVersion: 1 | 2,
+): Float32Array {
+  try {
+    if (!(coords instanceof Float32Array) || coords.length < 3) return black();
+    if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
+    if (tex.target === TEXTURE_2D_ARRAY) return sample2DArray(tex, coords.slice(0, 3), lod, contextVersion);
+    return sample3D(tex, coords.slice(0, 3), lod, contextVersion);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
+
+/** Route a real-texture sample to the 2D or volume sampler by texture target. */
+function sampleRealRouted(
+  tex: RealTextureObject,
+  coords: Value,
+  lod: number | null,
+  contextVersion: 1 | 2,
+): Float32Array {
+  if (tex.target === TEXTURE_3D || tex.target === TEXTURE_2D_ARRAY) return sampleRealVolume(tex, coords, lod, contextVersion);
+  return sampleReal2D(tex, coords, lod, contextVersion);
+}
+
+/** Sample a real 3D texture at (s,t,r) with optional bias (read-only, never mutates). */
+function sampleReal3D(real: RealTextureObject, coords: Value, bias: number | null, contextVersion: 1 | 2): Value {
+  try {
+    const tex = real as unknown as import('../gl/texture').TextureObject;
+    if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
+    return sample3D(tex, coords as Float32Array, bias, contextVersion);
+  } catch (_e) {
+    void _e;
+    return black();
+  }
+}
+
+/** Sample a real 2D-array texture at (s,t,layer) with optional bias (read-only, never mutates). */
+function sampleReal2DArray(real: RealTextureObject, coords: Value, bias: number | null, contextVersion: 1 | 2): Value {
+  try {
+    const tex = real as unknown as import('../gl/texture').TextureObject;
+    if (!evaluateTextureCompleteness(tex, contextVersion)) return black();
+    return sample2DArray(tex, coords as Float32Array, bias, contextVersion);
   } catch (_e) {
     void _e;
     return black();
@@ -180,6 +238,7 @@ function sampleRealCube(
   dir: Value,
   lod: number | null,
   contextVersion: 1 | 2,
+  effectiveSampler?: SamplerParams,
 ): Float32Array {
   try {
     if (!(dir instanceof Float32Array) || dir.length < 3) return black();
@@ -242,6 +301,16 @@ function fetchRealTexel(tex: RealTextureObject, coords: Value, lod: number): Flo
     const x = Math.trunc(c[0] as number);
     const y = Math.trunc(c[1] as number);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return black();
+    if (tex.target === TEXTURE_3D || tex.target === TEXTURE_2D_ARRAY) {
+      const z = Math.trunc(c[2] as number);
+      if (!Number.isFinite(z)) return black();
+      const store = tex.target === TEXTURE_3D ? tex.levels3D : tex.levels2DArray;
+      const lvl = store?.get(level);
+      if (lvl === undefined) return black();
+      const depth = lvl.depth ?? 1;
+      if (x < 0 || x >= lvl.width || y < 0 || y >= lvl.height || z < 0 || z >= depth) return black();
+      return fetchTexel3D(tex, level, x, y, z);
+    }
     const lvl = tex.levels2D.get(level);
     if (lvl === undefined || x < 0 || x >= lvl.width || y < 0 || y >= lvl.height) return black();
     return fetchTexel2D(tex, level, x, y);
@@ -1075,6 +1144,8 @@ function evalTexture2D(...args: Value[]): Value {
     const real = asRealTexture(args[0] as Value);
     if (real !== null) {
       const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
+      if (real.target === (TEXTURE_3D as number)) return sampleReal3D(real, args[1] as Value, bias, 1);
+      if (real.target === (TEXTURE_2D_ARRAY as number)) return sampleReal2DArray(real, args[1] as Value, bias, 1);
       return sampleReal2D(real, args[1] as Value, bias, 1);
     }
     return black();
@@ -1100,7 +1171,7 @@ function evalTexture(...args: Value[]): Value {
     const real = asRealTexture(args[0] as Value);
     if (real !== null) {
       const bias = args.length >= 3 && isNum(args[2] as Value) ? (args[2] as number) : null;
-      return sampleReal2D(real, args[1] as Value, bias, 2);
+      return sampleRealRouted(real, args[1] as Value, bias, 2);
     }
     return black();
   } catch (_e) {
@@ -1118,7 +1189,7 @@ function evalTextureProj(...args: Value[]): Value {
       if (q === 0.0 || !Number.isFinite(q)) return black();
       const proj = new Float32Array(coords.length - 1);
       for (let i = 0; i < coords.length - 1; i++) proj[i] = Math.fround((coords[i] as number) / q);
-      return sampleReal2D(realProj, proj, realBias(args, 2), 2);
+      return sampleRealRouted(realProj, proj, realBias(args, 2), 2);
     }
     return black();
   } catch (_e) {
@@ -1133,7 +1204,7 @@ function evalTextureLod(...args: Value[]): Value {
       const coords = args[1] as Value;
       if (!(coords instanceof Float32Array)) return black();
       const lod = isNum(args[2] as Value) ? (args[2] as number) : 0.0;
-      return sampleReal2D(realLod, coords, lod, 2);
+      return sampleRealRouted(realLod, coords, lod, 2);
     }
     return black();
   } catch (_e) {
@@ -1149,10 +1220,10 @@ function evalTextureGrad(...args: Value[]): Value {
       if (!(coords instanceof Float32Array)) return black();
       const gx = args[2] instanceof Float32Array ? (args[2] as Float32Array) : null;
       const gy = args[3] instanceof Float32Array ? (args[3] as Float32Array) : null;
-      if (gx === null || gy === null) return sampleReal2D(realGrad, coords, null, 2);
+      if (gx === null || gy === null) return sampleRealRouted(realGrad, coords, null, 2);
       const base = realGrad.levels2D.get(0);
       const lod = base === undefined ? 0 : computeLod(null, null, gx, gy, base.width, base.height);
-      return sampleReal2D(realGrad, coords, lod, 2);
+      return sampleRealRouted(realGrad, coords, lod, 2);
     }
     return black();
   } catch (_e) {

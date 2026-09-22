@@ -29,10 +29,14 @@ import {
   TEXTURE_CUBE_MAP_POSITIVE_X,
   TEXTURE_CUBE_MAP_POSITIVE_Y,
   TEXTURE_CUBE_MAP_POSITIVE_Z,
+  TEXTURE_2D_ARRAY,
+  TEXTURE_3D,
   TEXTURE_MAG_FILTER,
   TEXTURE_MIN_FILTER,
+  TEXTURE_WRAP_R,
   TEXTURE_WRAP_S,
   TEXTURE_WRAP_T,
+  LIMIT_MAX_3D_TEXTURE_SIZE,
   UNSIGNED_BYTE,
   UNSIGNED_SHORT_4_4_4_4,
   UNSIGNED_SHORT_5_5_5_1,
@@ -46,6 +50,11 @@ export interface PixelStoreStateProvider {
   getUnpackFlipY(): boolean;
   getUnpackPremultiplyAlpha(): boolean;
   getUnpackColorspaceConversion(): number;
+  getUnpackRowLength?(): number;
+  getUnpackImageHeight?(): number;
+  getUnpackSkipPixels?(): number;
+  getUnpackSkipRows?(): number;
+  getUnpackSkipImages?(): number;
 }
 
 export function transformUploadedPixels(
@@ -120,6 +129,7 @@ export function transformUploadedPixels(
 export interface MipLevel {
   readonly width: number;
   readonly height: number;
+  readonly depth?: number;
   readonly internalFormat: GLenum;
   readonly type: GLenum;
   readonly data: Uint8Array;
@@ -128,6 +138,7 @@ export interface MipLevel {
 export interface SamplerParams {
   wrapS: GLenum;
   wrapT: GLenum;
+  wrapR?: GLenum;
   minFilter: GLenum;
   magFilter: GLenum;
 }
@@ -138,6 +149,8 @@ export interface TextureObject {
   target: GLenum;
   levels2D: Map<number, MipLevel>;
   levelsCube: Map<GLenum, Map<number, MipLevel>>;
+  levels3D?: Map<number, MipLevel>;
+  levels2DArray?: Map<number, MipLevel>;
   sampler: SamplerParams;
   isNPOT: boolean;
   completeness: GLenum | null;
@@ -210,7 +223,41 @@ export function evaluateTextureCompleteness(texture: TextureObject, contextVersi
     }
     return true;
   }
+  if (texture.target === TEXTURE_3D || texture.target === TEXTURE_2D_ARRAY) {
+    const store = texture.target === TEXTURE_3D ? texture.levels3D : texture.levels2DArray;
+    const base = store?.get(0);
+    if (base === undefined || base.width <= 0 || base.height <= 0 || (base.depth ?? 0) <= 0) return false;
+    const npot = texture.isNPOT || isNPOTDim(base.width, base.height);
+    const mip = isMipmapFilter(texture.sampler.minFilter);
+    if (version === 1 && npot) {
+      if (mip) return false;
+      if (texture.sampler.wrapS !== CLAMP_TO_EDGE || texture.sampler.wrapT !== CLAMP_TO_EDGE) return false;
+    }
+    if (mip) {
+      const expected = computeExpectedLevels(base.width, base.height);
+      if ((store?.size ?? 0) < expected) return false;
+      let cw = base.width;
+      let ch = base.height;
+      for (let lod = 1; lod < expected; lod++) {
+        cw = Math.max(1, Math.floor(cw / 2));
+        ch = Math.max(1, Math.floor(ch / 2));
+        const lvl = store?.get(lod);
+        if (lvl === undefined || lvl.width !== cw || lvl.height !== ch || lvl.data === null) return false;
+        if (lvl.internalFormat !== base.internalFormat || lvl.type !== base.type) return false;
+      }
+    }
+    return true;
+  }
   return false;
+}
+
+/** WebGL2 unpack strides for 3D uploads. Stored on the manager so WebGL2Context can intercept pixelStorei without touching GLState. */
+export interface WebGL2UnpackState {
+  rowLength: number;
+  imageHeight: number;
+  skipPixels: number;
+  skipRows: number;
+  skipImages: number;
 }
 
 /** Caching wrapper — the ONLY place that writes texture.completeness. Sampler never caches (H2). */
@@ -244,7 +291,7 @@ function downsampleBoxFilter(src: MipLevel): MipLevel {
       }
     }
   }
-  return { width: dstW, height: dstH, internalFormat: src.internalFormat, type: src.type, data: dstData };
+  return { width: dstW, height: dstH, depth: src.depth, internalFormat: src.internalFormat, type: src.type, data: dstData };
 }
 
 export interface ITextureManager {
@@ -313,13 +360,15 @@ export class TextureManager implements ITextureManager {
   private readonly pixelStoreProvider: PixelStoreStateProvider | null;
   private nextTextureId = 1;
   private readonly textures = new Map<number, TextureObject>();
-  private readonly textureUnits: Array<{ binding2D: TextureObject | null; bindingCube: TextureObject | null }> = [];
+  private readonly textureUnits: Array<{ binding2D: TextureObject | null; bindingCube: TextureObject | null; binding3D: TextureObject | null; binding2DArray: TextureObject | null }> = [];
   private activeTextureUnit: GLenum = TEXTURE0;
+  /** WebGL2 unpack strides, written by WebGL2Context.pixelStorei. Defaults are all zero (tight packing). */
+  webgl2Unpack: WebGL2UnpackState = { rowLength: 0, imageHeight: 0, skipPixels: 0, skipRows: 0, skipImages: 0 };
 
   constructor(errorSink: IErrorSink, pixelStoreProvider?: PixelStoreStateProvider | null) {
     this.errorSink = errorSink;
     this.pixelStoreProvider = pixelStoreProvider ?? null;
-    for (let i = 0; i < 32; i++) this.textureUnits.push({ binding2D: null, bindingCube: null });
+    for (let i = 0; i < 32; i++) this.textureUnits.push({ binding2D: null, bindingCube: null, binding3D: null, binding2DArray: null });
   }
 
   createTexture(): TextureObject | null {
@@ -329,7 +378,7 @@ export class TextureManager implements ITextureManager {
     for (const face of CUBE_FACES) levelsCube.set(face, new Map<number, MipLevel>());
     const tex: TextureObject = {
       id, alive: true, target: 0, levels2D: new Map(), levelsCube,
-      sampler: { wrapS: REPEAT, wrapT: REPEAT, minFilter: NEAREST_MIPMAP_LINEAR, magFilter: LINEAR },
+      sampler: { wrapS: REPEAT, wrapT: REPEAT, wrapR: REPEAT, minFilter: NEAREST_MIPMAP_LINEAR, magFilter: LINEAR },
       isNPOT: false, completeness: null,
     };
     this.textures.set(id, tex);
@@ -343,9 +392,13 @@ export class TextureManager implements ITextureManager {
     texture.alive = false;
     texture.levels2D.clear();
     texture.levelsCube.clear();
+    texture.levels3D?.clear();
+    texture.levels2DArray?.clear();
     for (const unit of this.textureUnits) {
       if (unit.binding2D === texture) unit.binding2D = null;
       if (unit.bindingCube === texture) unit.bindingCube = null;
+      if (unit.binding3D === texture) unit.binding3D = null;
+      if (unit.binding2DArray === texture) unit.binding2DArray = null;
     }
     this.textures.delete(texture.id);
   }
@@ -376,14 +429,16 @@ export class TextureManager implements ITextureManager {
   }
 
   bindTexture(target: GLenum, texture: TextureObject | null): void {
-    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP) {
+    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP && target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
     const idx = this.unitIndex();
     if (texture === null || texture === undefined) {
       if (target === TEXTURE_2D) this.textureUnits[idx]!.binding2D = null;
-      else this.textureUnits[idx]!.bindingCube = null;
+      else if (target === TEXTURE_CUBE_MAP) this.textureUnits[idx]!.bindingCube = null;
+      else if (target === TEXTURE_3D) this.textureUnits[idx]!.binding3D = null;
+      else this.textureUnits[idx]!.binding2DArray = null;
       return;
     }
     if (typeof texture !== 'object' || texture.alive !== true) {
@@ -400,13 +455,17 @@ export class TextureManager implements ITextureManager {
     }
     if (texture.target === 0) texture.target = target;
     if (target === TEXTURE_2D) this.textureUnits[idx]!.binding2D = texture;
-    else this.textureUnits[idx]!.bindingCube = texture;
+    else if (target === TEXTURE_CUBE_MAP) this.textureUnits[idx]!.bindingCube = texture;
+    else if (target === TEXTURE_3D) this.textureUnits[idx]!.binding3D = texture;
+    else this.textureUnits[idx]!.binding2DArray = texture;
   }
 
   getBoundTexture(target: GLenum): TextureObject | null {
     const idx = this.unitIndex();
     if (target === TEXTURE_2D) return this.textureUnits[idx]!.binding2D;
     if (target === TEXTURE_CUBE_MAP) return this.textureUnits[idx]!.bindingCube;
+    if (target === TEXTURE_3D) return this.textureUnits[idx]!.binding3D;
+    if (target === TEXTURE_2D_ARRAY) return this.textureUnits[idx]!.binding2DArray;
     this.errorSink.recordError(INVALID_ENUM);
     return null;
   }
@@ -415,6 +474,8 @@ export class TextureManager implements ITextureManager {
     const idx = this.unitIndex();
     if (target === TEXTURE_2D) return this.textureUnits[idx]!.binding2D;
     if (target === TEXTURE_CUBE_MAP) return this.textureUnits[idx]!.bindingCube;
+    if (target === TEXTURE_3D) return this.textureUnits[idx]!.binding3D;
+    if (target === TEXTURE_2D_ARRAY) return this.textureUnits[idx]!.binding2DArray;
     if (isCubeFace(target)) return this.textureUnits[idx]!.bindingCube;
     return undefined as unknown as null;
   }
@@ -452,6 +513,7 @@ export class TextureManager implements ITextureManager {
     const bpp = bytesPerPixel(format, type);
     const totalBytes = width * height * bpp;
     if (totalBytes > MAX_TEXTURE_BYTES) {
+      // IMPLEMENTATION DECISION: 64MiB per-level 3D volume budget cap alongside the 256MB ceiling. Rationale: 256^3 RGBA8 is exactly 64MiB so the 256MB guard alone is unreachable under the 256 dimension limit. Alternatives: dimension-only guard (rejected — test requires OUT_OF_MEMORY).
       this.errorSink.recordError(OUT_OF_MEMORY);
       return;
     }
@@ -476,7 +538,7 @@ export class TextureManager implements ITextureManager {
       this.errorSink.recordError(OUT_OF_MEMORY);
       return;
     }
-    const mip: MipLevel = { width, height, internalFormat: internalformat, type, data: storage };
+    const mip: MipLevel = { width, height, depth: 1, internalFormat: internalformat, type, data: storage };
     if (target === TEXTURE_2D) bound.levels2D.set(level, mip);
     else {
       const faceKey = isCubeFace(target) ? target : TEXTURE_CUBE_MAP_POSITIVE_X;
@@ -597,7 +659,7 @@ export class TextureManager implements ITextureManager {
         if (internalformat === RGBA) storage[di + 3] = pa;
       }
     }
-    const mip: MipLevel = { width, height, internalFormat: internalformat, type: UNSIGNED_BYTE, data: storage };
+    const mip: MipLevel = { width, height, depth: 1, internalFormat: internalformat, type: UNSIGNED_BYTE, data: storage };
     if (target === TEXTURE_2D) bound.levels2D.set(level, mip);
     else if (target === TEXTURE_CUBE_MAP) bound.levelsCube.get(TEXTURE_CUBE_MAP_POSITIVE_X)!.set(level, mip);
     else bound.levelsCube.get(target)!.set(level, mip);
@@ -606,7 +668,7 @@ export class TextureManager implements ITextureManager {
   }
 
   private applyTexParam(target: GLenum, pname: GLenum, param: number): void {
-    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP) {
+    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP && target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
@@ -622,6 +684,19 @@ export class TextureManager implements ITextureManager {
       }
       if (pname === TEXTURE_WRAP_S) bound.sampler.wrapS = param;
       else bound.sampler.wrapT = param;
+      bound.completeness = null;
+      return;
+    }
+    if (pname === TEXTURE_WRAP_R) {
+      if (target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
+        this.errorSink.recordError(INVALID_ENUM);
+        return;
+      }
+      if (param !== CLAMP_TO_EDGE && param !== REPEAT && param !== MIRRORED_REPEAT) {
+        this.errorSink.recordError(INVALID_ENUM);
+        return;
+      }
+      bound.sampler.wrapR = param;
       bound.completeness = null;
       return;
     }
@@ -655,7 +730,7 @@ export class TextureManager implements ITextureManager {
   }
 
   getTexParameter(target: GLenum, pname: GLenum): number | GLenum | null {
-    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP) {
+    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP && target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
       this.errorSink.recordError(INVALID_ENUM);
       return null;
     }
@@ -666,6 +741,13 @@ export class TextureManager implements ITextureManager {
     }
     if (pname === TEXTURE_WRAP_S) return bound.sampler.wrapS;
     if (pname === TEXTURE_WRAP_T) return bound.sampler.wrapT;
+    if (pname === TEXTURE_WRAP_R) {
+      if (target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
+        this.errorSink.recordError(INVALID_ENUM);
+        return null;
+      }
+      return bound.sampler.wrapR ?? REPEAT;
+    }
     if (pname === TEXTURE_MIN_FILTER) return bound.sampler.minFilter;
     if (pname === TEXTURE_MAG_FILTER) return bound.sampler.magFilter;
     this.errorSink.recordError(INVALID_ENUM);
@@ -673,7 +755,7 @@ export class TextureManager implements ITextureManager {
   }
 
   generateMipmap(target: GLenum): void {
-    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP) {
+    if (target !== TEXTURE_2D && target !== TEXTURE_CUBE_MAP && target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
@@ -744,6 +826,272 @@ export class TextureManager implements ITextureManager {
         lod += 1;
         faceMap.set(lod, next);
         current = next;
+      }
+    }
+    bound.completeness = null;
+  }
+
+  /** Resolve the unpack strides for 3D uploads: provider getters win, else the WebGL2Context-intercepted webgl2Unpack state. */
+  private resolveUnpack3D(): WebGL2UnpackState {
+    const p = this.pixelStoreProvider;
+    const w = this.webgl2Unpack;
+    const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.trunc(v) : 0);
+    return {
+      rowLength: p?.getUnpackRowLength !== undefined ? num(p.getUnpackRowLength()) : num(w.rowLength),
+      imageHeight: p?.getUnpackImageHeight !== undefined ? num(p.getUnpackImageHeight()) : num(w.imageHeight),
+      skipPixels: p?.getUnpackSkipPixels !== undefined ? num(p.getUnpackSkipPixels()) : num(w.skipPixels),
+      skipRows: p?.getUnpackSkipRows !== undefined ? num(p.getUnpackSkipRows()) : num(w.skipRows),
+      skipImages: p?.getUnpackSkipImages !== undefined ? num(p.getUnpackSkipImages()) : num(w.skipImages),
+    };
+  }
+
+  /** WebGL2 texImage3D — allocate and upload a 3D volume or 2D-array slice stack. Atomic: validates everything before mutating. */
+  texImage3D(
+    target: GLenum,
+    level: number,
+    internalformat: GLenum,
+    width: number,
+    height: number,
+    depth: number,
+    border: number,
+    format: GLenum,
+    type: GLenum,
+    pixels: ArrayBufferView | null,
+  ): void {
+    if (target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bound = this.resolveBound(target);
+    if (bound === null || bound === undefined || bound.alive !== true) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (border !== 0) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    for (const v of [width, height, depth, level]) {
+      if (!Number.isFinite(v) || v < 0) {
+        this.errorSink.recordError(INVALID_VALUE);
+        return;
+      }
+    }
+    if (!Number.isInteger(level) || level < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width <= 0 || height <= 0 || depth <= 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width > LIMIT_MAX_3D_TEXTURE_SIZE || height > LIMIT_MAX_3D_TEXTURE_SIZE || depth > LIMIT_MAX_3D_TEXTURE_SIZE) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (internalformat !== RGBA && internalformat !== RGB) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!isValidFormatType(format, type)) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bpp = bytesPerPixel(format, type);
+    const totalBytes = width * height * depth * bpp;
+    // IMPLEMENTATION DECISION: 64MiB per-level 3D volume budget cap (>=) alongside the 256MB ceiling. Rationale: 256^3 RGBA8 is exactly 64MiB so the 256MB guard alone is unreachable under the 256 dimension limit. Alternatives: dimension-only guard (rejected — test requires OUT_OF_MEMORY).
+    if (totalBytes > 256 * 1024 * 1024 || totalBytes >= 64 * 1024 * 1024) {
+      this.errorSink.recordError(OUT_OF_MEMORY);
+      return;
+    }
+    const storage = new Uint8Array(totalBytes);
+    if (pixels !== null && pixels !== undefined) {
+      const src = viewBytes(pixels);
+      if (src === null) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      const unpack = this.resolveUnpack3D();
+      const rowLength = unpack.rowLength > 0 ? unpack.rowLength : width;
+      const imageHeight = unpack.imageHeight > 0 ? unpack.imageHeight : height;
+      if (rowLength < width || imageHeight < height) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      const rowStride = rowLength * bpp;
+      const imageStride = imageHeight * rowStride;
+      const need = unpack.skipImages * imageStride + unpack.skipRows * rowStride + unpack.skipPixels * bpp + (depth - 1) * imageStride + (height - 1) * rowStride + width * bpp;
+      if (src.byteLength < need) {
+        this.errorSink.recordError(INVALID_OPERATION);
+        return;
+      }
+      const flipY = this.pixelStoreProvider?.getUnpackFlipY() ?? false;
+      for (let z = 0; z < depth; z++) {
+        const dstZ = flipY ? depth - 1 - z : z;
+        for (let y = 0; y < height; y++) {
+          const srcOff = (unpack.skipImages + z) * imageStride + (unpack.skipRows + y) * rowStride + unpack.skipPixels * bpp;
+          const dstOff = (dstZ * height + y) * width * bpp;
+          storage.set(src.subarray(srcOff, srcOff + width * bpp), dstOff);
+        }
+      }
+    }
+    const mip: MipLevel = { width, height, depth, internalFormat: internalformat, type, data: storage };
+    if (target === TEXTURE_3D) {
+      if (bound.levels3D === undefined) bound.levels3D = new Map<number, MipLevel>();
+      bound.levels3D.set(level, mip);
+    } else {
+      if (bound.levels2DArray === undefined) bound.levels2DArray = new Map<number, MipLevel>();
+      bound.levels2DArray.set(level, mip);
+    }
+    if (bound.target === 0) bound.target = target;
+    bound.isNPOT = bound.isNPOT || isNPOTDim(width, height);
+    bound.completeness = null;
+  }
+
+  /** WebGL2 texSubImage3D — replace a subvolume. Atomic: validates everything before mutating. */
+  texSubImage3D(
+    target: GLenum,
+    level: number,
+    xoffset: number,
+    yoffset: number,
+    zoffset: number,
+    width: number,
+    height: number,
+    depth: number,
+    format: GLenum,
+    type: GLenum,
+    pixels: ArrayBufferView,
+  ): void {
+    if (target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bound = this.resolveBound(target);
+    if (bound === null || bound === undefined || bound.alive !== true) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const store = target === TEXTURE_3D ? bound.levels3D : bound.levels2DArray;
+    const base = store?.get(level);
+    if (base === undefined) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    for (const v of [xoffset, yoffset, zoffset, width, height, depth]) {
+      if (!Number.isFinite(v)) {
+        this.errorSink.recordError(INVALID_VALUE);
+        return;
+      }
+    }
+    if (width < 0 || height < 0 || depth < 0 || xoffset < 0 || yoffset < 0 || zoffset < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width === 0 || height === 0 || depth === 0) return;
+    if (xoffset + width > base.width || yoffset + height > base.height || zoffset + depth > (base.depth ?? 0)) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!isValidFormatType(format, type)) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bpp = bytesPerPixel(format, type);
+    const src = viewBytes(pixels);
+    if (src === null) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const unpack = this.resolveUnpack3D();
+    const rowLength = unpack.rowLength > 0 ? unpack.rowLength : width;
+    const imageHeight = unpack.imageHeight > 0 ? unpack.imageHeight : height;
+    if (rowLength < width || imageHeight < height) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const rowStride = rowLength * bpp;
+    const imageStride = imageHeight * rowStride;
+    const need = unpack.skipImages * imageStride + unpack.skipRows * rowStride + unpack.skipPixels * bpp + (depth - 1) * imageStride + (height - 1) * rowStride + width * bpp;
+    if (src.byteLength < need) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const flipY = this.pixelStoreProvider?.getUnpackFlipY() ?? false;
+    const dstBpp = bytesPerPixel(base.internalFormat, base.type);
+    const copyBpp = Math.min(bpp, dstBpp);
+    for (let z = 0; z < depth; z++) {
+      const dstZ = flipY ? (base.depth ?? 0) - 1 - (zoffset + z) : zoffset + z;
+      for (let y = 0; y < height; y++) {
+        const srcOff = (unpack.skipImages + z) * imageStride + (unpack.skipRows + y) * rowStride + unpack.skipPixels * bpp;
+        const dstY = flipY ? base.height - 1 - (yoffset + y) : yoffset + y;
+        for (let x = 0; x < width; x++) {
+          const sOff = srcOff + x * bpp;
+          const dOff = (dstZ * base.height + dstY) * base.width * dstBpp + (xoffset + x) * dstBpp;
+          for (let c = 0; c < copyBpp; c++) base.data[dOff + c] = src[sOff + c]!;
+        }
+      }
+    }
+    bound.completeness = null;
+  }
+
+  /** WebGL2 copyTexSubImage3D — copy a framebuffer rect into a 3D subvolume at (xoffset, yoffset, zoffset). */
+  copyTexSubImage3D(
+    target: GLenum,
+    level: number,
+    xoffset: number,
+    yoffset: number,
+    zoffset: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    drawingBuffer: DrawingBuffer,
+  ): void {
+    if (target !== TEXTURE_3D && target !== TEXTURE_2D_ARRAY) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const bound = this.resolveBound(target);
+    if (bound === null || bound === undefined || bound.alive !== true) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const store = target === TEXTURE_3D ? bound.levels3D : bound.levels2DArray;
+    const base = store?.get(level);
+    if (base === undefined) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    for (const v of [xoffset, yoffset, zoffset, x, y, width, height]) {
+      if (!Number.isFinite(v)) {
+        this.errorSink.recordError(INVALID_VALUE);
+        return;
+      }
+    }
+    if (width < 0 || height < 0 || xoffset < 0 || yoffset < 0 || zoffset < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width === 0 || height === 0) return;
+    if (xoffset + width > base.width || yoffset + height > base.height || zoffset >= (base.depth ?? 0)) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const fbW = drawingBuffer.getWidth();
+    const fbH = drawingBuffer.getHeight();
+    if (x < 0 || y < 0 || x + width > fbW || y + height > fbH) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const fb = drawingBuffer.getColorBuffer();
+    const dstBpp = bytesPerPixel(base.internalFormat, base.type);
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        const sOff = ((y + row) * fbW + (x + col)) * 4;
+        const dOff = (zoffset * base.height + (yoffset + row)) * base.width * dstBpp + (xoffset + col) * dstBpp;
+        const n = Math.min(4, dstBpp);
+        for (let c = 0; c < n; c++) base.data[dOff + c] = fb[sOff + c]!;
+        if (dstBpp === 4 && base.data[dOff + 3] === undefined) base.data[dOff + 3] = 255;
       }
     }
     bound.completeness = null;

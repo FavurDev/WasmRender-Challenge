@@ -101,6 +101,7 @@ export function rasterizeTriangle(
   state: PipelineState,
   fb: DrawingBuffer,
   shade?: FragmentShader | null,
+  onSamplePassed?: (() => void) | null,
 ): void {
   let ax = v0;
   let bx = v1;
@@ -208,6 +209,9 @@ export function rasterizeTriangle(
         const idx = frag.y * bufW + frag.x;
         const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
         const dsPassed = executeFragmentDepthStencil(px, py, depth24, isFrontFacing, state, ds, idx);
+        if (onSamplePassed !== undefined && onSamplePassed !== null && dsPassed) {
+          onSamplePassed();
+        }
         if (!dsPassed) {
           w0 += e0stepX;
           w1 += e1stepX;

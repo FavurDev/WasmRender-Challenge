@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-22T03:19:00.783Z",
+  "timestamp": "2026-09-22T08:42:36.090Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 673,
@@ -1995,6 +1995,22 @@
         {
           "success": false,
           "message": "currentProgram"
+        },
+        {
+          "success": false,
+          "message": "uboIndexedSlots"
+        },
+        {
+          "success": false,
+          "message": "uboIndexedOffsets"
+        },
+        {
+          "success": false,
+          "message": "uboIndexedSizes"
+        },
+        {
+          "success": false,
+          "message": "uboBlockBindings"
         },
         {
           "success": false,

@@ -12,6 +12,7 @@ import {
   OUT_OF_MEMORY,
   STATIC_DRAW,
   STREAM_DRAW,
+  UNIFORM_BUFFER,
 } from './constants';
 import type { GLenum } from './constants';
 import type { IErrorSink } from './errors';
@@ -44,6 +45,7 @@ export class BufferManager implements IBufferManager {
   private readonly buffers = new Map<number, BufferObject>();
   private boundArrayBuffer: BufferObject | null = null;
   private boundElementArrayBuffer: BufferObject | null = null;
+  private boundUniformBuffer: BufferObject | null = null;
 
   constructor(errorSink: IErrorSink) {
     this.errorSink = errorSink;
@@ -68,6 +70,7 @@ export class BufferManager implements IBufferManager {
     buffer.byteLength = 0;
     if (this.boundArrayBuffer === buffer) this.boundArrayBuffer = null;
     if (this.boundElementArrayBuffer === buffer) this.boundElementArrayBuffer = null;
+    if (this.boundUniformBuffer === buffer) this.boundUniformBuffer = null;
     this.buffers.delete(buffer.id);
   }
 
@@ -81,13 +84,14 @@ export class BufferManager implements IBufferManager {
   }
 
   bindBuffer(target: GLenum, buffer: BufferObject | null): void {
-    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER) {
+    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER && target !== UNIFORM_BUFFER) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
     if (buffer === null || buffer === undefined) {
       if (target === ARRAY_BUFFER) this.boundArrayBuffer = null;
-      else this.boundElementArrayBuffer = null;
+      else if (target === ELEMENT_ARRAY_BUFFER) this.boundElementArrayBuffer = null;
+      else this.boundUniformBuffer = null;
       return;
     }
     if (typeof buffer !== 'object' || buffer.alive !== true) {
@@ -100,22 +104,24 @@ export class BufferManager implements IBufferManager {
     }
     if (buffer.target === 0) buffer.target = target;
     if (target === ARRAY_BUFFER) this.boundArrayBuffer = buffer;
-    else this.boundElementArrayBuffer = buffer;
+    else if (target === ELEMENT_ARRAY_BUFFER) this.boundElementArrayBuffer = buffer;
+    else this.boundUniformBuffer = buffer;
   }
 
   getBoundBuffer(target: GLenum): BufferObject | null {
     if (target === ARRAY_BUFFER) return this.boundArrayBuffer;
     if (target === ELEMENT_ARRAY_BUFFER) return this.boundElementArrayBuffer;
+    if (target === UNIFORM_BUFFER) return this.boundUniformBuffer;
     this.errorSink.recordError(INVALID_ENUM);
     return null;
   }
 
   bufferData(target: GLenum, sizeOrData: number | ArrayBufferView | ArrayBuffer | null, usage: GLenum): void {
-    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER) {
+    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER && target !== UNIFORM_BUFFER) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
-    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : this.boundElementArrayBuffer;
+    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : target === ELEMENT_ARRAY_BUFFER ? this.boundElementArrayBuffer : this.boundUniformBuffer;
     if (boundBuffer === null || boundBuffer.alive !== true) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
@@ -164,11 +170,11 @@ export class BufferManager implements IBufferManager {
   }
 
   bufferSubData(target: GLenum, offset: number, data: ArrayBufferView | ArrayBuffer): void {
-    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER) {
+    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER && target !== UNIFORM_BUFFER) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
-    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : this.boundElementArrayBuffer;
+    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : target === ELEMENT_ARRAY_BUFFER ? this.boundElementArrayBuffer : this.boundUniformBuffer;
     if (boundBuffer === null || boundBuffer.alive !== true) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
@@ -210,7 +216,11 @@ export class BufferManager implements IBufferManager {
       this.errorSink.recordError(INVALID_ENUM);
       return null;
     }
-    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : this.boundElementArrayBuffer;
+    const boundBuffer = target === ARRAY_BUFFER ? this.boundArrayBuffer : target === ELEMENT_ARRAY_BUFFER ? this.boundElementArrayBuffer : target === UNIFORM_BUFFER ? this.boundUniformBuffer : null;
+    if (target !== ARRAY_BUFFER && target !== ELEMENT_ARRAY_BUFFER && target !== UNIFORM_BUFFER) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return null;
+    }
     if (boundBuffer === null || boundBuffer.alive !== true) {
       this.errorSink.recordError(INVALID_OPERATION);
       return null;

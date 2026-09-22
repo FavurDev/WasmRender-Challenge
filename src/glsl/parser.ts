@@ -202,13 +202,21 @@ class Parser {
     // layout
     const lc = this.current();
     if ((lc.kind === 'KEYWORD' || lc.kind === 'IDENTIFIER' || lc.kind === 'RESERVED') && lc.text === 'layout') {
-      if (this.version !== 300) { this.releaseDepth(); return this.fail(lc.line, "Qualifier 'layout' not supported in GLSL ES 1.00"); }
+      if (this.version !== 300) {
+        let word = 'layout';
+        for (let k = 1; k <= 4; k += 1) {
+          const t = this.peek(k);
+          if (t.text === 'shared' || t.text === 'packed') { word = t.text; break; }
+        }
+        this.releaseDepth();
+        return this.fail(lc.line, "Qualifier 'layout(" + word + ")' not supported in GLSL ES 1.00");
+      }
       this.pos += 1;
       let o = this.current();
       if (o.kind !== 'OPERATOR' || o.text !== '(') { this.releaseDepth(); return this.fail(o.line, "Expected '(' after 'layout'"); }
       this.pos += 1;
       o = this.current();
-      if (o.text !== 'location') { this.releaseDepth(); return this.fail(o.line, "Expected 'location' in layout qualifier"); }
+      if (o.text !== 'location') { this.releaseDepth(); return this.fail(o.line, "Expected 'location' in layout qualifier, found '" + o.text + "'"); }
       this.pos += 1;
       o = this.current();
       if (o.kind !== 'OPERATOR' || o.text !== '=') { this.releaseDepth(); return this.fail(o.line, "Expected '=' in layout qualifier"); }

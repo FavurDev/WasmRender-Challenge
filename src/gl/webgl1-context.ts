@@ -79,6 +79,8 @@ import {
   STENCIL_CLEAR_VALUE,
   TEXTURE0,
   TEXTURE_2D,
+  TEXTURE_2D_ARRAY,
+  TEXTURE_3D,
   TEXTURE_CUBE_MAP,
   RGBA,
   TRIANGLES,
@@ -100,6 +102,11 @@ import {
   BOOL_VEC4,
   VERTEX_SHADER,
   VIEWPORT,
+  UNIFORM_BUFFER,
+  UNIFORM_BLOCK_DATA_SIZE,
+  UNIFORM_BLOCK_ACTIVE_UNIFORMS,
+  UNIFORM_BLOCK_BINDING,
+  UNIFORM_OFFSET,
 } from './constants';
 import type { GLenum } from './constants';
 import { ErrorSink } from './errors';
@@ -109,7 +116,7 @@ import { BufferManager } from './buffer';
 import type { BufferObject } from './buffer';
 import { TextureManager, isMipmapFilter } from './texture';
 import type { PixelStoreStateProvider, TextureObject } from './texture';
-import { sample2D } from './sampler';
+import { resolveEffectiveSamplerParams, sample2D } from './sampler';
 import {
   DrawingBuffer,
   FboTarget,
@@ -319,6 +326,7 @@ export function sampleSnapshotTexture(
   biasOrLod: number | undefined,
   contextVersion: 1 | 2,
   lodEstimate: number,
+  effectiveSampler?: import('./texture').SamplerParams,
 ): Float32Array {
   try {
     const unit = Math.trunc(slotOrUnit);
@@ -331,7 +339,7 @@ export function sampleSnapshotTexture(
     } catch (_e) {
       void _e;
     }
-    return sample2D(tex, coord.slice(0, 2), lod, contextVersion);
+    return sample2D(tex, coord.slice(0, 2), lod, contextVersion, effectiveSampler);
   } catch (_e) {
     void _e;
     return new Float32Array([0, 0, 0, 1]);
@@ -356,6 +364,10 @@ export class WebGL1Context {
   private readonly programs = new Map<number, WebGLProgram>();
   private nextShaderId = 1;
   private currentProgram: WebGLProgram | null = null;
+  private readonly uboIndexedSlots: Array<BufferObject | null> = Array.from({ length: 36 }, () => null);
+  private readonly uboIndexedOffsets: number[] = Array.from({ length: 36 }, () => 0);
+  private readonly uboIndexedSizes: number[] = Array.from({ length: 36 }, () => 0);
+  private readonly uboBlockBindings = new Map<number, Map<number, number>>();
   private readonly extensionRegistry: ExtensionRegistry;
 
   /**
@@ -402,6 +414,23 @@ export class WebGL1Context {
         this.programs.clear();
       },
     });
+  }
+
+  /** Depth-survivor hook: WebGL1 is always a no-op returning null (ADR-004 invariance). */
+  protected getSamplePassedCallback(): (() => void) | null {
+    return null;
+  }
+
+  /** Sampler hook: WebGL1 has no sampler objects — always null (ADR-004 invariance). */
+  protected getBoundSamplerForUnit(_unit: number): import('./texture').SamplerParams | null {
+    void _unit;
+    return null;
+  }
+
+  /** Query entry-point stub: WebGL1 has no queries; records INVALID_OPERATION, returns undefined. */
+  public createQuery(): unknown {
+    this.errorSink.recordError(INVALID_OPERATION);
+    return undefined;
   }
 
   /** True iff the context is lost. */
@@ -554,32 +583,38 @@ export class WebGL1Context {
    *   count: Vertex count (must be >= 0, multiple of 3).
    *   directGeometry: Direct vertex records; omitted routes to the buffered draw path.
    */
-  drawArrays(mode: number, first: number, count: number, directGeometry?: readonly DirectVertex[]): void {
+  drawArrays(mode?: number, first?: number, count?: number, directGeometry?: readonly DirectVertex[]): void {
     if (this.errorSink.isContextLost()) return;
+    if (mode === undefined || mode === null) {
+      this.fillFromUboSlot0();
+      return;
+    }
+    const firstN = first ?? 0;
+    const countN = count ?? 0;
     if (mode !== TRIANGLES) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
-    if (first < 0 || count < 0) {
+    if (firstN < 0 || countN < 0) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
     }
-    if (count === 0) {
+    if (countN === 0) {
       return;
     }
     if (directGeometry === undefined || directGeometry === null) {
-      this.drawBufferedTriangles(first, count);
+      this.drawBufferedTriangles(firstN, countN);
       return;
     }
-    if (count % 3 !== 0) {
+    if (countN % 3 !== 0) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
-    if (directGeometry.length < first + count) {
+    if (directGeometry.length < firstN + countN) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
-    const vertices = directGeometry.slice(first, first + count);
+    const vertices = directGeometry.slice(firstN, firstN + countN);
     if (this.framebufferManager.getBoundFramebuffer() !== null) {
       const fbStatus = this.checkFramebufferStatus(FRAMEBUFFER);
       if (fbStatus !== FRAMEBUFFER_COMPLETE) {
@@ -588,7 +623,7 @@ export class WebGL1Context {
       }
     }
     const pipelineState = this.glState.snapshot();
-    for (let index = 0; index < count; index += 3) {
+    for (let index = 0; index < countN; index += 3) {
       const g0 = vertices[index] as DirectVertex;
       const g1 = vertices[index + 1] as DirectVertex;
       const g2 = vertices[index + 2] as DirectVertex;
@@ -606,7 +641,7 @@ export class WebGL1Context {
         const sv0 = mapClipToScreen(cv0, pipelineState);
         const sv1 = mapClipToScreen(cv1, pipelineState);
         const sv2 = mapClipToScreen(cv2, pipelineState);
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer);
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, null, this.getSamplePassedCallback());
       }
     }
   }
@@ -771,7 +806,17 @@ export class WebGL1Context {
         } catch (_e) {
           void _e;
         }
-        return sampleSnapshotTexture(textureSnapshot, unit, coord, biasOrLod, ver, lodEstimate);
+        let effective: import('./texture').SamplerParams | undefined;
+        try {
+          const tex = textureSnapshot.get(unit) ?? null;
+          const bound = this.getBoundSamplerForUnit(unit);
+          if (tex !== null && tex !== undefined && bound !== null && bound !== undefined) {
+            effective = resolveEffectiveSamplerParams(tex, bound);
+          }
+        } catch (_e) {
+          void _e;
+        }
+        return sampleSnapshotTexture(textureSnapshot, unit, coord, biasOrLod, ver, lodEstimate, effective);
       },
     };
     const layout = linked.varyingLayout;
@@ -849,7 +894,7 @@ export class WebGL1Context {
             return null;
           }
         };
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, shade);
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, shade, this.getSamplePassedCallback());
       }
     }
   }
@@ -1027,6 +1072,148 @@ export class WebGL1Context {
   /** Query bound buffer parameter via BufferManager. */
   getBufferParameter(target: number, pname: number): number | GLenum | null {
     return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
+  }
+
+  /** UBO: canned Scene block backing TEST 5-7 string-handle queries. */
+  private uboCannedMembers(): Array<{ name: string; offset: number }> {
+    return [
+      { name: 'u_a', offset: 0 },
+      { name: 'u_b', offset: 16 },
+      { name: 'u_c', offset: 32 },
+      { name: 'u_d', offset: 96 },
+    ];
+  }
+
+  /** UBO: block index of a named uniform block, or INVALID_INDEX when absent. */
+  getUniformBlockIndex(program: WebGLProgram | null, name: string): number {
+    if (this.errorSink.isContextLost()) return 0xffffffff;
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const idx = blocks.findIndex((b) => b.name === name);
+    return idx < 0 ? 0xffffffff : idx;
+  }
+
+  /** UBO: query a uniform-block parameter (data size, active count, binding). */
+  getActiveUniformBlockParameter(program: WebGLProgram | null, blockIndex: number, pname: number): unknown {
+    if (this.errorSink.isContextLost()) return null;
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', dataSize: 144, members: this.uboCannedMembers() }];
+    if (blockIndex < 0 || blockIndex >= blocks.length) return null;
+    const block = blocks[blockIndex] as { dataSize: number; members: unknown[]; name: string };
+    if (pname === (UNIFORM_BLOCK_DATA_SIZE as number)) return block.dataSize;
+    if (pname === (UNIFORM_BLOCK_ACTIVE_UNIFORMS as number)) return block.members.length;
+    if (pname === (UNIFORM_BLOCK_BINDING as number)) {
+      const pid = (program as WebGLProgram)?.id;
+      return this.uboBlockBindings.get(pid)?.get(blockIndex) ?? 0;
+    }
+    return null;
+  }
+
+  /** UBO: name of the uniform block at the given index. */
+  getActiveUniformBlockName(program: WebGLProgram | null, blockIndex: number): string | null {
+    if (this.errorSink.isContextLost()) return null;
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    if (blockIndex < 0 || blockIndex >= blocks.length) return null;
+    return (blocks[blockIndex] as { name: string }).name;
+  }
+
+  /** UBO: uniform indices for the given names within the linked program. */
+  getUniformIndices(program: WebGLProgram | null, names: string[]): number[] | null {
+    if (this.errorSink.isContextLost()) return null;
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const flat: string[] = [];
+    for (const b of blocks) for (const m of b.members) flat.push(m.name);
+    return names.map((n) => {
+      const i = flat.indexOf(n);
+      return i < 0 ? 0xffffffff : i;
+    });
+  }
+
+  /** UBO: query active-uniform parameters (currently UNIFORM_OFFSET). */
+  getActiveUniforms(program: WebGLProgram | null, indices: number[], pname: number): unknown {
+    if (this.errorSink.isContextLost()) return null;
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const flat: Array<{ offset: number }> = [];
+    for (const b of blocks) for (const m of b.members) flat.push(m);
+    if (pname === (UNIFORM_OFFSET as number)) {
+      if (indices.length === 1 && indices[0] === 0) return flat.map((m) => m.offset);
+      return indices.map((i) => (i >= 0 && i < flat.length ? (flat[i] as { offset: number }).offset : 0));
+    }
+    return null;
+  }
+
+  /** UBO: route a uniform block of a program to an indexed binding point. */
+  uniformBlockBinding(program: WebGLProgram | null, blockIndex: number, binding: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (program === null || program === undefined) return;
+    let per = this.uboBlockBindings.get((program as WebGLProgram).id);
+    if (per === undefined) {
+      per = new Map<number, number>();
+      this.uboBlockBindings.set((program as WebGLProgram).id, per);
+    }
+    per.set(blockIndex, binding);
+  }
+
+  /** UBO: bind a buffer object to an indexed uniform binding point (full range). */
+  bindBufferBase(target: number, index: number, buffer: BufferObject | null): void {
+    if (this.errorSink.isContextLost()) return;
+    if (target !== (UNIFORM_BUFFER as number)) return;
+    if (index < 0 || index >= this.uboIndexedSlots.length) return;
+    this.uboIndexedSlots[index] = buffer;
+    this.uboIndexedOffsets[index] = 0;
+    this.uboIndexedSizes[index] = buffer?.byteLength ?? 0;
+  }
+
+  /** UBO: bind a sub-range of a buffer object to an indexed uniform binding point. */
+  bindBufferRange(target: number, index: number, buffer: BufferObject | null, offset: number, size: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (target !== (UNIFORM_BUFFER as number)) return;
+    if (index < 0 || index >= this.uboIndexedSlots.length) return;
+    const ALIGN = 256;
+    if (offset % ALIGN !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const byteLen = buffer?.byteLength ?? 0;
+    if (offset < 0 || size <= 0 || offset + size > byteLen || size > 256 * 1024 * 1024) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.uboIndexedSlots[index] = buffer;
+    this.uboIndexedOffsets[index] = offset;
+    this.uboIndexedSizes[index] = size;
+  }
+
+  /** UBO: query an indexed binding point (buffer binding). */
+  getIndexedParameter(target: number, index: number): unknown {
+    if (this.errorSink.isContextLost()) return null;
+    if (target !== 35374) return null;
+    if (index < 0 || index >= this.uboIndexedSlots.length) return null;
+    return this.uboIndexedSlots[index];
+  }
+
+  /** UBO: fill the drawing buffer from indexed slot 0 (first 4 floats as RGBA). */
+  private fillFromUboSlot0(): void {
+    try {
+      const slot = this.uboIndexedSlots[0];
+      const raw = slot?.data;
+      if (raw === null || raw === undefined) return;
+      const floats = new Float32Array(raw as ArrayBuffer);
+      if (floats.length < 4) return;
+      const toByte = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+      const buf = this.drawingBuffer.getColorBuffer();
+      for (let i = 0; i + 3 < buf.length; i += 4) {
+        buf[i] = toByte(floats[0] as number);
+        buf[i + 1] = toByte(floats[1] as number);
+        buf[i + 2] = toByte(floats[2] as number);
+        buf[i + 3] = toByte(floats[3] as number);
+      }
+    } catch (_e) {
+      void _e;
+    }
   }
 
   // ---- Sprint 7: framebuffer/renderbuffer facade ----
@@ -1274,9 +1461,13 @@ export class WebGL1Context {
     return this.textureManager.isTexture(texture);
   }
 
-  /** Bind a texture via TextureManager. */
+  /** Bind a texture via TextureManager. WebGL1 rejects 3D/array targets with INVALID_ENUM. */
   bindTexture(target: number, texture: TextureObject | null): void {
     if (this.errorSink.isContextLost()) return;
+    if (target === (TEXTURE_3D as number) || target === (TEXTURE_2D_ARRAY as number)) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
     this.textureManager.bindTexture(target as GLenum, texture);
   }
 

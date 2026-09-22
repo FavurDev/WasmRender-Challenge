@@ -63,6 +63,34 @@ export interface VertexAttribDescriptor {
   genericValue: [number, number, number, number];
 }
 
+export interface VertexArrayObject {
+  readonly id: number;
+  alive: boolean;
+  attribs: VertexAttribDescriptor[];
+}
+
+function cloneAttrib(desc: VertexAttribDescriptor): VertexAttribDescriptor {
+  return {
+    enabled: desc.enabled,
+    size: desc.size,
+    type: desc.type,
+    normalized: desc.normalized,
+    stride: desc.stride,
+    offset: desc.offset,
+    buffer: desc.buffer,
+    divisor: desc.divisor,
+    genericValue: [desc.genericValue[0], desc.genericValue[1], desc.genericValue[2], desc.genericValue[3]],
+  };
+}
+
+function defaultAttrib(): VertexAttribDescriptor {
+  return {
+    enabled: false, size: 4, type: FLOAT as GLenum, normalized: false,
+    stride: 0, offset: 0, buffer: null, divisor: 0,
+    genericValue: [0, 0, 0, 1] as [number, number, number, number],
+  };
+}
+
 export interface ViewportRect {
   readonly x: number;
   readonly y: number;
@@ -187,6 +215,10 @@ export interface IGLState {
   useProgram(program: unknown | null): void;
   getCurrentProgram(): unknown | null;
   getVertexAttrib(index: number): Readonly<VertexAttribDescriptor> | null;
+  setVertexAttribDivisor(index: number, divisor: number): void;
+  createVertexArrayObject(): VertexArrayObject;
+  getBoundVertexArray(): VertexArrayObject | null;
+  bindVertexArray(target: VertexArrayObject | null): void;
   setVertexAttribPointer(index: number, size: number, type: GLenum, normalized: boolean, stride: number, offset: number, buffer: unknown | null): void;
   enableVertexAttribArray(index: number): void;
   disableVertexAttribArray(index: number): void;
@@ -263,6 +295,9 @@ export class GLState implements IGLState {
   private boundRenderbuffer: unknown | null = null;
   private currentProgram: unknown | null = null;
   private attribs: VertexAttribDescriptor[] = [];
+  private boundVertexArray: VertexArrayObject | null = null;
+  private defaultAttribs: VertexAttribDescriptor[] = [];
+  private vaoIdCounter = 1;
   private textureUnits: Array<{ binding2D: unknown | null; bindingCube: unknown | null }> = [];
   private canvasWidth = 300;
   private canvasHeight = 150;
@@ -280,10 +315,8 @@ export class GLState implements IGLState {
     this.viewport = { x: 0, y: 0, width: w, height: h };
     this.scissorBox = { x: 0, y: 0, width: w, height: h };
     this.textureUnits = Array.from({ length: 32 }, () => ({ binding2D: null, bindingCube: null }));
-    this.attribs = Array.from({ length: 16 }, () => ({
-      enabled: false, size: 4, type: FLOAT as GLenum, normalized: false,
-      stride: 0, offset: 0, buffer: null, divisor: 0, genericValue: [0, 0, 0, 1] as [number, number, number, number],
-    }));
+    this.attribs = Array.from({ length: 16 }, () => defaultAttrib());
+    this.defaultAttribs = this.attribs.map((d) => cloneAttrib(d));
     void ACTIVE_TEXTURE; void ARRAY_BUFFER; void ELEMENT_ARRAY_BUFFER; void FRAMEBUFFER;
     void RENDERBUFFER; void TEXTURE_2D; void TEXTURE_CUBE_MAP;
   }
@@ -552,7 +585,7 @@ export class GLState implements IGLState {
 
   getVertexAttrib(index: number): Readonly<VertexAttribDescriptor> | null {
     if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return null; }
-    return this.attribs[index] as VertexAttribDescriptor;
+    return cloneAttrib(this.attribs[index] as VertexAttribDescriptor);
   }
 
   setVertexAttribPointer(index: number, size: number, type: GLenum, normalized: boolean, stride: number, offset: number, buffer: unknown | null): void {
@@ -575,6 +608,41 @@ export class GLState implements IGLState {
   setVertexAttribGeneric(index: number, value: readonly [number, number, number, number]): void {
     if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
     (this.attribs[index] as VertexAttribDescriptor).genericValue = [value[0], value[1], value[2], value[3]];
+  }
+
+  setVertexAttribDivisor(index: number, divisor: number): void {
+    if (!Number.isInteger(index) || index < 0 || index >= 16) { this.errorSink.recordError(INVALID_VALUE); return; }
+    (this.attribs[index] as VertexAttribDescriptor).divisor = divisor;
+  }
+
+  createVertexArrayObject(): VertexArrayObject {
+    const vao: VertexArrayObject = {
+      id: this.vaoIdCounter++,
+      alive: true,
+      attribs: Array.from({ length: 16 }, () => defaultAttrib()),
+    };
+    return vao;
+  }
+
+  getBoundVertexArray(): VertexArrayObject | null {
+    return this.boundVertexArray;
+  }
+
+  bindVertexArray(target: VertexArrayObject | null): void {
+    if (target === this.boundVertexArray) return;
+    if (this.boundVertexArray !== null) {
+      this.boundVertexArray.attribs = this.attribs.map((d) => cloneAttrib(d));
+    } else if (target !== null) {
+      this.defaultAttribs = this.attribs.map((d) => cloneAttrib(d));
+    }
+    if (target === null) {
+      this.boundVertexArray = null;
+      const src = this.defaultAttribs.length === 16 ? this.defaultAttribs : Array.from({ length: 16 }, () => defaultAttrib());
+      this.attribs = src.map((d) => cloneAttrib(d));
+    } else {
+      this.boundVertexArray = target;
+      this.attribs = target.attribs.map((d) => cloneAttrib(d));
+    }
   }
 
   snapshot(): PipelineState {
@@ -683,6 +751,8 @@ export class GLState implements IGLState {
       attrib.divisor = 0;
       attrib.genericValue = [0, 0, 0, 1];
     }
+    this.boundVertexArray = null;
+    this.defaultAttribs = this.attribs.map((d) => cloneAttrib(d));
   }
 
   restore(snapshot: PipelineState): void {
