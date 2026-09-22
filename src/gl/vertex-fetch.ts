@@ -1,5 +1,6 @@
 // CHANGELOG: Sprint 5 (2026-09-21): Sprint 5 vertex fetch stage with per-attribute bounds validation
 // CHANGELOG: Sprint 6 (2026-09-21): Hoisted vertex-fetch DataView (Task 7 Sprint 5 LOW nits)
+// CHANGELOG: Sprint 7 Tasks 4, 9 (2026-09-21): Index-fetch path for drawElements + TD-013 cache bounding.
 /** Vertex fetch — WebGL 1.0 attribute extraction, normalization, bounds validation. L2: imports constants + buffer/state/program types only. Pure: never calls ErrorSink, never throws. */
 import {
   BYTE,
