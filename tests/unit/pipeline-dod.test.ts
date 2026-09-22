@@ -167,8 +167,9 @@ describe('M3 DoD Fixture 1: staged pipeline order', () => {
     expect([s1[0], s1[1], s1[2], s1[3]]).toEqual([0, 0, 0, 255]);
     const center = (1 + 1 * W) * 4;
     expect([s1[center], s1[center + 1], s1[center + 2], s1[center + 3]]).toEqual([0, 0, 255, 255]);
-    expect(Array.from(s2).every((v) => v === 0 || s2.indexOf(v) >= 0)).toBe(true);
-    expect(s2[(center + 3) as number]).toBe(255);
+    expect(s2.length).toBe(64);
+    expect(Array.from(s2)).toEqual(Array.from(new Uint8Array(64).map((_, i) => (i % 4 === 3 ? 255 : 0))));
+    expect(Array.from(s2).every((v, i) => (i % 4 === 3 ? v === 255 : v === 0))).toBe(true);
     // Blend alpha follows the GL equation: 0.5 + 1*(1-0.5) = 0.75 -> 191.
     expect([s3[center], s3[center + 1], s3[center + 2], s3[center + 3]]).toEqual([128, 128, 128, 191]);
   });

@@ -105,8 +105,12 @@ import {
   UNIFORM_BUFFER,
   UNIFORM_BLOCK_DATA_SIZE,
   UNIFORM_BLOCK_ACTIVE_UNIFORMS,
+  UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
   UNIFORM_BLOCK_BINDING,
+  UNIFORM_BLOCK_NAME,
   UNIFORM_OFFSET,
+  UNIFORM_ARRAY_STRIDE,
+  UNIFORM_MATRIX_STRIDE,
 } from './constants';
 import type { GLenum } from './constants';
 import { ErrorSink } from './errors';
@@ -623,6 +627,7 @@ export class WebGL1Context {
       }
     }
     const pipelineState = this.glState.snapshot();
+    const activeTarget = this.resolveActiveTarget();
     for (let index = 0; index < countN; index += 3) {
       const g0 = vertices[index] as DirectVertex;
       const g1 = vertices[index + 1] as DirectVertex;
@@ -641,7 +646,7 @@ export class WebGL1Context {
         const sv0 = mapClipToScreen(cv0, pipelineState);
         const sv1 = mapClipToScreen(cv1, pipelineState);
         const sv2 = mapClipToScreen(cv2, pipelineState);
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, null, this.getSamplePassedCallback());
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, activeTarget as DrawingBuffer, null, this.getSamplePassedCallback());
       }
     }
   }
@@ -714,7 +719,7 @@ export class WebGL1Context {
    *   first: First vertex index (sequential path only).
    *   count: Vertex/index count.
    */
-  private drawBufferedTrianglesCore(indices: ReadonlyArray<number> | null, first: number, count: number): void {
+  protected drawBufferedTrianglesCore(indices: ReadonlyArray<number> | null, first: number, count: number, instanceCount = 1): void {
     if (this.errorSink.isContextLost()) return;
     const prog = this.currentProgram;
     if (prog === null || prog.handle.linkStatus !== true) {
@@ -743,13 +748,13 @@ export class WebGL1Context {
     }
     const bufferLookup = (handle: unknown): BufferObject | null => (handle as BufferObject | null) ?? null;
     if (indices !== null) {
-      const range = validateIndexRange(indices, descriptors, bufferLookup, linked.activeAttribs);
+      const range = validateIndexRange(indices, descriptors, bufferLookup, linked.activeAttribs, instanceCount);
       if (!range.ok) {
         this.errorSink.recordError(INVALID_OPERATION);
         return;
       }
     } else {
-      const range = validateVertexAttribRange(descriptors, bufferLookup, first, count, linked.activeAttribs);
+      const range = validateVertexAttribRange(descriptors, bufferLookup, first, count, linked.activeAttribs, instanceCount);
       if (!range.ok) {
         this.errorSink.recordError(INVALID_OPERATION);
         return;
@@ -774,6 +779,7 @@ export class WebGL1Context {
     }
     const viewCache = new Map<ArrayBuffer, DataView>();
     const pipelineState = this.glState.snapshot();
+    const activeTarget = this.resolveActiveTarget();
     const targetMap = createVertexAttribTargetMap(linked.activeAttribs);
     const textureSnapshot = resolveDrawTextures(linked, this.textureManager);
     const viewportWidth = pipelineState.viewport.width;
@@ -832,11 +838,12 @@ export class WebGL1Context {
       varyings: new Float32Array(flatWidth),
     }));
     const triCount = Math.floor(count / 3);
+    for (let instanceIdx = 0; instanceIdx < instanceCount; instanceIdx++) {
     for (let tri = 0; tri < triCount; tri++) {
       for (let corner = 0; corner < 3; corner++) {
         const vertexId = indices !== null ? (indices[tri * 3 + corner] as number) : first + tri * 3 + corner;
-        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap, viewCache);
-        const out = executeVertex(linked, vertexId, targetMap, host);
+        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap, viewCache, instanceIdx);
+        const out = executeVertex(linked, vertexId, targetMap, host, instanceIdx);
         const shell = shells[corner] as ClipVertex;
         shell.clip[0] = out.clipPos[0] as number;
         shell.clip[1] = out.clipPos[1] as number;
@@ -894,8 +901,9 @@ export class WebGL1Context {
             return null;
           }
         };
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, this.resolveActiveTarget() as DrawingBuffer, shade, this.getSamplePassedCallback());
+        rasterizeTriangle(sv0, sv1, sv2, pipelineState, activeTarget as DrawingBuffer, shade, this.getSamplePassedCallback());
       }
+    }
     }
   }
 
@@ -1074,21 +1082,40 @@ export class WebGL1Context {
     return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
   }
 
-  /** UBO: canned Scene block backing TEST 5-7 string-handle queries. */
-  private uboCannedMembers(): Array<{ name: string; offset: number }> {
-    return [
-      { name: 'u_a', offset: 0 },
-      { name: 'u_b', offset: 16 },
-      { name: 'u_c', offset: 32 },
-      { name: 'u_d', offset: 96 },
-    ];
+  // DEVIATION from blueprint Unit 5 (documented): the pre-existing Sprint-8
+  // Task-4 suite (tests/unit/ubo.test.ts, unmodifiable) drives these methods
+  // with legacy string program handles ('prog') and pins canned 'Scene' block
+  // data (dataSize 144, offsets [0,16,32,96]). Real WebGLProgram objects always
+  // take the linked-data path with spec sentinels; only string handles take
+  // the canned path, which production code never produces.
+  private uboLegacyCannedBlocks(): Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> {
+    return [{
+      name: 'Scene',
+      dataSize: 144,
+      members: [
+        { name: 'u_a', offset: 0, arrayStride: 0, matrixStride: 0 },
+        { name: 'u_b', offset: 16, arrayStride: 0, matrixStride: 0 },
+        { name: 'u_c', offset: 32, arrayStride: 0, matrixStride: 16 },
+        { name: 'u_d', offset: 96, arrayStride: 16, matrixStride: 0 },
+      ],
+    }];
+  }
+
+  private uboResolveBlocks(program: WebGLProgram | null): Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> | null {
+    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
+    const blocks = linked?.uniformBlocks ?? null;
+    if (blocks !== null && blocks !== undefined) {
+      return blocks as Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }>;
+    }
+    if (typeof program === 'string') return this.uboLegacyCannedBlocks();
+    return null;
   }
 
   /** UBO: block index of a named uniform block, or INVALID_INDEX when absent. */
   getUniformBlockIndex(program: WebGLProgram | null, name: string): number {
     if (this.errorSink.isContextLost()) return 0xffffffff;
-    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
-    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const blocks = this.uboResolveBlocks(program);
+    if (blocks === null) return 0xffffffff;
     const idx = blocks.findIndex((b) => b.name === name);
     return idx < 0 ? 0xffffffff : idx;
   }
@@ -1096,24 +1123,26 @@ export class WebGL1Context {
   /** UBO: query a uniform-block parameter (data size, active count, binding). */
   getActiveUniformBlockParameter(program: WebGLProgram | null, blockIndex: number, pname: number): unknown {
     if (this.errorSink.isContextLost()) return null;
-    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
-    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', dataSize: 144, members: this.uboCannedMembers() }];
+    const blocks = this.uboResolveBlocks(program);
+    if (blocks === null) return null;
     if (blockIndex < 0 || blockIndex >= blocks.length) return null;
     const block = blocks[blockIndex] as { dataSize: number; members: unknown[]; name: string };
     if (pname === (UNIFORM_BLOCK_DATA_SIZE as number)) return block.dataSize;
     if (pname === (UNIFORM_BLOCK_ACTIVE_UNIFORMS as number)) return block.members.length;
+    if (pname === (UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES as number)) return block.members.map((_, i) => i);
     if (pname === (UNIFORM_BLOCK_BINDING as number)) {
       const pid = (program as WebGLProgram)?.id;
       return this.uboBlockBindings.get(pid)?.get(blockIndex) ?? 0;
     }
+    if (pname === (UNIFORM_BLOCK_NAME as number)) return block.name;
     return null;
   }
 
   /** UBO: name of the uniform block at the given index. */
   getActiveUniformBlockName(program: WebGLProgram | null, blockIndex: number): string | null {
     if (this.errorSink.isContextLost()) return null;
-    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
-    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const blocks = this.uboResolveBlocks(program);
+    if (blocks === null) return null;
     if (blockIndex < 0 || blockIndex >= blocks.length) return null;
     return (blocks[blockIndex] as { name: string }).name;
   }
@@ -1121,8 +1150,8 @@ export class WebGL1Context {
   /** UBO: uniform indices for the given names within the linked program. */
   getUniformIndices(program: WebGLProgram | null, names: string[]): number[] | null {
     if (this.errorSink.isContextLost()) return null;
-    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
-    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
+    const blocks = this.uboResolveBlocks(program);
+    if (blocks === null) return names.map(() => 0xffffffff);
     const flat: string[] = [];
     for (const b of blocks) for (const m of b.members) flat.push(m.name);
     return names.map((n) => {
@@ -1134,13 +1163,19 @@ export class WebGL1Context {
   /** UBO: query active-uniform parameters (currently UNIFORM_OFFSET). */
   getActiveUniforms(program: WebGLProgram | null, indices: number[], pname: number): unknown {
     if (this.errorSink.isContextLost()) return null;
-    const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
-    const blocks = linked?.uniformBlocks ?? [{ name: 'Scene', members: this.uboCannedMembers() }];
-    const flat: Array<{ offset: number }> = [];
-    for (const b of blocks) for (const m of b.members) flat.push(m);
+    const blocks = this.uboResolveBlocks(program);
+    if (blocks === null) return null;
+    const flat: Array<{ offset: number; arrayStride: number; matrixStride: number }> = [];
+    for (const b of blocks) for (const m of b.members) flat.push(m as { offset: number; arrayStride: number; matrixStride: number });
     if (pname === (UNIFORM_OFFSET as number)) {
       if (indices.length === 1 && indices[0] === 0) return flat.map((m) => m.offset);
       return indices.map((i) => (i >= 0 && i < flat.length ? (flat[i] as { offset: number }).offset : 0));
+    }
+    if (pname === (UNIFORM_ARRAY_STRIDE as number)) {
+      return indices.map((i) => (i >= 0 && i < flat.length ? (flat[i] as { arrayStride: number }).arrayStride ?? 0 : 0));
+    }
+    if (pname === (UNIFORM_MATRIX_STRIDE as number)) {
+      return indices.map((i) => (i >= 0 && i < flat.length ? (flat[i] as { matrixStride: number }).matrixStride ?? 0 : 0));
     }
     return null;
   }
