@@ -90,10 +90,12 @@ import {
   VERSION,
   VERSION_STRING_WEBGL1,
   UNSIGNED_BYTE,
+  UNSIGNED_INT,
   UNSIGNED_INT_VEC2,
   UNSIGNED_INT_VEC3,
   UNSIGNED_INT_VEC4,
   UNSIGNED_SHORT,
+  INT,
   INT_VEC2,
   INT_VEC3,
   INT_VEC4,
@@ -895,6 +897,7 @@ export class WebGL1Context {
             }
             const frag = executeFragment(linked, varyingMap, host, true);
             if (frag.discarded === true) return null;
+            this.routeMrtOutputs(linked, frag);
             return frag.color;
           } catch (_e) {
             void _e;
@@ -2127,6 +2130,102 @@ export class WebGL1Context {
 
   public uniform4iv(location: WebGLUniformLocation | null, v: ArrayLike<number>): void {
     this.writeIntUniform(location, 4, v);
+  }
+
+  /** Sprint 8 MRT: unsigned scalar uniform setters (uint path, no float conversion). */
+  public uniform1ui(location: WebGLUniformLocation | null, x: number): void {
+    this.writeIntUniform(location, 1, [x]);
+  }
+
+  /** Sprint 8 MRT: unsigned vec2 uniform setter. */
+  public uniform2ui(location: WebGLUniformLocation | null, x: number, y: number): void {
+    this.writeIntUniform(location, 2, [x, y]);
+  }
+
+  /** Sprint 8 MRT: unsigned vec3 uniform setter. */
+  public uniform3ui(location: WebGLUniformLocation | null, x: number, y: number, z: number): void {
+    this.writeIntUniform(location, 3, [x, y, z]);
+  }
+
+  /** Sprint 8 MRT: unsigned vec4 uniform setter. */
+  public uniform4ui(location: WebGLUniformLocation | null, x: number, y: number, z: number, w: number): void {
+    this.writeIntUniform(location, 4, [x, y, z, w]);
+  }
+
+  /** Sprint 8 MRT: unsigned scalar array uniform setter. */
+  public uniform1uiv(location: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+    this.writeIntUniform(location, 1, v);
+  }
+
+  /** Sprint 8 MRT: unsigned vec2 array uniform setter. */
+  public uniform2uiv(location: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+    this.writeIntUniform(location, 2, v);
+  }
+
+  /** Sprint 8 MRT: unsigned vec3 array uniform setter. */
+  public uniform3uiv(location: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+    this.writeIntUniform(location, 3, v);
+  }
+
+  /** Sprint 8 MRT: unsigned vec4 array uniform setter. */
+  public uniform4uiv(location: WebGLUniformLocation | null, v: ArrayLike<number>): void {
+    this.writeIntUniform(location, 4, v);
+  }
+
+  /**
+   * Sprint 8 MRT: integer vertex attribute pointer. Base float path untouched;
+   * integer flag routes fetch through the unsigned path without float conversion.
+   */
+  vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (!Number.isInteger(index) || index < 0 || index >= 16) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(size) || size < 1 || size > 4) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (type !== BYTE && type !== UNSIGNED_BYTE && type !== SHORT && type !== UNSIGNED_SHORT && type !== INT && type !== UNSIGNED_INT) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    const componentSize = type === SHORT || type === UNSIGNED_SHORT ? 2 : type === INT || type === UNSIGNED_INT || type === FLOAT ? 4 : 1;
+    if (!Number.isInteger(stride) || stride < 0 || stride > 255) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (stride % componentSize !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isFinite(offset) || offset < 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (offset % componentSize !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    const boundBuffer = this.bufferManager.getBoundBuffer(ARRAY_BUFFER);
+    if (boundBuffer === null || boundBuffer === undefined) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.glState.setVertexAttribPointer(index, size, type as GLenum, false, stride, offset, boundBuffer);
+    this.glState.setVertexAttribInteger(index, true);
+  }
+
+  /**
+   * Sprint 8 MRT: draw-path hook consuming the interpreter fragment outputs map.
+   * Base (WebGL1) is a no-op; WebGL2 overrides to write attachments.
+   */
+  protected routeMrtOutputs(
+    _linked: LinkedProgram,
+    _frag: { outputs?: Map<string, Float32Array> },
+  ): void {
+    void _linked;
+    void _frag;
   }
 
   public uniformMatrix2fv(location: WebGLUniformLocation | null, transpose: boolean, value: ArrayLike<number>): void {

@@ -102,8 +102,9 @@ export interface FragmentResult {
   discarded: boolean;
   color: Float32Array;
   depth?: number;
+  /** Sprint 8 Task 10 (MRT): all ES 3.00 `out` outputs by name (single-output shaders leave this unset or with one entry). */
+  outputs?: Map<string, Float32Array>;
 }
-
 /** Context threaded through expression evaluation. */
 export interface EvalContext {
   program: LinkedProgram;
@@ -1411,14 +1412,23 @@ export function executeFragment(
     runMain(findMain(ast), env, ctx);
     if (env.discardSignaled) return { discarded: true, color: new Float32Array([0, 0, 0, 0]), depth: null as unknown as number };
     let color: Float32Array;
+    // Sprint 8 Task 10 (MRT): collect every ES 3.00 `out` output so the draw path
+    // can route each fragment output location to its draw-buffers attachment.
+    const outputs: Map<string, Float32Array> | undefined = version === 300 ? new Map<string, Float32Array>() : undefined;
     if (version === 100) {
       color = toVec4(env.lookup('gl_FragColor'));
     } else {
       const outs = program.fs.declaredOutputs ?? [];
-      if (outs.length > 0) color = toVec4(env.lookup(outs[0]!.name));
-      else color = toVec4(env.lookup('gl_FragColor'));
+      if (outs.length > 0) {
+        color = toVec4(env.lookup(outs[0]!.name));
+        for (const o of outs) {
+          (outputs as Map<string, Float32Array>).set(o.name, toVec4(env.lookup(o.name)));
+        }
+      } else {
+        color = toVec4(env.lookup('gl_FragColor'));
+      }
     }
-    return { discarded: false, color, depth: null as unknown as number };
+    return { discarded: false, color, depth: null as unknown as number, outputs };
   } catch (_e) {
     host.reportFault?.(_e, 'fragment');
     return { discarded: false, color: new Float32Array([0, 0, 0, 1]), depth: null as unknown as number };

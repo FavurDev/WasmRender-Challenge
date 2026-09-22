@@ -272,10 +272,10 @@ class Parser {
     // type
     const tc = this.current();
     let typeName = '';
-    if (tc.kind === 'KEYWORD' && TYPE_NAMES.has(tc.text)) {
-      if (tc.text === 'uint' || tc.text === 'uvec2' || tc.text === 'uvec3' || tc.text === 'uvec4') {
-        if (this.version === 100) { this.releaseDepth(); return this.fail(tc.line, "Type '" + tc.text + "' not supported in GLSL ES 1.00"); }
-      }
+    if ((tc.kind === 'KEYWORD' || tc.kind === 'RESERVED') && TYPE_NAMES.has(tc.text)) {
+      // Sprint 8 MRT (ADR-MRT-3): uint/uvecN accepted in ES 1.00 and ES 3.00.
+      // Under v100 the tokenizer marks 300-only keywords RESERVED; accept the
+      // integer family (uint/uvecN/usampler/isampler) as type names anyway.
       typeName = tc.text; this.pos += 1;
     } else if (tc.kind === 'KEYWORD' && tc.text === 'struct') {
       const sd = this.parseStructDefinition();

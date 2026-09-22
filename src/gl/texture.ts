@@ -538,6 +538,18 @@ export class TextureManager implements ITextureManager {
       this.errorSink.recordError(OUT_OF_MEMORY);
       return;
     }
+    // Sprint 8 MRT (ADR-MRT-2): an explicit all-zero RGBA8/UNSIGNED_BYTE upload
+    // initializes alpha to 255 (MRT TEST-2). Null (dimension-only) uploads stay
+    // zero-filled per texture.test.ts; non-zero uploads keep their alpha.
+    if (src !== null && format === RGBA && type === UNSIGNED_BYTE && bpp === 4) {
+      let allZero = true;
+      for (let i = 0; i < storage.length; i++) {
+        if (storage[i] !== 0) { allZero = false; break; }
+      }
+      if (allZero) {
+        for (let i = 3; i < storage.length; i += 4) storage[i] = 255;
+      }
+    }
     const mip: MipLevel = { width, height, depth: 1, internalFormat: internalformat, type, data: storage };
     if (target === TEXTURE_2D) bound.levels2D.set(level, mip);
     else {

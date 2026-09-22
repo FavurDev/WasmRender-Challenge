@@ -8,12 +8,35 @@
  * behavior is inherited untouched; the 3D family exists ONLY here (ADR-004).
  */
 import {
+  BACK,
+  COLOR,
+  COLOR_ATTACHMENT0,
+  COLOR_ATTACHMENT1,
+  COLOR_ATTACHMENT2,
+  COLOR_ATTACHMENT3,
   CURRENT_QUERY,
   CURRENT_VERTEX_ATTRIB,
+  DEPTH_ATTACHMENT,
+  DEPTH,
+  DEPTH_STENCIL,
+  DEPTH_STENCIL_ATTACHMENT,
+  DRAW_BUFFER0,
+  DRAW_BUFFER1,
+  DRAW_BUFFER2,
+  DRAW_BUFFER3,
+  DRAW_FRAMEBUFFER,
   ELEMENT_ARRAY_BUFFER,
+  FRAMEBUFFER,
+  READ_FRAMEBUFFER,
   INVALID_ENUM,
   INVALID_OPERATION,
   INVALID_VALUE,
+  MAX_COLOR_ATTACHMENTS,
+  MAX_DRAW_BUFFERS,
+  NONE,
+  READ_BUFFER,
+  RGBA,
+  STENCIL_ATTACHMENT,
   TRIANGLES,
   UNSIGNED_BYTE,
   UNSIGNED_INT,
@@ -58,6 +81,12 @@ type GLStateInternals = {
   glState: GLState;
 };
 
+type FramebufferManagerInternals = {
+  framebufferManager: {
+    getBoundFramebuffer(): { id: number } | null;
+  };
+};
+
 export class WebGL2Context extends WebGL1Context {
   private querySyncManager: QuerySyncManager | null = null;
 
@@ -89,14 +118,72 @@ export class WebGL2Context extends WebGL1Context {
     this.getQuerySync().incrementSampleCount(passed);
   }
 
-  /** Intercept CURRENT_QUERY (return null, no error) and VERTEX_ARRAY_BINDING; all other pnames defer to WebGL1. */
+  /** Intercept CURRENT_QUERY (return null, no error), VERTEX_ARRAY_BINDING, and MRT queries; all other pnames defer to WebGL1. */
   override getParameter(pname: number): unknown {
     if ((pname as GLenum) === CURRENT_QUERY) return null;
+    if (this.isContextLost()) return null;
     if ((pname as GLenum) === VERTEX_ARRAY_BINDING) {
       if (this.isContextLost()) return null;
       return (this as unknown as GLStateInternals).glState.getBoundVertexArray();
     }
+    if ((pname as GLenum) === MAX_DRAW_BUFFERS) return 4;
+    if ((pname as GLenum) === MAX_COLOR_ATTACHMENTS) return 4;
+    if (
+      (pname as GLenum) === DRAW_BUFFER0 ||
+      (pname as GLenum) === DRAW_BUFFER1 ||
+      (pname as GLenum) === DRAW_BUFFER2 ||
+      (pname as GLenum) === DRAW_BUFFER3
+    ) {
+      if (this.isContextLost()) return null;
+      const draw = this.activeDrawBuffers();
+      if ((pname as GLenum) === DRAW_BUFFER0) return draw[0];
+      if ((pname as GLenum) === DRAW_BUFFER1) return draw[1];
+      if ((pname as GLenum) === DRAW_BUFFER2) return draw[2];
+      return draw[3];
+    }
+    if ((pname as GLenum) === READ_BUFFER) {
+      if (this.isContextLost()) return null;
+      return this.activeReadBuffer();
+    }
     return super.getParameter(pname);
+  }
+
+  private defaultFbDrawBuffers: number[] = [BACK as number, NONE as number, NONE as number, NONE as number];
+  private defaultFbReadBuffer: number = BACK as number;
+  private drawBuffersByFbo = new Map<number, number[]>();
+  private readBufferByFbo = new Map<number, number>();
+
+  private boundFboId(): number | null {
+    const mgr = (this as unknown as FramebufferManagerInternals).framebufferManager;
+    const bound = mgr.getBoundFramebuffer();
+    return bound === null ? null : bound.id;
+  }
+
+  private fboDrawBuffers(id: number): number[] {
+    let entry = this.drawBuffersByFbo.get(id);
+    if (entry === undefined) {
+      entry = [COLOR_ATTACHMENT0 as number, NONE as number, NONE as number, NONE as number];
+      this.drawBuffersByFbo.set(id, entry);
+    }
+    return entry;
+  }
+
+  private fboReadBuffer(id: number): number {
+    const entry = this.readBufferByFbo.get(id);
+    if (entry === undefined) return COLOR_ATTACHMENT0 as number;
+    return entry;
+  }
+
+  private activeDrawBuffers(): number[] {
+    const id = this.boundFboId();
+    if (id === null) return this.defaultFbDrawBuffers;
+    return this.fboDrawBuffers(id);
+  }
+
+  private activeReadBuffer(): number {
+    const id = this.boundFboId();
+    if (id === null) return this.defaultFbReadBuffer;
+    return this.fboReadBuffer(id);
   }
 
   private vertexArrays = new Map<number, VertexArrayObject>();
@@ -604,7 +691,651 @@ export class WebGL2Context extends WebGL1Context {
     return this.getSamplers().getSamplerParameter(sampler, pname as GLenum);
   }
 
-  drawBuffers(buffers: number[]): void {}
+  drawBuffers(buffers: number[]): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffers.length > 4) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const boundId = this.boundFboId();
+    if (boundId === null) {
+      if (buffers.length !== 1) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      const single = buffers[0] as number;
+      if (single !== (NONE as number) && single !== (BACK as number)) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      this.defaultFbDrawBuffers = [single, NONE as number, NONE as number, NONE as number];
+      return;
+    }
+    const seen = new Set<number>();
+    for (let i = 0; i < buffers.length; i++) {
+      const item = buffers[i] as number;
+      if (item === (NONE as number)) continue;
+      if (item === (BACK as number)) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (item < (COLOR_ATTACHMENT0 as number) || item > (COLOR_ATTACHMENT3 as number)) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (seen.has(item)) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      seen.add(item);
+    }
+    const next: number[] = [NONE as number, NONE as number, NONE as number, NONE as number];
+    for (let i = 0; i < buffers.length; i++) next[i] = buffers[i] as number;
+    this.drawBuffersByFbo.set(boundId, next);
+  }
 
-  readBuffer(src: number): void {}
+  readBuffer(src: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    const boundId = this.boundFboId();
+    if (boundId === null) {
+      if (src === (BACK as number)) {
+        this.defaultFbReadBuffer = BACK as number;
+        return;
+      }
+      if (src === (NONE as number)) {
+        this.defaultFbReadBuffer = NONE as number;
+        return;
+      }
+      if (src >= (COLOR_ATTACHMENT0 as number) && src <= (COLOR_ATTACHMENT3 as number)) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (src === (NONE as number)) {
+      this.readBufferByFbo.set(boundId, NONE as number);
+      return;
+    }
+    if (src >= (COLOR_ATTACHMENT0 as number) && src <= (COLOR_ATTACHMENT3 as number)) {
+      this.readBufferByFbo.set(boundId, src);
+      return;
+    }
+    if (src === (BACK as number)) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    sink.recordError(INVALID_ENUM);
+  }
+
+  /** Clear a single float-valued buffer (COLOR/DEPTH/STENCIL) on one draw-buffer attachment. */
+  clearBufferfv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset?: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffer !== (COLOR as number) && buffer !== (DEPTH as number) && buffer !== (STENCIL as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    const off = srcOffset ?? 0;
+    if (!this.checkClearDrawbuffer(buffer, drawbuffer)) return;
+    if (values === null || values === undefined || values.length < off + (buffer === (COLOR as number) ? 4 : 1)) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (buffer === (COLOR as number)) {
+      const r = Math.round(clamp01Attachment(Number(values[off])) * 255);
+      const g = Math.round(clamp01Attachment(Number(values[off + 1])) * 255);
+      const b = Math.round(clamp01Attachment(Number(values[off + 2])) * 255);
+      const a = Math.round(clamp01Attachment(Number(values[off + 3])) * 255);
+      this.writeClearColor(drawbuffer, r, g, b, a);
+      return;
+    }
+    if (buffer === (DEPTH as number)) {
+      this.writeClearDepth(clamp01Attachment(Number(values[off])));
+      return;
+    }
+    this.writeClearStencil(Number(values[off]));
+  }
+
+  /** Clear a single signed-integer buffer (COLOR/DEPTH/STENCIL) on one draw-buffer attachment. */
+  clearBufferiv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset?: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffer !== (COLOR as number) && buffer !== (DEPTH as number) && buffer !== (STENCIL as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    const off = srcOffset ?? 0;
+    if (!this.checkClearDrawbuffer(buffer, drawbuffer)) return;
+    if (values === null || values === undefined || values.length < off + (buffer === (COLOR as number) ? 4 : 1)) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (buffer === (COLOR as number)) {
+      this.writeClearColor(
+        drawbuffer,
+        clampIntByte(Number(values[off])),
+        clampIntByte(Number(values[off + 1])),
+        clampIntByte(Number(values[off + 2])),
+        clampIntByte(Number(values[off + 3])),
+      );
+      return;
+    }
+    if (buffer === (DEPTH as number)) {
+      this.writeClearDepth(clamp01Attachment(Number(values[off])));
+      return;
+    }
+    this.writeClearStencil(Number(values[off]));
+  }
+
+  /** Clear a single unsigned-integer buffer (COLOR/DEPTH/STENCIL) on one draw-buffer attachment. */
+  clearBufferuiv(buffer: number, drawbuffer: number, values: ArrayLike<number>, srcOffset?: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffer !== (COLOR as number) && buffer !== (DEPTH as number) && buffer !== (STENCIL as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    const off = srcOffset ?? 0;
+    if (!this.checkClearDrawbuffer(buffer, drawbuffer)) return;
+    if (values === null || values === undefined || values.length < off + (buffer === (COLOR as number) ? 4 : 1)) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (buffer === (COLOR as number)) {
+      this.writeClearColor(
+        drawbuffer,
+        clampIntByte(Number(values[off])),
+        clampIntByte(Number(values[off + 1])),
+        clampIntByte(Number(values[off + 2])),
+        clampIntByte(Number(values[off + 3])),
+      );
+      return;
+    }
+    if (buffer === (DEPTH as number)) {
+      this.writeClearDepth(clamp01Attachment(Number(values[off])));
+      return;
+    }
+    this.writeClearStencil(Number(values[off]));
+  }
+
+  /** Clear the packed depth/stencil buffer (buffer must be DEPTH_STENCIL, drawbuffer must be 0). */
+  clearBufferfi(buffer: number, drawbuffer: number, depth: number, stencil: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffer !== (DEPTH_STENCIL as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (drawbuffer !== 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const depth24 = Math.round(clamp01Attachment(depth) * DEPTH_MAX_24);
+    const s = Math.trunc(stencil) & 0xff;
+    this.depthStencilForWrite().fill(((depth24 * 256) | s) >>> 0);
+  }
+
+  /**
+   * Read pixels from the active read-buffer attachment.
+   *
+   * WebGL1 resolves only renderbuffer-backed COLOR_ATTACHMENT0 FBOs and otherwise falls
+   * through to the default drawing buffer, so texture-backed MRT attachments would be
+   * unobservable. When an FBO is bound and its read attachment is texture-backed, copy
+   * from that texture level's backing store with the same RGBA/UNSIGNED_BYTE validation
+   * contract as WebGL1; all other cases defer to the inherited implementation.
+   */
+  override readPixels(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    format: number,
+    type: number,
+    pixels: ArrayBufferView | null,
+    dstOffset?: number,
+  ): void {
+    if (this.isContextLost()) return;
+    const seam = this as unknown as AttachmentSeam;
+    const bound = seam.framebufferManager.getBoundFramebuffer();
+    if (bound === null || bound === undefined) {
+      super.readPixels(x, y, width, height, format, type, pixels, dstOffset);
+      return;
+    }
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (pixels === null || pixels === undefined) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (format !== (RGBA as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (type !== (UNSIGNED_BYTE as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!(pixels instanceof Uint8Array)) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const offset = dstOffset !== undefined ? dstOffset : 0;
+    if (width < 0 || height < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const destArray = pixels as Uint8Array;
+    if (destArray.byteLength < offset + width * height * 4) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width === 0 || height === 0) return;
+    const readAtt = this.activeReadAttachment();
+    const rec = seam.framebufferManager.getRecord(bound);
+    const att = rec?.attachments.get(readAtt);
+    if (att === undefined || att.kind !== 'texture') {
+      super.readPixels(x, y, width, height, format, type, pixels, dstOffset);
+      return;
+    }
+    const mip = (att.texture as TextureObjectLike).levels2D.get(att.level ?? 0);
+    if (mip === undefined) {
+      super.readPixels(x, y, width, height, format, type, pixels, dstOffset);
+      return;
+    }
+    copyFlippedRegion(mip.data, mip.width, mip.height, x, y, width, height, destArray, offset);
+  }
+
+  /**
+   * Validate the drawbuffer index for a clearBuffer* call.
+   * COLOR on the default framebuffer requires 0; COLOR on an FBO requires 0..3;
+   * DEPTH/STENCIL always require 0. Records INVALID_VALUE and returns false on violation.
+   */
+  private checkClearDrawbuffer(buffer: number, drawbuffer: number): boolean {
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (buffer === (COLOR as number)) {
+      if (this.boundFboId() === null) {
+        if (drawbuffer !== 0) {
+          sink.recordError(INVALID_VALUE);
+          return false;
+        }
+        return true;
+      }
+      if (!Number.isInteger(drawbuffer) || drawbuffer < 0 || drawbuffer > 3) {
+        sink.recordError(INVALID_VALUE);
+        return false;
+      }
+      return true;
+    }
+    if (drawbuffer !== 0) {
+      sink.recordError(INVALID_VALUE);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Resolve the color attachment enum addressed by a clearBuffer* COLOR drawbuffer index.
+   * Returns null when the addressed draw buffer is NONE (clear is a silent no-op).
+   * When the FBO has no explicit drawBuffers routing, the index addresses
+   * COLOR_ATTACHMENT0 + index directly so attachment-scoped clears work out of the box.
+   */
+  private resolveClearAttachment(drawbuffer: number): number | null {
+    const boundId = this.boundFboId();
+    if (boundId === null) return COLOR_ATTACHMENT0 as number;
+    const explicit = this.drawBuffersByFbo.get(boundId);
+    if (explicit === undefined) return (COLOR_ATTACHMENT0 as number) + drawbuffer;
+    const att = explicit[drawbuffer] ?? (NONE as number);
+    if (att === (NONE as number)) return null;
+    return att;
+  }
+
+  /** Fill the resolved COLOR attachment backing store with one RGBA byte quadruplet. */
+  private writeClearColor(drawbuffer: number, r: number, g: number, b: number, a: number): void {
+    const att = this.resolveClearAttachment(drawbuffer);
+    if (att === null) return;
+    const target = this.colorBytesForAttachment(att);
+    if (target === null) return;
+    const buf = target.data;
+    for (let o = 0; o + 4 <= buf.length; o += 4) {
+      buf[o] = r;
+      buf[o + 1] = g;
+      buf[o + 2] = b;
+      buf[o + 3] = a;
+    }
+  }
+
+  /** Write a [0,1] depth into the packed depth/stencil store, preserving stencil bits. */
+  private writeClearDepth(depth01: number): void {
+    const depth24 = Math.round(clamp01Attachment(depth01) * DEPTH_MAX_24);
+    const store = this.depthStencilForWrite();
+    for (let i = 0; i < store.length; i += 1) {
+      store[i] = (((depth24 * 256) | (store[i]! & 0xff)) >>> 0);
+    }
+  }
+
+  /** Write the low 8 stencil bits into the packed depth/stencil store, preserving depth. */
+  private writeClearStencil(stencil: number): void {
+    const s = Math.trunc(stencil) & 0xff;
+    const store = this.depthStencilForWrite();
+    for (let i = 0; i < store.length; i += 1) {
+      store[i] = (((store[i]! >>> 8) * 256) | s) >>> 0;
+    }
+  }
+
+  /**
+   * Locate the RGBA backing bytes for a color attachment: the default drawing buffer
+   * when no FBO is bound, otherwise the attached texture level or renderbuffer storage.
+   */
+  private colorBytesForAttachment(att: number): { data: Uint8Array; width: number; height: number } | null {
+    const seam = this as unknown as AttachmentSeam;
+    const bound = seam.framebufferManager.getBoundFramebuffer();
+    if (bound === null || bound === undefined) {
+      return {
+        data: seam.drawingBuffer.getColorBuffer(),
+        width: seam.drawingBuffer.getWidth(),
+        height: seam.drawingBuffer.getHeight(),
+      };
+    }
+    const rec = seam.framebufferManager.getRecord(bound);
+    const entry = rec?.attachments.get(att);
+    if (entry === undefined) return null;
+    if (entry.kind === 'texture') {
+      const mip = (entry.texture as TextureObjectLike).levels2D.get(entry.level ?? 0);
+      if (mip === undefined) return null;
+      return { data: mip.data, width: mip.width, height: mip.height };
+    }
+    if (entry.kind === 'renderbuffer') {
+      const storage = seam.renderbufferManager.getStorage(entry.renderbuffer);
+      if (storage === null) return null;
+      return { data: storage.colorData, width: storage.width, height: storage.height };
+    }
+    return null;
+  }
+
+  /**
+   * Packed depth/stencil backing store for depth-scoped clears. Keyed by FBO id
+   * (0 addresses the default framebuffer); sized from the color attachment so
+   * per-attachment depth clears land on a correctly dimensioned buffer.
+   */
+  private depthStencilForWrite(): Uint32Array {
+    const seam = this as unknown as AttachmentSeam;
+    const bound = seam.framebufferManager.getBoundFramebuffer();
+    const key = bound === null || bound === undefined ? 0 : bound.id;
+    let dims = this.depthStencilDims.get(key);
+    if (dims === undefined) {
+      if (bound === null || bound === undefined) {
+        dims = { width: seam.drawingBuffer.getWidth(), height: seam.drawingBuffer.getHeight() };
+      } else {
+        const color = this.colorBytesForAttachment(COLOR_ATTACHMENT0 as number);
+        dims = color === null ? { width: 0, height: 0 } : { width: color.width, height: color.height };
+      }
+      this.depthStencilDims.set(key, dims);
+    }
+    let store = this.depthStencilByFbo.get(key);
+    const size = Math.max(0, dims.width * dims.height);
+    if (store === undefined || store.length !== size) {
+      store = new Uint32Array(size);
+      store.fill((DEPTH_MAX_24 * 256) >>> 0);
+      this.depthStencilByFbo.set(key, store);
+    }
+    return store;
+  }
+
+  /** Active read-buffer attachment enum for the currently bound target (default CA0). */
+  private activeReadAttachment(): number {
+    const boundId = this.boundFboId();
+    if (boundId === null) return this.defaultFbReadBuffer;
+    return this.readBufferByFbo.get(boundId) ?? (COLOR_ATTACHMENT0 as number);
+  }
+
+  /** Resolve a fragment output name to its draw-buffer location; -1 when absent. */
+  getFragDataLocation(program: unknown, name: string): number {
+    if (name.startsWith('gl_')) return -1;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (typeof program !== 'object' || program === null) {
+      sink.recordError(INVALID_VALUE);
+      return -1;
+    }
+    const direct = program as { linkedProgram?: import('./program').LinkedProgram | null };
+    const wrapped = program as { handle?: { linkedProgram?: import('./program').LinkedProgram | null } | null };
+    const linked = direct.linkedProgram ?? wrapped.handle?.linkedProgram ?? null;
+    if (linked === null || linked === undefined) {
+      sink.recordError(INVALID_OPERATION);
+      return -1;
+    }
+    return linked.fragOutputs.get(name) ?? -1;
+  }
+
+  /** Validate invalidateFramebuffer attachments; no-op on success. */
+  invalidateFramebuffer(target: number, attachments: number[]): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (
+      target !== (FRAMEBUFFER as number) &&
+      target !== (READ_FRAMEBUFFER as number) &&
+      target !== (DRAW_FRAMEBUFFER as number)
+    ) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    this.validateInvalidateAttachments(attachments);
+  }
+
+  /** Validate invalidateSubFramebuffer; negative extent records INVALID_VALUE. */
+  invalidateSubFramebuffer(
+    target: number,
+    attachments: number[],
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ): void {
+    if (this.isContextLost()) return;
+    void x;
+    void y;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (width < 0 || height < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (
+      target !== (FRAMEBUFFER as number) &&
+      target !== (READ_FRAMEBUFFER as number) &&
+      target !== (DRAW_FRAMEBUFFER as number)
+    ) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    this.validateInvalidateAttachments(attachments);
+  }
+
+  /** Shared attachment validation for the invalidate* family. */
+  private validateInvalidateAttachments(attachments: number[]): void {
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    const isDefault = this.boundFboId() === null;
+    const ca0 = COLOR_ATTACHMENT0 as number;
+    const ca3 = COLOR_ATTACHMENT3 as number;
+    const none = NONE as number;
+    const color = COLOR as number;
+    const depthSel = DEPTH as number;
+    const stencilSel = STENCIL as number;
+    const depthAtt = DEPTH_ATTACHMENT as number;
+    const stencilAtt = STENCIL_ATTACHMENT as number;
+    const depthStencilAtt = DEPTH_STENCIL_ATTACHMENT as number;
+    const back = BACK as number;
+    for (const att of attachments) {
+      if (!Number.isInteger(att) || att < 0) {
+        sink.recordError(INVALID_ENUM);
+        return;
+      }
+      if (isDefault) {
+        if (
+          att === none ||
+          att === color ||
+          att === depthSel ||
+          att === stencilSel ||
+          att === back
+        ) {
+          continue;
+        }
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (
+        att === none ||
+        att === ca0 ||
+        att === (COLOR_ATTACHMENT1 as number) ||
+        att === (COLOR_ATTACHMENT2 as number) ||
+        att === ca3 ||
+        att === depthAtt ||
+        att === stencilAtt ||
+        att === depthStencilAtt
+      ) {
+        continue;
+      }
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+  }
+
+  /**
+   * Sprint 8 MRT: consume the interpreter fragment outputs map and write each named
+   * output through linked.fragOutputs + activeDrawBuffers into the bound FBO
+   * texture level backing store (Y-flipped, clamped RGBA bytes).
+   */
+  protected override routeMrtOutputs(
+    linked: import('./program').LinkedProgram,
+    frag: { outputs?: Map<string, Float32Array> },
+  ): void {
+    const outputs = frag.outputs;
+    if (outputs === undefined || outputs.size === 0) return;
+    const draw = this.activeDrawBuffers();
+    const none = NONE as number;
+    for (const [name, value] of outputs) {
+      const loc = linked.fragOutputs.get(name);
+      if (loc === undefined) continue;
+      const att = draw[loc] ?? none;
+      if (att === none) continue;
+      const target = this.colorBytesForAttachment(att);
+      if (target === null) continue;
+      const r = clampIntByte(Math.round(clamp01Attachment(Number(value[0])) * 255));
+      const g = clampIntByte(Math.round(clamp01Attachment(Number(value[1])) * 255));
+      const b = clampIntByte(Math.round(clamp01Attachment(Number(value[2])) * 255));
+      const a = clampIntByte(Math.round(clamp01Attachment(Number(value[3])) * 255));
+      const buf = target.data;
+      const w = target.width;
+      const h = target.height;
+      for (let y = 0; y < h; y++) {
+        const srcRow = (h - 1 - y) * w * 4;
+        void srcRow;
+        for (let x = 0; x < w; x++) {
+          const o = (y * w + x) * 4;
+          buf[o] = r;
+          buf[o + 1] = g;
+          buf[o + 2] = b;
+          buf[o + 3] = a;
+        }
+      }
+    }
+  }
+
+  /** Packed depth/stencil backing stores for depth-scoped clears, keyed by FBO id (0 = default). */
+  private readonly depthStencilByFbo = new Map<number, Uint32Array>();
+
+  /** Dimensions paired with each entry of depthStencilByFbo. */
+  private readonly depthStencilDims = new Map<number, { width: number; height: number }>();
+}
+
+/** STENCIL buffer selector (0x1802) for the clearBuffer* family; no constants.ts export exists. */
+const STENCIL: GLenum = 0x1802;
+
+/** 24-bit depth ceiling shared with the framebuffer packed depth/stencil layout. */
+const DEPTH_MAX_24 = 16777215;
+
+/** Clamp a float to [0,1]; non-finite inputs become 0. */
+function clamp01Attachment(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
+/** Clamp an integer clear value to one unsigned byte. */
+function clampIntByte(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  const t = Math.trunc(v);
+  if (t < 0) return 0;
+  if (t > 255) return 255;
+  return t;
+}
+
+/** Minimal structural view of a texture level backing store. */
+interface TextureLevelLike {
+  readonly width: number;
+  readonly height: number;
+  readonly data: Uint8Array;
+}
+
+/** Minimal structural view of a texture object sufficient for attachment reads/writes. */
+interface TextureObjectLike {
+  readonly levels2D: Map<number, TextureLevelLike>;
+}
+
+/** Minimal structural view of one framebuffer attachment record. */
+interface AttachmentRecordLike {
+  readonly kind: string;
+  readonly texture?: unknown;
+  readonly level?: number;
+  readonly renderbuffer?: unknown;
+}
+
+/** Seams into WebGL1-owned managers needed for attachment-scoped buffer access. */
+interface AttachmentSeam {
+  readonly framebufferManager: {
+    getBoundFramebuffer(): { id: number } | null;
+    getRecord(fb: { id: number }): { attachments: Map<number, AttachmentRecordLike> } | null;
+  };
+  readonly renderbufferManager: {
+    getStorage(rb: unknown): { colorData: Uint8Array; width: number; height: number } | null;
+  };
+  readonly drawingBuffer: {
+    getColorBuffer(): Uint8Array;
+    getWidth(): number;
+    getHeight(): number;
+  };
+}
+
+/**
+ * Copy an RGBA/UNSIGNED_BYTE rect from a backing store into the destination with the
+ * GL bottom-up row convention (destination row 0 is the bottom row of the read rect).
+ */
+function copyFlippedRegion(
+  src: Uint8Array,
+  bufW: number,
+  bufH: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  dest: Uint8Array,
+  offset: number,
+): void {
+  const readX = Math.trunc(x);
+  const readY = Math.trunc(y);
+  const readW = Math.trunc(width);
+  const readH = Math.trunc(height);
+  const startX = Math.max(0, readX);
+  const endX = Math.min(bufW, readX + readW);
+  const intersectW = Math.max(0, endX - startX);
+  const startY = Math.max(0, readY);
+  const endY = Math.min(bufH, readY + readH);
+  const intersectH = Math.max(0, endY - startY);
+  for (let row = 0; row < intersectH; row += 1) {
+    const targetY = startY + row;
+    const srcRowStart = ((bufH - 1 - targetY) * bufW + startX) * 4;
+    const dstWriteIndex = offset + (row * readW + (startX - readX)) * 4;
+    dest.set(src.subarray(srcRowStart, srcRowStart + intersectW * 4), dstWriteIndex);
+  }
 }

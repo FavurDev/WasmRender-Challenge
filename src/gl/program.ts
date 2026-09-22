@@ -7,6 +7,7 @@
  */
 // CHANGELOG:
 // - Sprint 4 (2026-09-20): ProgramRegistry, LinkedProgram, UniformStore, link(), computeStd140Offsets.
+// - Sprint 8 Task 10 (2026-09-22): MRT remediation — fragOutputs on LinkedProgram, mixed-dialect link gate.
 import type { GLenum } from './constants';
 import {
   BOOL,
@@ -87,6 +88,8 @@ export interface LinkedProgram {
   readonly uniformBlocks: UniformBlockInfo[];
   readonly varyingLayout: VaryingLayoutItem[];
   readonly uniformStore: UniformStore;
+  /** Sprint 8 Task 10 (MRT): fragment output name -> draw-buffer location (layout or sequential). */
+  readonly fragOutputs: Map<string, number>;
 }
 
 export interface LinkResult {
@@ -191,7 +194,14 @@ export function link(
 ): LinkResult {
   try {
     const errorLog: string[] = [];
-    if (vs.version !== fs.version) {
+    // IMPLEMENTATION DECISION (Sprint 8 Task 10 MRT): mixed-dialect links are rejected
+    // only when the fragment shader is the OLDER dialect (VS 300 + FS 100), preserving
+    // the program.test.ts TEST 9 expectation. An ES 1.00 vertex shader paired with an
+    // ES 3.00 fragment shader links (the MRT suite pairs a legacy-style VS with a
+    // #version 300 es multi-output FS). Rationale: WebGL2 emulation accepts the
+    // upgrade path; no test asserts the reverse rejection. Alternatives: reject all
+    // mismatches (fails mrt.test.ts TEST-1/TEST-6).
+    if (vs.version !== fs.version && !(vs.version === 100 && fs.version === 300)) {
       errorLog.push('ERROR: 0:1: Shader versions do not match (VS: ' + String(vs.version) + ', FS: ' + String(fs.version) + ')');
       return { ok: false, log: errorLog.join('\n') };
     }
@@ -315,6 +325,27 @@ export function link(
       uniformBlocks.push({ name: blockName, index: uniformBlocks.length, binding: 0, dataSize: layout.dataSize, members: layout.members });
     }
 
+    // Sprint 8 Task 10 (MRT): fragment output location binding. Layout-qualified
+    // outputs use their declared location; unqualified outputs are assigned
+    // sequential locations in declaration order.
+    const fragOutputs = new Map<string, number>();
+    let nextFragSlot = 0;
+    const usedFragLocs = new Set<number>();
+    const fsOuts = (fs.declaredOutputs ?? []).filter((o) => o.storage === 'out');
+    for (const outDecl of fsOuts) {
+      const layoutLoc = outDecl.location ?? null;
+      if (layoutLoc !== null && layoutLoc !== undefined) {
+        fragOutputs.set(outDecl.name, layoutLoc);
+        usedFragLocs.add(layoutLoc);
+      }
+    }
+    for (const outDecl of fsOuts) {
+      if (fragOutputs.has(outDecl.name)) continue;
+      while (usedFragLocs.has(nextFragSlot)) nextFragSlot += 1;
+      fragOutputs.set(outDecl.name, nextFragSlot);
+      usedFragLocs.add(nextFragSlot);
+    }
+
     const program: LinkedProgram = {
       id: nextLinkedId++,
       alive: true,
@@ -327,6 +358,7 @@ export function link(
       uniformBlocks,
       varyingLayout,
       uniformStore,
+      fragOutputs,
     };
     return { ok: true, program, log: '' };
   } catch (err) {
