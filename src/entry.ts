@@ -1,6 +1,7 @@
 // CHANGELOG: Sprint 2 (2026-09-20): Sprint 2 T4 software WebGL context factory entry dispatch
 /** Entry point — software WebGL context factory (composition-root dispatcher). */
 import { WebGL1Context } from './gl/webgl1-context';
+import { WebGL2Context } from './gl/webgl2-context';
 import type { WebGLContextAttributes } from './gl/context-attributes';
 
 export type CanvasStub = { width?: number; height?: number } | null | undefined;
@@ -31,7 +32,7 @@ export function createSoftwareWebGLContext(
   return null;
 }
 
-export { WebGL1Context };
+export { WebGL1Context, WebGL2Context };
 
 declare global {
   interface Window {
@@ -42,8 +43,10 @@ declare global {
 const globalScope = globalThis as unknown as {
   window?: { __createSoftwareWebGLContext?: typeof createSoftwareWebGLContext };
   __createSoftwareWebGLContext?: typeof createSoftwareWebGLContext;
+  __WebGL2Context?: typeof WebGL2Context;
 };
 globalScope.__createSoftwareWebGLContext = createSoftwareWebGLContext;
+globalScope.__WebGL2Context = WebGL2Context;
 if (typeof window !== 'undefined' && window !== null) {
   (window as unknown as { __createSoftwareWebGLContext?: typeof createSoftwareWebGLContext }).__createSoftwareWebGLContext =
     createSoftwareWebGLContext;
