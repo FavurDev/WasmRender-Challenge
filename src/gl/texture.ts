@@ -1,4 +1,5 @@
 // CHANGELOG: Sprint 6 (2026-09-21): TextureObject and texture API family (Tasks 1-2), pixel unpack flags (Task 4)
+// CHANGELOG: Sprint 10 Task 3: texImage2D border INVALID_VALUE, format/type enum-split, oversize INVALID_VALUE
 /** TextureManager — WebGL 1.0 texture lifecycle, binding, image spec, subimage, copy, sampler params. L2: imports constants + errors only. */
 import {
   ALPHA,
