@@ -1,8 +1,21 @@
 /** Sprint 9 Task 9 — M5 Definition-of-Done suite (Demo Carrier). Entry-point semantics, error-taxonomy spot-checks, TD-003 determinism, CTS classification discipline. */
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createSoftwareWebGLContext } from '../../src/entry';
+import { WebGL2Context, createSoftwareWebGLContext } from '../../src/entry';
 import type { DirectVertex, WebGL1Context } from '../../src/gl/webgl1-context';
-import { CTSTriageLogger, classifyFailure } from '../conformance/webgl1-harness';
+import {
+  CTSHeadlessEnvironment,
+  CTSManifestParser,
+  CTSRunner,
+  CTSTriageLogger,
+  WEBGL1_MANIFEST_ROOT,
+  WEBGL1_TRIAGE_LOG,
+  WEBGL2_MANIFEST_ROOT,
+  WEBGL2_TRIAGE_LOG,
+  classifyFailure,
+} from '../conformance/webgl1-harness';
 import {
   ARRAY_BUFFER,
   BLEND,
@@ -393,5 +406,235 @@ describe('M5 DoD Fixture 4: CTS classification discipline', () => {
     expect(unexplained?.classification).toBe('spec-defect');
     expect(unexplained?.rootCauseGroup).toBe('G4');
     expect(summary.verdictReconciliation.valid).toBe(true);
+  });
+});
+
+type RendererFactory = (canvas: { width: number; height: number }) => { getError: () => number } | null;
+
+function loadFactoryViaCast(path: string, contextType?: string): RendererFactory {
+  const ctor = CTSRunner as unknown as Record<string, unknown>;
+  const fn = ctor['loadFactory'] as (p: string, t?: string) => RendererFactory;
+  return fn.call(CTSRunner, path, contextType);
+}
+
+function dummyFactory(): RendererFactory {
+  return () => ({ getError: () => 0 });
+}
+
+describe('M5 DoD Fixture 5: G1 pipeline remediation', () => {
+  it('TC15 CTSRunner loadFactory returns WebGL2Context and canvas routes webgl2', () => {
+    // Arrange:
+    const mockCanvas = { width: 300, height: 150 };
+    const factory = loadFactoryViaCast('/app/renderer.js', 'webgl2');
+    // Act:
+    const gl2 = factory(mockCanvas) as unknown as WebGL2Context;
+    // Assert:
+    expect(gl2).not.toBeNull();
+    expect(gl2 instanceof WebGL2Context).toBe(true);
+    expect(gl2.getError()).toBe(NO_ERROR);
+    // Arrange:
+    const env = new CTSHeadlessEnvironment('/app/renderer.js', 5000);
+    // Act:
+    const globalObj = env.setup(factory) as Record<string, unknown>;
+    const doc = globalObj['document'] as { getElementById: (id: string) => unknown };
+    const canvas = doc.getElementById('canvas') as { getContext: (t: string) => unknown };
+    const ctxWebgl2 = canvas.getContext('webgl2');
+    const ctxExpWebgl2 = canvas.getContext('experimental-webgl2');
+    const ctxUnknown = canvas.getContext('unknown');
+    // Assert:
+    expect(ctxWebgl2).toBe(env.context);
+    expect(ctxExpWebgl2).toBe(env.context);
+    expect(ctxUnknown).toBeNull();
+  });
+
+  it('TC16 CTSHeadlessEnvironment injects MockXMLHttpRequest and WebGL globals', () => {
+    // Arrange:
+    const tempDir = mkdtempSync(join(tmpdir(), 'td023-xhr-'));
+    try {
+      writeFileSync(join(tempDir, 'test.json'), '{"status":"ok"}');
+      const env = new CTSHeadlessEnvironment('/app/renderer.js', 5000);
+      // Act:
+      const globalObj = env.setup(dummyFactory()) as Record<string, unknown>;
+      const XHR = globalObj['XMLHttpRequest'] as new () => Record<string, unknown>;
+      const xhrSync = new XHR() as unknown as {
+        open: (m: string, u: string, a: boolean) => void;
+        send: (p: null) => void;
+        readyState: number;
+        status: number;
+        responseText: string;
+      };
+      xhrSync.open('GET', 'test.json', false);
+      xhrSync.send(null);
+      // Assert:
+      expect(xhrSync.readyState).toBe(4);
+      expect(xhrSync.status).toBe(200);
+      expect(xhrSync.responseText).toBe('{"status":"ok"}');
+      // Act:
+      const xhr404 = new XHR() as unknown as {
+        open: (m: string, u: string, a: boolean) => void;
+        send: () => void;
+        status: number;
+        onerror: (() => void) | null;
+      };
+      let errFired = false;
+      xhr404.onerror = () => {
+        errFired = true;
+      };
+      xhr404.open('GET', 'missing.dat', false);
+      xhr404.send();
+      // Assert:
+      expect(xhr404.status).toBe(404);
+      expect(errFired).toBe(true);
+      // Act:
+      const w1 = globalObj['WebGLRenderingContext'] as Record<string, unknown>;
+      const w2 = globalObj['WebGL2RenderingContext'] as Record<string, unknown>;
+      const win = globalObj['window'] as Record<string, unknown>;
+      // Assert:
+      expect(w1['COLOR_BUFFER_BIT']).toBe(0x00004000);
+      expect(w1['TRIANGLES']).toBe(0x0004);
+      expect(w2['READ_FRAMEBUFFER']).toBe(0x8ca8);
+      expect(w2['DRAW_FRAMEBUFFER']).toBe(0x8ca9);
+      expect(win['WebGL2RenderingContext']).toBe(w2);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('TC17 CTSManifestParser skips shader data files and retains html tests', () => {
+    // Arrange:
+    const tempDir = mkdtempSync(join(tmpdir(), 'm5-dod-manifest-'));
+    try {
+      writeFileSync(
+        join(tempDir, '00_test_list.txt'),
+        'valid_test.html\nshader.vert\nshader.frag\nsub/another_test.html\nsub/test.vert.html\n',
+      );
+      const parser = new CTSManifestParser(tempDir);
+      // Act:
+      const entries = parser.parseManifest('00_test_list.txt', new Map());
+      // Assert:
+      expect(entries.length).toBe(2);
+      expect(entries[0]?.id).toBe('valid_test.html');
+      expect(entries[1]?.id).toBe('sub/another_test.html');
+      expect(entries.every((e) => !e.id.endsWith('.vert') && !e.id.endsWith('.frag'))).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('M5 DoD Fixture 6: error-queue exactness and bit-depth queries', () => {
+  it('TC18 texImage2D non-zero border and attachShader duplicate exact errors', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    const tex = gl.createTexture();
+    gl.bindTexture(TEXTURE_2D, tex);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 2, 2, 1, RGBA, UNSIGNED_BYTE, null);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Arrange:
+    const prog = gl.createProgram();
+    const vs = gl.createShader(VERTEX_SHADER);
+    if (prog === null || vs === null) throw new Error('arrange: creation failed');
+    gl.shaderSource(vs, GOOD_VS);
+    gl.compileShader(vs);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.attachShader(prog, vs);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    gl.attachShader(prog, vs);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_OPERATION);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(gl.getAttachedShaders(prog)).toEqual([vs]);
+  });
+
+  it('TC19 getParameter queries bit-depths 0x0d52-0x0d57 exact', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act:
+    const r = gl.getParameter(0x0d52);
+    const g = gl.getParameter(0x0d53);
+    const b = gl.getParameter(0x0d54);
+    const a = gl.getParameter(0x0d55);
+    const d = gl.getParameter(0x0d56);
+    const s = gl.getParameter(0x0d57);
+    // Assert:
+    expect([r, g, b, a]).toEqual([8, 8, 8, 8]);
+    expect(d).toBe(24);
+    expect(s).toBe(8);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 7: readPixels bounds guard', () => {
+  it('TC20 readPixels out-of-bounds queries record INVALID_VALUE and preserve memory', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    gl.clearColor(1.0, 0.0, 0.0, 1.0);
+    gl.clear(COLOR_BUFFER_BIT);
+    expect(gl.getError()).toBe(NO_ERROR);
+    const dst = new Uint8Array(16);
+    dst.fill(0xaa);
+    // Act:
+    gl.readPixels(-1, 0, 2, 2, RGBA, UNSIGNED_BYTE, dst);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(dst.every((v) => v === 0xaa)).toBe(true);
+    // Act:
+    gl.readPixels(0, 0, 5, 4, RGBA, UNSIGNED_BYTE, dst);
+    // Assert:
+    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(dst.every((v) => v === 0xaa)).toBe(true);
+    // Act: valid full-buffer read needs a 64-byte destination (4x4 RGBA).
+    const validDst = new Uint8Array(64);
+    gl.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, validDst);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(validDst[0]).toBe(255);
+  });
+});
+
+describe('M5 DoD Fixture 8: TD-015/016 harness hardening', () => {
+  it('TC21 CTSTriageLogger records TIMEOUT verdict as G4 and verifies shared paths', () => {
+    // Arrange:
+    const tempDir = mkdtempSync(join(tmpdir(), 'm5-dod-timeout-'));
+    try {
+      const logger = new CTSTriageLogger(join(tempDir, 'triage.json'));
+      const report = {
+        verdict: 'TIMEOUT' as const,
+        assertions: [{ success: false, message: 'Script timeout after 50ms' }],
+        drainedErrors: [] as number[],
+        crash: null,
+      };
+      // Act:
+      logger.setDiscoveredCount(1);
+      logger.recordTestResult('conformance/timeout.html', report);
+      const summary = logger.finalizeReport();
+      // Assert:
+      expect(summary.totals.executed).toBe(1);
+      expect(summary.totals.failed).toBe(1);
+      expect(summary.totals.passed).toBe(0);
+      expect(summary.tests[0]?.id).toBe('conformance/timeout.html');
+      expect(summary.tests[0]?.status).toBe('TIMEOUT');
+      expect(summary.tests[0]?.passed).toBe(false);
+      expect(summary.tests[0]?.classification).toBe('harness-limitation');
+      expect(summary.tests[0]?.rootCauseGroup).toBe('G4');
+      expect(summary.verdictReconciliation.valid).toBe(true);
+      // Assert: shared path exports.
+      expect(WEBGL1_MANIFEST_ROOT).toBe('vendor/WebGL/conformance-suites/1.0.3');
+      expect(WEBGL1_TRIAGE_LOG).toBe('test-results/conformance/webgl1-triage.json');
+      expect(WEBGL2_MANIFEST_ROOT).toBe('vendor/WebGL/conformance-suites/2.0.0');
+      expect(WEBGL2_TRIAGE_LOG).toBe('test-results/conformance/webgl2-triage.json');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
