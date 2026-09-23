@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-09-23T09:52:12.140Z",
+  "suite": "Khronos WebGL 1.0.3 Conformance",
+  "totals": {
+    "discovered": 6,
+    "executed": 4,
+    "passed": 0,
+    "failed": 4,
+    "skipped": 2,
+    "crashed": 1
+  },
+  "verdictReconciliation": {
+    "formula": "discovered == executed + skipped",
+    "valid": true
+  },
+  "tests": [
+    {
+      "id": "conformance/gl-shader-test.html",
+      "status": "FAIL",
+      "passed": false,
+      "drainedErrors": [],
+      "assertions": [
+        {
+          "success": false,
+          "message": "Compile failed"
+        }
+      ],
+      "classification": "spec-defect",
+      "rootCauseGroup": "G1"
+    },
+    {
+      "id": "conformance/entry.html",
+      "status": "CRASH",
+      "passed": false,
+      "drainedErrors": [],
+      "error": "finish is not a function",
+      "classification": "missing-entry-point",
+      "rootCauseGroup": "G2"
+    },
+    {
+      "id": "conformance/precision.html",
+      "status": "FAIL",
+      "passed": false,
+      "drainedErrors": [],
+      "assertions": [
+        {
+          "success": false,
+          "message": "differs by 0.0001 within float epsilon"
+        }
+      ],
+      "classification": "float-edge",
+      "rootCauseGroup": "G3"
+    },
+    {
+      "id": "conformance/ext.html",
+      "status": "SKIP",
+      "passed": false,
+      "skipped": true,
+      "skipReason": "Requires GLSL 3.00 es",
+      "drainedErrors": [],
+      "classification": "harness-limitation",
+      "rootCauseGroup": "G4"
+    },
+    {
+      "id": "conformance/unexplained.html",
+      "status": "FAIL",
+      "passed": false,
+      "skipped": true,
+      "skipReason": "UNEXPLAINED_SKIP (counts as failure per ADR-017)",
+      "drainedErrors": [],
+      "classification": "spec-defect",
+      "rootCauseGroup": "G4"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "totalDiscovered": 2598,
+    "totalExecuted": 2598,
+    "totalPassed": 16,
+    "totalFailed": 2582,
+    "totalSkipped": 0,
+    "totalCrashed": 0,
+    "passRate": "0.62%",
+    "verdictReconciliationValid": true,
+    "allFailuresClassified": true,
+    "unclassifiedEntries": 16,
+    "unclassifiedNote": "The 16 entries without classification/rootCauseGroup are exactly the 16 passing tests; classification is required only for failures, so coverage is complete."
+  },
+  "byClassification": {
+    "spec-defect": 2059,
+    "float-edge": 517,
+    "harness-limitation": 6
+  },
+  "byRootCauseGroup": {
+    "G1": 2059,
+    "G3": 517,
+    "G4": 6
+  },
+  "interpretation": {
+    "G1/spec-defect": "Dominant failure mode (79.8% of failures, 79.2% of all tests). The harness's expected values diverge from the implementation's outputs on ordinary inputs — evidence of a systematic expectation-generation defect rather than scattered implementation bugs.",
+    "G3/float-edge": "Second-largest group (20.0% of failures). Failures cluster at floating-point boundary values (denormals, overflow/underflow edges, rounding ties), consistent with tolerance or precision handling differences.",
+    "G4/harness-limitation": "Minimal group (6 tests, 0.2% of failures). Failures attributable to limitations of the test harness itself rather than the implementation under test.",
+    "G2": "No tests classified into G2 — this root-cause group is unrepresented in the current triage."
+  },
+  "coverageGaps": [
+    "G2 root-cause group has zero members; if G2 corresponds to a plausible failure mode (e.g. environment/driver differences), no test currently exercises it.",
+    "Only 16 of 2598 tests pass (0.62%); with G1 dominating, the expectation-generation pipeline should be audited before drawing per-test conclusions from G3/G4 classifications."
+  ]
+}
