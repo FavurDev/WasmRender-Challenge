@@ -24,7 +24,7 @@ export interface ScreenVertex {
   readonly varyings: Float32Array;
 }
 
-/** Mutable per-fragment record, allocated once per rasterizeTriangle call. */
+/** Mutable per-fragment record, shared as module-scoped SCRATCH_FRAG singleton reused across rasterizeTriangle calls (TD-003). */
 interface Fragment {
   x: number;
   y: number;
@@ -35,6 +35,35 @@ interface Fragment {
 const FIXED_SCALE = 16;
 const FIXED_HALF = 8;
 const DEPTH_MAX_24 = 16777215;
+
+// TD-003 module-scoped scratch buffers: transient per-triangle/per-fragment
+// workspace reused across synchronous rasterizeTriangle calls. Zero per-fragment
+// allocation; at most one per-triangle subarray view (see below).
+export const SCRATCH_BARY: [number, number, number] = [0, 0, 0];
+export const SCRATCH_INV_W: [number, number, number] = [0, 0, 0];
+export const SCRATCH_Z_VALS: [number, number, number] = [0, 0, 0];
+const SCRATCH_EMPTY_VARYINGS = new Float32Array(0);
+export const SCRATCH_SOURCES: [Float32Array, Float32Array, Float32Array] = [
+  SCRATCH_EMPTY_VARYINGS,
+  SCRATCH_EMPTY_VARYINGS,
+  SCRATCH_EMPTY_VARYINGS,
+];
+export let SCRATCH_FRAG_VARYINGS = new Float32Array(16);
+export const SCRATCH_FRAG: Fragment = {
+  x: 0,
+  y: 0,
+  depth: 0,
+  varyings: SCRATCH_FRAG_VARYINGS,
+};
+
+function ensureVaryingsCapacity(requiredCapacity: number): void {
+  if (requiredCapacity > SCRATCH_FRAG_VARYINGS.length) {
+    const newCapacity = Math.max(requiredCapacity, SCRATCH_FRAG_VARYINGS.length * 2);
+    const newBuffer = new Float32Array(newCapacity);
+    SCRATCH_FRAG_VARYINGS = newBuffer;
+    SCRATCH_FRAG.varyings = newBuffer;
+  }
+}
 
 function finiteOrZero(v: number): number {
   return Number.isFinite(v) ? v : 0;
@@ -184,15 +213,25 @@ export function rasterizeTriangle(
   let w1row = orient2d(cx.x, cx.y, ax.x, ax.y, startX, startY);
   let w2row = orient2d(ax.x, ax.y, bx.x, bx.y, startX, startY);
   const invArea = Math.fround(1 / area);
-  const invW: [number, number, number] = [ax.invW, bx.invW, cx.invW];
-  const sources: Float32Array[] = [ax.varyings, bx.varyings, cx.varyings];
-  const zVals: [number, number, number] = [ax.z, bx.z, cx.z];
-  // Single reused Fragment record + interpolated-varyings buffer: zero allocation in the scan.
-  const fragVaryings = new Float32Array(ax.varyings.length);
-  const frag: Fragment = { x: 0, y: 0, depth: 0, varyings: fragVaryings };
+  const varyingCount = ax.varyings.length;
+  ensureVaryingsCapacity(varyingCount);
+  // Hoist per-triangle-constant fround (idempotent downstream: fround(fround(x)) === fround(x)).
+  SCRATCH_INV_W[0] = Math.fround(ax.invW);
+  SCRATCH_INV_W[1] = Math.fround(bx.invW);
+  SCRATCH_INV_W[2] = Math.fround(cx.invW);
+  SCRATCH_Z_VALS[0] = Math.fround(ax.z);
+  SCRATCH_Z_VALS[1] = Math.fround(bx.z);
+  SCRATCH_Z_VALS[2] = Math.fround(cx.z);
+  SCRATCH_SOURCES[0] = ax.varyings;
+  SCRATCH_SOURCES[1] = bx.varyings;
+  SCRATCH_SOURCES[2] = cx.varyings;
+  // Exact-length view preserves out.length loop + n-branch semantics per triangle.
+  // Created once per triangle (zero per-fragment allocation).
+  const fragVaryings = SCRATCH_FRAG_VARYINGS.subarray(0, varyingCount);
+  const frag = SCRATCH_FRAG;
   const color = fb.getColorBuffer();
   const ds = fb.getDepthStencilBuffer();
-  const bary: [number, number, number] = [0, 0, 0];
+  const bary = SCRATCH_BARY;
   for (let py = loY; py <= hiY; py++) {
     let w0 = w0row;
     let w1 = w1row;
@@ -202,10 +241,10 @@ export function rasterizeTriangle(
         bary[0] = Math.fround(w0 * invArea);
         bary[1] = Math.fround(w1 * invArea);
         bary[2] = Math.fround(w2 * invArea);
-        perspectiveCorrect(bary, invW, sources, fragVaryings);
+        perspectiveCorrect(bary, SCRATCH_INV_W, SCRATCH_SOURCES, fragVaryings);
         frag.x = px;
         frag.y = py;
-        frag.depth = interpolateDepth(bary, zVals);
+        frag.depth = interpolateDepth(bary, SCRATCH_Z_VALS);
         const idx = frag.y * bufW + frag.x;
         const depth24 = Math.round(clamp01(frag.depth) * DEPTH_MAX_24) & DEPTH_MAX_24;
         const dsPassed = executeFragmentDepthStencil(px, py, depth24, isFrontFacing, state, ds, idx);
@@ -250,4 +289,8 @@ export function rasterizeTriangle(
     w1row += e1stepY;
     w2row += e2stepY;
   }
+  // ADR-013 hygiene: release caller-owned varying refs held during the scan.
+  SCRATCH_SOURCES[0] = SCRATCH_EMPTY_VARYINGS;
+  SCRATCH_SOURCES[1] = SCRATCH_EMPTY_VARYINGS;
+  SCRATCH_SOURCES[2] = SCRATCH_EMPTY_VARYINGS;
 }
