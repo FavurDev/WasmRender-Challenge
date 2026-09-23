@@ -1,9 +1,9 @@
 /** Sprint 8 Fix 6: WebGL2 CTS conformance harness RED-phase tests. */
 import { describe, expect, it } from 'vitest';
-import { CTSRunner } from './webgl1-harness';
+import { CTSRunner, WEBGL2_MANIFEST_ROOT, WEBGL2_TRIAGE_LOG } from './webgl1-harness';
 
-const MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/2.0.0';
-const TRIAGE_LOG = 'test-results/conformance/webgl2-triage.json';
+const MANIFEST_ROOT = WEBGL2_MANIFEST_ROOT;
+const TRIAGE_LOG = WEBGL2_TRIAGE_LOG;
 
 describe('WebGL2 CTS Zero Crashes Gate (TEST 4.1)', () => {
   it('runs the vendored WebGL2 subset to completion with zero crashes', async () => {

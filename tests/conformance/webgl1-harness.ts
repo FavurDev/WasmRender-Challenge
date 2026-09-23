@@ -4,6 +4,11 @@ import { dirname, join, normalize, posix, sep } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
 import { createSoftwareWebGLContext } from '../../src/entry';
 
+export const WEBGL1_MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/1.0.3';
+export const WEBGL1_TRIAGE_LOG = 'test-results/conformance/webgl1-triage.json';
+export const WEBGL2_MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/2.0.0';
+export const WEBGL2_TRIAGE_LOG = 'test-results/conformance/webgl2-triage.json';
+
 export interface TestEntry {
   id: string;
   fullPath: string;
@@ -33,7 +38,7 @@ export type RootCauseGroup = 'G1' | 'G2' | 'G3' | 'G4';
 
 export interface TestRecord {
   id: string;
-  status: 'PASS' | 'FAIL' | 'CRASH' | 'SKIP';
+  status: 'PASS' | 'FAIL' | 'CRASH' | 'SKIP' | 'TIMEOUT';
   passed: boolean;
   drainedErrors: number[];
   assertions?: TestAssertion[];
@@ -133,11 +138,12 @@ export class CTSManifestParser {
         continue;
       }
       const { options, remainingPath } = CTSManifestParser.parseLine(line, parentOptions);
+      const childPath = CTSManifestParser.resolveChildPath(manifestDir, remainingPath);
       if (remainingPath.endsWith('.txt')) {
-        const child = manifestDir === '.' ? remainingPath : `${manifestDir}/${remainingPath}`;
+        const child = childPath;
         this.parseManifest(child.split('/').join(sep), options);
       } else if (remainingPath.endsWith('.html')) {
-        const rel = (manifestDir === '.' ? remainingPath : `${manifestDir}/${remainingPath}`).split('/').join(sep);
+        const rel = childPath.split('/').join(sep);
         const id = rel.split(sep).join('/');
         this.discoveredTests.push({
           id,
@@ -148,6 +154,13 @@ export class CTSManifestParser {
       }
     }
     return this.discoveredTests;
+  }
+
+  public static resolveChildPath(manifestDir: string, remainingPath: string): string {
+    if (manifestDir === '.') {
+      return remainingPath;
+    }
+    return `${manifestDir}/${remainingPath}`;
   }
 
   private static parseLine(
@@ -398,6 +411,7 @@ export class CTSHeadlessEnvironment {
     } catch {
       htmlContent = null;
     }
+    let timedOut = false;
     if (htmlContent !== null) {
       const scripts = CTSHeadlessEnvironment.extractScripts(htmlContent, dirname(testFilePath), this.elementsById);
       const vmContext = createContext(globalObject);
@@ -407,7 +421,12 @@ export class CTSHeadlessEnvironment {
         } catch (err) {
           // Zero-crash containment: script errors become failed assertions, never escape.
           const message = err instanceof Error ? err.message : String(err);
-          this.testResults.push({ success: false, message: `Script error in ${script.filename}: ${message}` });
+          if (message.includes('Script execution timed out')) {
+            timedOut = true;
+            this.testResults.push({ success: false, message: `Script timeout in ${script.filename}: ${message}` });
+          } else {
+            this.testResults.push({ success: false, message: `Script error in ${script.filename}: ${message}` });
+          }
         }
       }
     }
@@ -429,7 +448,9 @@ export class CTSHeadlessEnvironment {
       }
     }
     let verdict: ExecutionReport['verdict'] = 'PASS';
-    if (this.testResults.some((a) => !a.success) || this.testResults.length === 0) {
+    if (timedOut) {
+      verdict = 'TIMEOUT';
+    } else if (this.testResults.some((a) => !a.success) || this.testResults.length === 0) {
       verdict = 'FAIL';
     }
     void this.rendererBundlePath;
@@ -541,6 +562,17 @@ export class CTSTriageLogger {
         passed: true,
         drainedErrors: [...result.drainedErrors],
         assertions: [...result.assertions],
+      });
+    } else if (result.verdict === 'TIMEOUT') {
+      this.failedCount += 1;
+      this.records.push({
+        id: testId,
+        status: 'TIMEOUT',
+        passed: false,
+        drainedErrors: [...result.drainedErrors],
+        assertions: [...result.assertions],
+        classification: 'harness-limitation',
+        rootCauseGroup: 'G4',
       });
     } else {
       this.failedCount += 1;
@@ -732,7 +764,10 @@ export class CTSRunner {
       const all = this.manifestParser.parseManifest('00_test_list.txt', new Map());
       subset = all.slice(0, 20);
     }
-    void runs;
+    let effectiveRuns = 2;
+    if (typeof runs === 'number' && runs >= 1) {
+      effectiveRuns = Math.floor(runs);
+    }
     const runOnce = (): Map<string, { status: string; drainedErrors: number[] }> => {
       const verdicts = new Map<string, { status: string; drainedErrors: number[] }>();
       for (const entry of subset) {
@@ -748,18 +783,24 @@ export class CTSRunner {
       }
       return verdicts;
     };
-    const verdicts1 = runOnce();
-    const verdicts2 = runOnce();
-    if (verdicts1.size !== verdicts2.size) {
-      return false;
+    if (effectiveRuns === 1) {
+      runOnce();
+      return true;
     }
-    for (const [id, v1] of verdicts1) {
-      const v2 = verdicts2.get(id);
-      if (v2 === undefined || v1.status !== v2.status) {
+    const baselineVerdicts = runOnce();
+    for (let passIndex = 2; passIndex <= effectiveRuns; passIndex++) {
+      const currentVerdicts = runOnce();
+      if (baselineVerdicts.size !== currentVerdicts.size) {
         return false;
       }
-      if (JSON.stringify(v1.drainedErrors) !== JSON.stringify(v2.drainedErrors)) {
-        return false;
+      for (const [id, v1] of baselineVerdicts) {
+        const v2 = currentVerdicts.get(id);
+        if (v2 === undefined || v1.status !== v2.status) {
+          return false;
+        }
+        if (JSON.stringify(v1.drainedErrors) !== JSON.stringify(v2.drainedErrors)) {
+          return false;
+        }
       }
     }
     return true;

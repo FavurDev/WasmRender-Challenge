@@ -1,14 +1,16 @@
-/** Sprint 7 Task 6 WebGL1 CTS harness RED-phase tests — harness impl lands next step. */
+/** WebGL1 CTS conformance tests — validates zero crashes, error draining, skip discipline, and determinism. */
 import { describe, expect, it } from 'vitest';
 import {
   CTSHeadlessEnvironment,
   CTSManifestParser,
   CTSRunner,
   CTSTriageLogger,
+  WEBGL1_MANIFEST_ROOT,
+  WEBGL1_TRIAGE_LOG,
 } from './webgl1-harness';
 
-const MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/1.0.3';
-const TRIAGE_LOG = 'test-results/conformance/webgl1-triage.json';
+const MANIFEST_ROOT = WEBGL1_MANIFEST_ROOT;
+const TRIAGE_LOG = WEBGL1_TRIAGE_LOG;
 
 describe('CTS Zero Crashes Gate (AC-1)', () => {
   it('runs the vendored subset to completion with zero crashes', async () => {
