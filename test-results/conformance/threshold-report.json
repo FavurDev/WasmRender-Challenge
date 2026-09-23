@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-09-23T19:57:04.061Z",
+  "suites": {
+    "webgl1": {
+      "suite": "webgl1",
+      "discovered": 3,
+      "executed": 1,
+      "passed": 0,
+      "failed": 1,
+      "crashed": 0,
+      "skipped": 2,
+      "passRate": 0,
+      "passRateFormatted": "0.00",
+      "targetGate": 95,
+      "passGap": 95,
+      "testsNeeded": 3,
+      "rootCauses": {
+        "G1": 0,
+        "G2": 0,
+        "G3": 0,
+        "G4": 2,
+        "total": 2
+      }
+    },
+    "webgl2": {
+      "suite": "webgl2",
+      "discovered": 2598,
+      "executed": 2598,
+      "passed": 16,
+      "failed": 2582,
+      "crashed": 0,
+      "skipped": 0,
+      "passRate": 0.6158583525789069,
+      "passRateFormatted": "0.62",
+      "targetGate": 90,
+      "passGap": 89.38414164742109,
+      "testsNeeded": 2323,
+      "rootCauses": {
+        "G1": 2059,
+        "G2": 0,
+        "G3": 517,
+        "G4": 6,
+        "total": 2582
+      }
+    }
+  },
+  "reconciliationValid": true,
+  "overallStatus": "GAP_RECORDED"
+}

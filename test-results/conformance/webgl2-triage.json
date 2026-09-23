@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-23T12:24:54.307Z",
+  "timestamp": "2026-09-23T20:18:40.241Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 2598,
@@ -198,7 +198,9 @@
       "id": "conformance/attribs/gl-vertex-attrib.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1281
+      ],
       "assertions": [
         {
           "success": true,
@@ -210,7 +212,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-vertex-attrib.js: TypeError: gl.getVertexAttrib is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-vertex-attrib.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -402,7 +404,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -442,7 +444,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -478,7 +480,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -496,7 +498,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -536,7 +538,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\buffers\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -720,7 +722,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\canvas\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\canvas\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -2169,6 +2171,62 @@
           "message": "extensionRegistry"
         },
         {
+          "success": false,
+          "message": "querySyncManager"
+        },
+        {
+          "success": false,
+          "message": "tfVaryingsByProgram"
+        },
+        {
+          "success": false,
+          "message": "tfActive"
+        },
+        {
+          "success": false,
+          "message": "tfBoundBuffer"
+        },
+        {
+          "success": false,
+          "message": "tfWriteFloats"
+        },
+        {
+          "success": false,
+          "message": "defaultFbDrawBuffers"
+        },
+        {
+          "success": false,
+          "message": "defaultFbReadBuffer"
+        },
+        {
+          "success": false,
+          "message": "drawBuffersByFbo"
+        },
+        {
+          "success": false,
+          "message": "readBufferByFbo"
+        },
+        {
+          "success": false,
+          "message": "vertexArrays"
+        },
+        {
+          "success": false,
+          "message": "everBound"
+        },
+        {
+          "success": false,
+          "message": "samplerManager"
+        },
+        {
+          "success": false,
+          "message": "depthStencilByFbo"
+        },
+        {
+          "success": false,
+          "message": "depthStencilDims"
+        },
+        {
           "success": true,
           "message": "successfullyParsed is true"
         }
@@ -2278,11 +2336,19 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\context\\inline-script.js: TypeError: Cannot convert undefined or null to object"
+          "message": "WebGLRenderingContext should only have Object in it's prototype chain"
+        },
+        {
+          "success": true,
+          "message": "context exists"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "context type should be WebGLRenderingContext"
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -2296,7 +2362,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\context\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\context\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -2335,14 +2401,6 @@
         {
           "success": false,
           "message": "Property either does not exist or is not a function: getUniform"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getVertexAttrib"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getVertexAttribOffset"
         },
         {
           "success": false,
@@ -2449,7 +2507,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\extensions\\inline-script.js: TypeError: gl.getVertexAttrib is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\extensions\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         }
       ],
       "classification": "spec-defect",
@@ -2767,9 +2825,7 @@
       "id": "conformance/extensions/oes-vertex-array-object.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": false,
@@ -2911,7 +2967,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\extensions\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\extensions\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -3271,9 +3327,7 @@
       "id": "conformance/extensions/webgl-draw-buffers.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": true,
@@ -4228,7 +4282,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4242,7 +4296,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4256,7 +4310,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4270,7 +4324,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4284,7 +4338,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4298,7 +4352,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4312,7 +4366,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4326,7 +4380,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4340,7 +4394,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4354,7 +4408,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4368,7 +4422,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4382,7 +4436,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4396,7 +4450,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4410,7 +4464,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4424,7 +4478,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4438,7 +4492,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4452,7 +4506,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4466,7 +4520,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4480,7 +4534,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4494,7 +4548,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4508,7 +4562,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4522,7 +4576,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4536,7 +4590,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4550,7 +4604,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4564,7 +4618,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4578,7 +4632,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4592,7 +4646,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4606,7 +4660,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4620,7 +4674,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4634,7 +4688,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4648,7 +4702,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -4662,7 +4716,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "float-edge",
@@ -4676,7 +4730,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: ctx.getImageData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\functions\\inline-script.js: TypeError: Cannot read properties of null (reading 'getImageData')"
         }
       ],
       "classification": "spec-defect",
@@ -6429,7 +6483,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -6449,7 +6503,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -7197,7 +7251,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\misc\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -8173,7 +8227,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\variables\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\glsl\\variables\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -8315,11 +8369,1721 @@
       "id": "conformance/misc/bad-arguments-test.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1282
+      ],
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: XMLHttpRequest is disabled"
+          "message": "Program Compiled"
+        },
+        {
+          "success": false,
+          "message": "Shader Compiled"
+        },
+        {
+          "success": false,
+          "message": "getUniformLocation succeeded"
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "Program Compiled"
+        },
+        {
+          "success": false,
+          "message": "Shader Compiled"
+        },
+        {
+          "success": false,
+          "message": "getUniformLocation succeeded"
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "Program Compiled"
+        },
+        {
+          "success": false,
+          "message": "Shader Compiled"
+        },
+        {
+          "success": false,
+          "message": "getUniformLocation succeeded"
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "Program Compiled"
+        },
+        {
+          "success": false,
+          "message": "Shader Compiled"
+        },
+        {
+          "success": false,
+          "message": "getUniformLocation succeeded"
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.useProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
+        },
+        {
+          "success": false,
+          "message": "context.compileShader(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.linkProgram(argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.attachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(program, argument) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.detachShader(argument, shader) should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.shaderSource(argument, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.bindAttribLocation(argument, 0, 'foo') should throw an exception. Was undefined."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getProgramParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderInfoLog(argument) should throw an exception. Was ."
+        },
+        {
+          "success": false,
+          "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(argument, loc) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": true,
+          "message": "context.getUniform(program, argument) threw exception TypeError: context.getUniform is not a function."
+        },
+        {
+          "success": false,
+          "message": "context.getUniformLocation(argument, 'u_modelViewProjMatrix') should throw an exception. Was null."
+        },
+        {
+          "success": true,
+          "message": "context.bindBuffer(context.ARRAY_BUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindFramebuffer(context.FRAMEBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindRenderbuffer(context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.bindTexture(context.TEXTURE_2D, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferRenderbuffer(context.FRAMEBUFFER, context.DEPTH_ATTACHMENT, context.RENDERBUFFER, argument) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.framebufferTexture2D(context.FRAMEBUFFER, context.COLOR_ATTACHMENT0, context.TEXTURE_2D, argument, 0) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2fv(argument, new Float32Array([0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniform2iv(argument, new Int32Array([0, 0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.uniformMatrix2fv(argument, false, new Float32Array([0.0, 0.0, 0.0, 0.0])) is undefined."
+        },
+        {
+          "success": true,
+          "message": "context.useProgram(argument) is undefined."
         }
       ],
       "classification": "spec-defect",
@@ -8333,7 +10097,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -8369,7 +10133,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -8487,7 +10251,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "gl instanceof WebGLRenderingContext should be true. Threw exception TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "gl instanceof WebGLRenderingContext should be true. Was false."
         },
         {
           "success": false,
@@ -8526,8 +10290,8 @@
           "message": "gl.getActiveUniform(program, 0) instanceof WebGLActiveInfo should be true. Threw exception ReferenceError: WebGLActiveInfo is not defined"
         },
         {
-          "success": true,
-          "message": "new WebGLRenderingContext threw an error"
+          "success": false,
+          "message": "new WebGLRenderingContext did not throw"
         },
         {
           "success": true,
@@ -8719,7 +10483,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -8737,7 +10501,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -8819,7 +10583,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -8935,7 +10699,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -11491,7 +13255,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -11551,7 +13315,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -11645,7 +13409,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -11757,7 +13521,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\programs\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -12055,7 +13819,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -12073,7 +13837,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -12255,7 +14019,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\rendering\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -12647,7 +14411,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-enum-tests.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-enum-tests.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -13099,7 +14863,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-object-get-calls.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-object-get-calls.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -13212,7 +14976,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -13383,7 +15147,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -13954,7 +15718,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: TypeError: ctx.fillRect is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\textures\\misc\\inline-script.js: TypeError: Cannot read properties of null (reading 'fillRect')"
         }
       ],
       "classification": "spec-defect",
@@ -20206,7 +21970,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\uniforms\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\uniforms\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -20280,7 +22044,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\uniforms\\inline-script.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance\\uniforms\\inline-script.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -32682,7 +34446,9 @@
       "id": "conformance2/attribs/gl-vertex-attrib.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1281
+      ],
       "assertions": [
         {
           "success": true,
@@ -32694,7 +34460,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-vertex-attrib.js: TypeError: gl.getVertexAttrib is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-vertex-attrib.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -35410,7 +37176,9 @@
       "id": "conformance2/buffers/get-buffer-sub-data.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": true,
@@ -35422,11 +37190,11 @@
         },
         {
           "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray) threw exception TypeError: gl.getBufferSubData is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : after evaluating: gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray)"
         },
         {
-          "success": true,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, new ArrayBuffer(4)) threw exception TypeError: gl.getBufferSubData is not a function."
+          "success": false,
+          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, new ArrayBuffer(4)) should throw an exception. Was undefined."
         },
         {
           "success": false,
@@ -35434,11 +37202,11 @@
         },
         {
           "success": true,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, null) threw exception TypeError: gl.getBufferSubData is not a function."
+          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, null) threw exception TypeError: Cannot read properties of null (reading 'buffer')."
         },
         {
-          "success": true,
-          "message": "getError was expected value: NO_ERROR : Should not generate GL error"
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : Should not generate GL error"
         },
         {
           "success": false,
@@ -35446,7 +37214,7 @@
         },
         {
           "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, 2) threw exception TypeError: gl.getBufferSubData is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : after evaluating: gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, 2)"
         },
         {
           "success": true,
@@ -35458,7 +37226,7 @@
         },
         {
           "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, retArray.length) threw exception TypeError: gl.getBufferSubData is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : after evaluating: gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, retArray.length)"
         },
         {
           "success": true,
@@ -35466,43 +37234,7 @@
         },
         {
           "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, retArray.length + 1) threw exception TypeError: gl.getBufferSubData is not a function"
-        },
-        {
-          "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, 2, 2) threw exception TypeError: gl.getBufferSubData is not a function"
-        },
-        {
-          "success": true,
-          "message": "areArraysEqual(retArray.slice(0, 2), [0, 0]) is true"
-        },
-        {
-          "success": false,
-          "message": "areArraysEqual(retArray.slice(2, 4), floatArray.slice(0, 2)) should be true. Was false."
-        },
-        {
-          "success": true,
-          "message": "areArraysEqual(retArray.slice(4), [0, 0, 0, 0, 0]) is true"
-        },
-        {
-          "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, retArray.length - 1, 1) threw exception TypeError: gl.getBufferSubData is not a function"
-        },
-        {
-          "success": true,
-          "message": "areArraysEqual(retArray.slice(0, 8), [0, 0, 0, 0, 0, 0, 0, 0]) is true"
-        },
-        {
-          "success": false,
-          "message": "areArraysEqual(retArray.slice(8), floatArray.slice(0, 1)) should be true. Was false."
-        },
-        {
-          "success": false,
-          "message": "gl.getBufferSubData(gl.ARRAY_BUFFER, 0, retArray, retArray.length - 1, 2) threw exception TypeError: gl.getBufferSubData is not a function"
-        },
-        {
-          "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: gl.getBufferSubData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         }
       ],
       "classification": "spec-defect",
@@ -37913,6 +39645,62 @@
           "message": "extensionRegistry"
         },
         {
+          "success": false,
+          "message": "querySyncManager"
+        },
+        {
+          "success": false,
+          "message": "tfVaryingsByProgram"
+        },
+        {
+          "success": false,
+          "message": "tfActive"
+        },
+        {
+          "success": false,
+          "message": "tfBoundBuffer"
+        },
+        {
+          "success": false,
+          "message": "tfWriteFloats"
+        },
+        {
+          "success": false,
+          "message": "defaultFbDrawBuffers"
+        },
+        {
+          "success": false,
+          "message": "defaultFbReadBuffer"
+        },
+        {
+          "success": false,
+          "message": "drawBuffersByFbo"
+        },
+        {
+          "success": false,
+          "message": "readBufferByFbo"
+        },
+        {
+          "success": false,
+          "message": "vertexArrays"
+        },
+        {
+          "success": false,
+          "message": "everBound"
+        },
+        {
+          "success": false,
+          "message": "samplerManager"
+        },
+        {
+          "success": false,
+          "message": "depthStencilByFbo"
+        },
+        {
+          "success": false,
+          "message": "depthStencilDims"
+        },
+        {
           "success": true,
           "message": "successfullyParsed is true"
         }
@@ -38001,7 +39789,7 @@
           "message": "WebGL2RenderingContext should be a member of window"
         },
         {
-          "success": false,
+          "success": true,
           "message": "WebGL2RenderingContext should be 'in' window"
         },
         {
@@ -38010,11 +39798,11 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\context\\inline-script.js: ReferenceError: WebGL2RenderingContext is not defined"
+          "message": "context type should be WebGL2RenderingContext"
         },
         {
-          "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -38052,14 +39840,6 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: getVertexAttrib"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getVertexAttribOffset"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: polygonOffset"
         },
         {
@@ -38069,10 +39849,6 @@
         {
           "success": false,
           "message": "Property either does not exist or is not a function: validateProgram"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getBufferSubData"
         },
         {
           "success": false,
@@ -38092,23 +39868,7 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: invalidateFramebuffer"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: invalidateSubFramebuffer"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: readBuffer"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: renderbufferStorageMultisample"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: texImage3D"
         },
         {
           "success": false,
@@ -38120,23 +39880,11 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: texSubImage3D"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: copyTexSubImage3D"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: compressedTexImage3D"
         },
         {
           "success": false,
           "message": "Property either does not exist or is not a function: compressedTexSubImage3D"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getFragDataLocation"
         },
         {
           "success": false,
@@ -38180,118 +39928,6 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: vertexAttribDivisor"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: drawArraysInstanced"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: drawElementsInstanced"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: drawRangeElements"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: drawBuffers"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: clearBufferiv"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: clearBufferuiv"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: clearBufferfv"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: clearBufferfi"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: deleteQuery"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: isQuery"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: beginQuery"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: endQuery"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getQuery"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getQueryParameter"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: createSampler"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: deleteSampler"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: isSampler"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: bindSampler"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: samplerParameteri"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: samplerParameterf"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getSamplerParameter"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: fenceSync"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: isSync"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: deleteSync"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: clientWaitSync"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: waitSync"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getSyncParameter"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: createTransformFeedback"
         },
         {
@@ -38308,18 +39944,6 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: beginTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: endTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: transformFeedbackVaryings"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: getTransformFeedbackVarying"
         },
         {
@@ -38329,22 +39953,6 @@
         {
           "success": false,
           "message": "Property either does not exist or is not a function: resumeTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: createVertexArray"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: deleteVertexArray"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: isVertexArray"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: bindVertexArray"
         },
         {
           "success": true,
@@ -39277,11 +40885,17 @@
       "id": "conformance2/misc/expando-loss-2.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\misc\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'call')"
+          "message": "getParameter(SAMPLER_BINDING) returns instance that was bound."
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\misc\\inline-script.js: TypeError: Cannot read properties of null (reading 'expando1')"
         },
         {
           "success": false,
@@ -39331,7 +40945,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "gl instanceof WebGL2RenderingContext should be true. Threw exception ReferenceError: WebGL2RenderingContext is not defined"
+          "message": "gl instanceof WebGL2RenderingContext should be true. Was false."
         },
         {
           "success": false,
@@ -39363,7 +40977,7 @@
         },
         {
           "success": false,
-          "message": "gl.createSampler() instanceof WebGLSampler should be true. Threw exception TypeError: gl.createSampler is not a function"
+          "message": "gl.createSampler() instanceof WebGLSampler should be true. Threw exception ReferenceError: WebGLSampler is not defined"
         },
         {
           "success": false,
@@ -39371,7 +40985,7 @@
         },
         {
           "success": false,
-          "message": "gl.createVertexArray() instanceof WebGLVertexArrayObject should be true. Threw exception TypeError: gl.createVertexArray is not a function"
+          "message": "gl.createVertexArray() instanceof WebGLVertexArrayObject should be true. Threw exception ReferenceError: WebGLVertexArrayObject is not defined"
         },
         {
           "success": false,
@@ -39386,8 +41000,8 @@
           "message": "gl.getActiveUniform(program, 0) instanceof WebGLActiveInfo should be true. Threw exception ReferenceError: WebGLActiveInfo is not defined"
         },
         {
-          "success": true,
-          "message": "new WebGLRenderingContext threw an error"
+          "success": false,
+          "message": "new WebGLRenderingContext did not throw"
         },
         {
           "success": true,
@@ -39511,7 +41125,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\misc\\inline-script.js: TypeError: gl.texImage3D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\misc\\inline-script.js: TypeError: gl.framebufferTextureLayer is not a function"
         },
         {
           "success": false,
@@ -39708,8 +41322,12 @@
           "message": "WebGL context exists"
         },
         {
+          "success": true,
+          "message": "Query's result didn't become available too early"
+        },
+        {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\query\\inline-script.js: TypeError: gl.beginQuery is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\query\\inline-script.js: ReferenceError: requestAnimationFrame is not defined"
         }
       ],
       "classification": "spec-defect",
@@ -39719,7 +41337,9 @@
       "id": "conformance2/query/query.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": true,
@@ -39739,7 +41359,43 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\query\\inline-script.js: TypeError: gl.getQuery is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : ANY_SAMPLES_PASSED query should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : ANY_SAMPLES_PASSED query should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : ANY_SAMPLES_PASSED query should succeed"
+        },
+        {
+          "success": true,
+          "message": "gl.getQuery(gl.ANY_SAMPLES_PASSED, gl.CURRENT_QUERY) is null"
+        },
+        {
+          "success": true,
+          "message": "gl.getQuery(gl.ANY_SAMPLES_PASSED_CONSERVATIVE, gl.CURRENT_QUERY) is null"
+        },
+        {
+          "success": true,
+          "message": "gl.getQuery(gl.TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, gl.CURRENT_QUERY) is null"
+        },
+        {
+          "success": true,
+          "message": "gl.getQuery(gl.TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, gl.CURRENT_QUERY) is null"
+        },
+        {
+          "success": false,
+          "message": "gl.isQuery(q1) should be true. Was false."
+        },
+        {
+          "success": false,
+          "message": "gl.getQuery(gl.TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, gl.CURRENT_QUERY) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\query\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -40169,7 +41825,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.texImage3D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.framebufferTextureLayer is not a function"
         },
         {
           "success": false,
@@ -40261,7 +41917,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -40449,11 +42105,147 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.drawBuffers is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup read framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : setup draw framebuffer should succeed"
+        },
+        {
+          "success": false,
+          "message": "Framebuffer incomplete when setup draw framebuffer."
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -40531,7 +42323,11 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.drawBuffers is not a function"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -40643,9 +42439,7 @@
       "id": "conformance2/rendering/framebuffer-completeness-unaffected.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": true,
@@ -40657,11 +42451,31 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.drawBuffers is not a function"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no error after setup and clear render buffer"
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -40709,7 +42523,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.texImage3D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.framebufferTextureLayer is not a function"
         },
         {
           "success": false,
@@ -40759,7 +42573,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.vertexAttribDivisor is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -40773,7 +42587,9 @@
       "id": "conformance2/rendering/instanced-rendering-bug.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1282
+      ],
       "assertions": [
         {
           "success": true,
@@ -40781,11 +42597,39 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.createVertexArray is not a function"
+          "message": "Set up program failed"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": false,
+          "message": "Set up program failed"
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -40811,7 +42655,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: Right-hand side of 'instanceof' is not callable"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -40899,7 +42743,9 @@
       "id": "conformance2/samplers/samplers.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": true,
@@ -40919,7 +42765,35 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\samplers\\inline-script.js: TypeError: gl.createSampler is not a function"
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": true,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) is null"
+        },
+        {
+          "success": true,
+          "message": "gl.getParameter(gl.SAMPLER_BINDING) is null"
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\samplers\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -40963,7 +42837,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-enum-tests.js: ReferenceError: XMLHttpRequest is not defined"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\js\\tests\\gl-enum-tests.js: TypeError: xhr.overrideMimeType is not a function"
         },
         {
           "success": false,
@@ -41593,11 +43467,23 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\sync\\inline-script.js: TypeError: gl.fenceSync is not a function"
+          "message": "sync should be non-null. Was null"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "gl.getError() should be 0. Was 1280."
+        },
+        {
+          "success": false,
+          "message": "gl.getError() should be 0. Was 1281."
+        },
+        {
+          "success": false,
+          "message": "gl.getError() should be undefined (of type undefined). Was 1281 (of type number)."
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "harness-limitation",
@@ -41607,7 +43493,9 @@
       "id": "conformance2/textures/misc/active-3d-texture-bug.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": true,
@@ -41615,7 +43503,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: gl.createSampler is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: gl.getImageData is not a function"
         },
         {
           "success": false,
@@ -41803,7 +43691,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: gl.texImage3D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -41873,7 +43761,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: ctx.fillRect is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: Cannot read properties of null (reading 'fillRect')"
         }
       ],
       "classification": "spec-defect",
@@ -53903,7 +55791,9 @@
       "id": "conformance2/transform_feedback/two-unreferenced-varyings.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [],
+      "drainedErrors": [
+        1280
+      ],
       "assertions": [
         {
           "success": true,
@@ -53911,11 +55801,11 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\transform_feedback\\inline-script.js: TypeError: gl.transformFeedbackVaryings is not a function"
+          "message": "Fail to set up the program"
         },
         {
-          "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -53974,8 +55864,24 @@
           "message": "Default value of VERTEX_ARRAY_BINDING is null"
         },
         {
+          "success": true,
+          "message": "gl.getParameter(gl.VERTEX_ARRAY_BINDING) is null"
+        },
+        {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\vertex_arrays\\inline-script.js: TypeError: gl.createVertexArray is not a function"
+          "message": "gl.getParameter(gl.VERTEX_ARRAY_BINDING) is not expected VAO"
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.VERTEX_ARRAY_BINDING) is not expected VAO"
+        },
+        {
+          "success": true,
+          "message": "gl.getParameter(gl.VERTEX_ARRAY_BINDING) is null"
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\vertex_arrays\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
