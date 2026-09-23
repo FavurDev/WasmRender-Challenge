@@ -9,6 +9,7 @@ import {
   LINEAR,
   LINEAR_MIPMAP_LINEAR,
   LINEAR_MIPMAP_NEAREST,
+  LIMIT_MAX_TEXTURE_SIZE,
   LUMINANCE,
   LUMINANCE_ALPHA,
   MIRRORED_REPEAT,
@@ -495,7 +496,7 @@ export class TextureManager implements ITextureManager {
       return;
     }
     if (border !== 0) {
-      this.errorSink.recordError(INVALID_OPERATION);
+      this.errorSink.recordError(INVALID_VALUE);
       return;
     }
     if (!Number.isFinite(width) || !Number.isFinite(height) || width < 0 || height < 0) {
@@ -507,7 +508,9 @@ export class TextureManager implements ITextureManager {
       return;
     }
     if (!isValidFormatType(format, type)) {
-      this.errorSink.recordError(INVALID_OPERATION);
+      const knownFormat = format === RGBA || format === RGB || format === ALPHA || format === LUMINANCE || format === LUMINANCE_ALPHA;
+      const knownType = type === UNSIGNED_BYTE || type === UNSIGNED_SHORT_4_4_4_4 || type === UNSIGNED_SHORT_5_5_5_1 || type === UNSIGNED_SHORT_5_6_5;
+      this.errorSink.recordError(knownFormat && knownType ? INVALID_OPERATION : INVALID_ENUM);
       return;
     }
     const bpp = bytesPerPixel(format, type);
@@ -515,6 +518,10 @@ export class TextureManager implements ITextureManager {
     if (totalBytes > MAX_TEXTURE_BYTES) {
       // IMPLEMENTATION DECISION: 64MiB per-level 3D volume budget cap alongside the 256MB ceiling. Rationale: 256^3 RGBA8 is exactly 64MiB so the 256MB guard alone is unreachable under the 256 dimension limit. Alternatives: dimension-only guard (rejected — test requires OUT_OF_MEMORY).
       this.errorSink.recordError(OUT_OF_MEMORY);
+      return;
+    }
+    if (width > LIMIT_MAX_TEXTURE_SIZE || height > LIMIT_MAX_TEXTURE_SIZE) {
+      this.errorSink.recordError(INVALID_VALUE);
       return;
     }
     const src = viewBytes(pixels ?? null);

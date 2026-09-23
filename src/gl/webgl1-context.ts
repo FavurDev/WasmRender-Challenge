@@ -2172,6 +2172,11 @@ export class WebGL1Context {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
+    const programHandle = (program as WebGLProgram).handle;
+    if (programHandle.attachedShaders.has(shader as never)) {
+      this.errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
     const ok = this.programRegistry.attachShader(
       (program as WebGLProgram).handle,
       shader as unknown as Parameters<ProgramRegistry['attachShader']>[1],

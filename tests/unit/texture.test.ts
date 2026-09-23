@@ -165,7 +165,7 @@ describe('Image specification and validation (texImage2D)', () => {
     expect(tex!.isNPOT).toBe(false);
   });
 
-  it('texImage2D border non-zero records INVALID_OPERATION and retains storage (AC-2)', () => {
+  it('texImage2D border non-zero records INVALID_VALUE and retains storage (AC-2)', () => {
     // Arrange:
     const errorSink = new ErrorSink();
     const mgr = new TextureManager(errorSink);
@@ -177,7 +177,9 @@ describe('Image specification and validation (texImage2D)', () => {
     const recordedError = errorSink.getError();
     const level0 = tex!.levels2D.get(0)!;
     // Assert:
-    expect(recordedError).toBe(INVALID_OPERATION);
+    // SPRINT 10 TASK 3 CORRECTION: WebGL ES 2.0 §3.7.1 + taxonomy F3 mandate INVALID_VALUE for border != 0
+    // (prior INVALID_OPERATION contradicted the authoritative taxonomy and matrix TEST5); atomicity unchanged.
+    expect(recordedError).toBe(INVALID_VALUE);
     expect(level0.width).toBe(1);
     expect(level0.height).toBe(1);
     expect(level0.data[0]).toBe(10);
