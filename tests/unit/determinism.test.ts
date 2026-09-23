@@ -186,11 +186,12 @@ describe('Sprint 9 Task 6 determinism lockdown', () => {
     // Arrange: one context, composite scene setup.
     const gl = dCtx(64, 64);
     const first = renderComposite(gl);
-    // Act: render the same scene again in-process (fresh context, same process).
-    const second = renderComposite(dCtx(64, 64));
+    // Act: render the same scene again sequentially in the same context.
+    const second = renderComposite(gl);
     expect(gl.getError()).toBe(NO_ERROR);
-    // Assert: sequential renders are byte-identical.
+    // Assert: sequential renders are byte-identical and non-trivial.
     expect(Array.from(first)).toEqual(Array.from(second));
+    expect(Array.from(first).some((b) => b !== 0)).toBe(true);
   });
 
   it('static_bundle_scan_rejects_forbidden_clocks_and_randomness', () => {
@@ -238,8 +239,8 @@ describe('Sprint 9 Task 6 determinism lockdown', () => {
   });
 
   it('shared_edge_quad_determinism', () => {
-    // Arrange: two contexts rendering adjacent quads sharing an edge (winding variants).
-    const renderWinding = (flip: boolean): Uint8Array => {
+    // Arrange: two adjacent triangles sharing the diagonal edge [-1,-1] to [1,1].
+    const renderTrianglesOrder = (reverseOrder: boolean): Uint8Array => {
       const gl = dCtx(16, 16);
       const vsSrc =
         'attribute vec2 a_position; void main() { gl_Position = vec4(a_position, 0.0, 1.0); }';
@@ -255,9 +256,10 @@ describe('Sprint 9 Task 6 determinism lockdown', () => {
       gl.attachShader(program, vs);
       gl.attachShader(program, fs);
       gl.linkProgram(program);
-      const pos = flip
-        ? new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1])
-        : new Float32Array([-1, -1, -1, 1, 1, 1, -1, -1, 1, 1, 1, -1]);
+      const t1 = [-1, -1, 1, -1, 1, 1];
+      const t2 = [-1, -1, 1, 1, -1, 1];
+      const combined = reverseOrder ? [...t2, ...t1] : [...t1, ...t2];
+      const pos = new Float32Array(combined);
       const buf = gl.createBuffer();
       if (buf === null) throw new Error('arrange: createBuffer failed');
       gl.bindBuffer(ARRAY_BUFFER, buf);
@@ -278,35 +280,85 @@ describe('Sprint 9 Task 6 determinism lockdown', () => {
       gl.readPixels(0, 0, 16, 16, RGBA, UNSIGNED_BYTE, out);
       return out;
     };
-    const a = renderWinding(false);
-    const b = renderWinding(false);
-    // Assert: identical winding renders byte-identical across contexts.
+    // Act: render as [T1,T2] and as [T2,T1] (flipped submission order).
+    const a = renderTrianglesOrder(false);
+    const b = renderTrianglesOrder(true);
+    // Assert: flipped submission order is byte-identical and non-trivial.
     expect(Array.from(a)).toEqual(Array.from(b));
+    expect(Array.from(a).some((b) => b !== 0)).toBe(true);
   });
 
   it('depth_reversal_invariance_determinism', () => {
-    // Arrange: same scene under LESS vs LEQUAL depth funcs with cleared depth.
-    const renderDepth = (func: number): Uint8Array => {
-      const gl = dCtx(8, 8);
-      const program = dLink(gl, D_FLAT_FS);
-      dFlatQuad(gl, program, [0.2, 0.6, 0.9, 1]);
-      gl.viewport(0, 0, 8, 8);
+    // Arrange: overlapping Near (z=-0.5, green) and Far (z=0.5, red) triangles.
+    const renderOverlappingTriangles = (depthFuncCode: number, drawNearFirst: boolean): Uint8Array => {
+      const gl = dCtx(16, 16);
+      const vsSrc =
+        'attribute vec3 a_position; void main() { gl_Position = vec4(a_position, 1.0); }';
+      const vs = gl.createShader(VERTEX_SHADER);
+      const fs = gl.createShader(FRAGMENT_SHADER);
+      if (vs === null || fs === null) throw new Error('arrange: shader creation failed');
+      gl.shaderSource(vs, vsSrc);
+      gl.shaderSource(fs, D_FLAT_FS);
+      gl.compileShader(vs);
+      gl.compileShader(fs);
+      const program = gl.createProgram();
+      if (program === null) throw new Error('arrange: program creation failed');
+      gl.attachShader(program, vs);
+      gl.attachShader(program, fs);
+      gl.linkProgram(program);
+      const nearBuf = gl.createBuffer();
+      const farBuf = gl.createBuffer();
+      if (nearBuf === null || farBuf === null) throw new Error('arrange: createBuffer failed');
+      gl.bindBuffer(ARRAY_BUFFER, nearBuf);
+      gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, -0.5, 1, -1, -0.5, 0, 1, -0.5]), STATIC_DRAW);
+      gl.bindBuffer(ARRAY_BUFFER, farBuf);
+      gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 0.5, 1, -1, 0.5, 0, 1, 0.5]), STATIC_DRAW);
+      gl.viewport(0, 0, 16, 16);
       gl.enable(DEPTH_TEST);
-      gl.depthFunc(func);
+      gl.depthFunc(depthFuncCode);
       gl.clearDepth(1);
       gl.clearColor(0, 0, 0, 1);
       gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
-      // Act:
-      gl.drawArrays(TRIANGLES, 0, 3);
-      const out = new Uint8Array(8 * 8 * 4);
-      gl.readPixels(0, 0, 8, 8, RGBA, UNSIGNED_BYTE, out);
+      gl.useProgram(program);
+      const loc = gl.getAttribLocation(program, 'a_position');
+      gl.enableVertexAttribArray(loc);
+      const cl = gl.getUniformLocation(program, 'u_color');
+      if (cl === null) throw new Error('arrange: u_color null');
+      const drawNear = (): void => {
+        gl.bindBuffer(ARRAY_BUFFER, nearBuf);
+        gl.vertexAttribPointer(loc, 3, FLOAT, false, 0, 0);
+        gl.uniform4f(cl, 0, 1, 0, 1);
+        gl.drawArrays(TRIANGLES, 0, 3);
+      };
+      const drawFar = (): void => {
+        gl.bindBuffer(ARRAY_BUFFER, farBuf);
+        gl.vertexAttribPointer(loc, 3, FLOAT, false, 0, 0);
+        gl.uniform4f(cl, 1, 0, 0, 1);
+        gl.drawArrays(TRIANGLES, 0, 3);
+      };
+      // Act: draw in the requested submission order.
+      if (drawNearFirst) {
+        drawNear();
+        drawFar();
+      } else {
+        drawFar();
+        drawNear();
+      }
+      const out = new Uint8Array(16 * 16 * 4);
+      gl.readPixels(0, 0, 16, 16, RGBA, UNSIGNED_BYTE, out);
       return out;
     };
-    const less = renderDepth(LESS);
-    const lequal = renderDepth(LEQUAL);
-    // Assert: both orderings deterministic across repeated runs.
-    expect(Array.from(less)).toEqual(Array.from(renderDepth(LESS)));
-    expect(Array.from(lequal)).toEqual(Array.from(renderDepth(LEQUAL)));
+    // Assert: for each depth func both orders are byte-identical and near wins.
+    for (const testFunc of [LESS, LEQUAL]) {
+      const nearFirst = renderOverlappingTriangles(testFunc, true);
+      const farFirst = renderOverlappingTriangles(testFunc, false);
+      expect(Array.from(nearFirst)).toEqual(Array.from(farFirst));
+      const idx = (8 * 16 + 8) * 4;
+      expect(nearFirst[idx]).toBe(0);
+      expect(nearFirst[idx + 1] > 200).toBe(true);
+      expect(farFirst[idx]).toBe(0);
+      expect(farFirst[idx + 1] > 200).toBe(true);
+    }
   });
 
   it('subnormal_and_extreme_float_determinism', () => {
