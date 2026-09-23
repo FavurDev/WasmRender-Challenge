@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-09-23T11:54:30.321Z",
+  "timestamp": "2026-09-23T11:54:28.261Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
-    "discovered": 3,
-    "executed": 1,
+    "discovered": 4,
+    "executed": 2,
     "passed": 0,
-    "failed": 1,
+    "failed": 2,
     "skipped": 2,
     "crashed": 0
   },
@@ -15,7 +15,21 @@
   },
   "tests": [
     {
-      "id": "test-a",
+      "id": "conformance/gl-shader-test.html",
+      "status": "FAIL",
+      "passed": false,
+      "drainedErrors": [],
+      "assertions": [
+        {
+          "success": false,
+          "message": "Compile failed"
+        }
+      ],
+      "classification": "spec-defect",
+      "rootCauseGroup": "G1"
+    },
+    {
+      "id": "conformance/ext.html",
       "status": "SKIP",
       "passed": false,
       "skipped": true,
@@ -25,7 +39,7 @@
       "rootCauseGroup": "G4"
     },
     {
-      "id": "test-b",
+      "id": "conformance/unexplained.html",
       "status": "FAIL",
       "passed": false,
       "skipped": true,

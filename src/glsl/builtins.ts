@@ -16,6 +16,7 @@
 // - Sprint 4 (2026-09-20): Texture sampling entry points (Task 3).
 // - Sprint 6 (2026-09-21): Real TextureObject sampling via texture.ts/sampler.ts (Task 4).
 // - Sprint 6 (2026-09-21): Legacy placeholder sampling subsystem removed; helpers relocated (Task 5, TD-010).
+// - Sprint 9 Task 3: exported computeLod/selectMipLevel, fround-stable LOD + computeRho dispatch (TD-017 LOD closure).
 
 import { evaluateTextureCompleteness } from '../gl/texture';
 import type { TextureObject as RealTextureObject, SamplerParams } from '../gl/texture';

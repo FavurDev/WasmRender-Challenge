@@ -8,6 +8,7 @@ triangles with integer orient2d edge functions, incremental scan stepping, and
 a single reused Fragment record (zero per-fragment allocation).
  */
 // CHANGELOG: Sprint 7 Task 2 (2026-09-21): Route per-fragment scissor/stencil/depth through depth-stencil pipeline.
+// CHANGELOG: Sprint 9 Task 5 (TD-003): hoisted per-triangle barycentric fround to module-scoped SCRATCH buffers, zero per-fragment allocation.
 import { BACK, CCW, FRONT, FRONT_AND_BACK } from '../gl/constants';
 import type { ClipVertex } from './clipper';
 import type { DrawingBuffer } from '../gl/framebuffer';

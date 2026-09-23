@@ -1,5 +1,6 @@
 // CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial GL state store with snapshot/restore
 // CHANGELOG: Sprint 7 Task 5 (2026-09-21): Default-reset helper for lose/restore spec-default state.
+// CHANGELOG: Sprint 9 Task 2: IGLState.getLineWidth accessor + impl backing LINE_WIDTH getParameter.
 /** GLState — mutable WebGL 1.0 state vector with frozen PipelineState snapshots. L1: imports constants + errors only. */
 import {
   ACTIVE_TEXTURE,
