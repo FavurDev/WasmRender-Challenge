@@ -1333,6 +1333,12 @@ export class WebGL1Context {
     if (pname === MAX_TEXTURE_SIZE) return LIMIT_MAX_TEXTURE_SIZE;
     if (pname === MAX_CUBE_MAP_TEXTURE_SIZE) return LIMIT_MAX_CUBE_MAP_TEXTURE_SIZE;
     if (pname === MAX_RENDERBUFFER_SIZE) return LIMIT_MAX_RENDERBUFFER_SIZE;
+    if (pname === 0x0d52) return 8;
+    if (pname === 0x0d53) return 8;
+    if (pname === 0x0d54) return 8;
+    if (pname === 0x0d55) return 8;
+    if (pname === 0x0d56) return 24;
+    if (pname === 0x0d57) return 8;
     if (pname === MAX_VIEWPORT_DIMS) return new Int32Array([4096, 4096]);
     if (pname === ALIASED_POINT_SIZE_RANGE) {
       return new Int32Array([LIMIT_ALIASED_POINT_SIZE_RANGE[0] as number, LIMIT_ALIASED_POINT_SIZE_RANGE[1] as number]);
@@ -1397,6 +1403,19 @@ export class WebGL1Context {
     if (pixels === null || pixels === undefined) {
       this.errorSink.recordError(INVALID_VALUE);
       return;
+    }
+    {
+      const fboTarget = this.resolveFboTarget();
+      const bufW = fboTarget !== null ? fboTarget.getWidth() : this.drawingBuffer.getWidth();
+      const bufH = fboTarget !== null ? fboTarget.getHeight() : this.drawingBuffer.getHeight();
+      const rx = Math.trunc(x);
+      const ry = Math.trunc(y);
+      const rw = Math.trunc(width);
+      const rh = Math.trunc(height);
+      if (rw < 0 || rh < 0 || rx < 0 || ry < 0 || rx + rw > bufW || ry + rh > bufH) {
+        this.errorSink.recordError(INVALID_VALUE);
+        return;
+      }
     }
     const fbo = this.framebufferManager.getBoundFramebuffer() !== null ? this.resolveFboTarget() : null;
     if (fbo !== null) {

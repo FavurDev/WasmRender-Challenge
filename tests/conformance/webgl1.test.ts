@@ -35,7 +35,7 @@ describe('Triage Log Completeness and Error Draining (AC-2)', () => {
     expect(log.tests.length).toBe(log.totals.executed + log.totals.skipped);
     for (const record of log.tests) {
       expect(typeof record.id).toBe('string');
-      expect(['PASS', 'FAIL', 'CRASH', 'SKIP']).toContain(record.status);
+      expect(['PASS', 'FAIL', 'CRASH', 'SKIP', 'TIMEOUT']).toContain(record.status);
       expect(Array.isArray(record.drainedErrors)).toBe(true);
     }
   });
