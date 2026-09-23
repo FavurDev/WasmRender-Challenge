@@ -233,14 +233,14 @@ describe('Reflection - int/uint enum mapping (HIGH-1/HIGH-2)', () => {
 });
 
 describe('std140 - mat4 array stride (MEDIUM-1)', () => {
-  it('reports arrayStride 16 and matrixStride 16 for mat4[2]', () => {
+  it('reports arrayStride 64 and matrixStride 16 for mat4[2]', () => {
     // Arrange:
     const members = [{ name: 'uBones', typeName: 'mat4', arraySize: 2 }];
     // Act:
     const layout = computeStd140Offsets(members);
     // Assert:
     expect(layout.members[0]!.offset).toBe(0);
-    expect(layout.members[0]!.arrayStride).toBe(16);
+    expect(layout.members[0]!.arrayStride).toBe(64);
     expect(layout.members[0]!.matrixStride).toBe(16);
     expect(layout.dataSize).toBe(128);
   });

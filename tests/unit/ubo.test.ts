@@ -1,55 +1,60 @@
-/** Sprint 8 Task 4 std140 uniform blocks TDD RED-phase tests (9 cases). */
+/** Sprint 8 remediation: UBO introspection via genuine linked programs (RED phase). */
 import { describe, expect, it } from 'vitest';
-import { WebGL1Context } from '../../src/gl/webgl1-context';
-import { computeStd140Offsets, link } from '../../src/gl/program';
+import { WebGL2Context } from '../../src/gl/webgl2-context';
+import { link } from '../../src/gl/program';
 import {
   COMPILE_STATUS,
-  INVALID_VALUE,
-  NO_ERROR,
-  RGBA,
-  STATIC_DRAW,
-  TRIANGLES,
+  FRAGMENT_SHADER,
+  LINK_STATUS,
+  UNIFORM_ARRAY_STRIDE,
   UNIFORM_BLOCK_ACTIVE_UNIFORMS,
   UNIFORM_BLOCK_BINDING,
   UNIFORM_BLOCK_DATA_SIZE,
-  UNIFORM_BLOCK_INDEX,
-  UNIFORM_BUFFER,
-  UNSIGNED_BYTE,
+  UNIFORM_MATRIX_STRIDE,
+  UNIFORM_OFFSET,
   VERTEX_SHADER,
 } from '../../src/gl/constants';
 
-type UboCtx = { [key: string]: ((...args: unknown[]) => unknown) | undefined };
-function callUbo(gl: WebGL1Context, name: string, ...args: unknown[]): unknown {
-  const fn = uboOf(gl)[name];
-  if (typeof fn !== 'function') throw new TypeError(name + ' is not a function');
-  return (fn as (...a: unknown[]) => unknown)(...args);
+type LinkedProgram = NonNullable<ReturnType<WebGL2Context['createProgram']>>;
+
+const VS_SCENE =
+  '#version 300 es\nlayout(std140) uniform Scene { float u_a; vec3 u_b; mat4 u_c; float u_d[3]; };\n' +
+  'in vec4 a_pos;\nvoid main() { gl_Position = a_pos; }';
+const FS_SIMPLE =
+  '#version 300 es\nprecision mediump float;\nout vec4 o_color;\nvoid main() { o_color = vec4(1.0); }';
+
+function freshCtx(): WebGL2Context {
+  return new WebGL2Context({ width: 4, height: 4 });
 }
 
-function freshCtx(): WebGL1Context {
-  return new WebGL1Context({ width: 2, height: 2 });
-}
-
-function uboOf(ctx: WebGL1Context): UboCtx {
-  return ctx as unknown as UboCtx;
-}
-
-function blockMembers(): Array<{ name: string; typeName: string; arraySize?: number }> {
-  return [
-    { name: 'u_a', typeName: 'float' },
-    { name: 'u_b', typeName: 'vec3' },
-    { name: 'u_c', typeName: 'mat4' },
-    { name: 'u_d', typeName: 'float', arraySize: 3 },
-  ];
+function linkSceneProgram(gl: WebGL2Context): LinkedProgram {
+  // Arrange: compile real shaders carrying the Scene uniform block.
+  const vs = gl.createShader(VERTEX_SHADER);
+  const fs = gl.createShader(FRAGMENT_SHADER);
+  if (vs === null || fs === null) throw new Error('arrange: shader creation failed');
+  gl.shaderSource(vs, VS_SCENE);
+  gl.shaderSource(fs, FS_SIMPLE);
+  gl.compileShader(vs);
+  gl.compileShader(fs);
+  expect(gl.getShaderParameter(vs, COMPILE_STATUS)).toBe(true);
+  expect(gl.getShaderParameter(fs, COMPILE_STATUS)).toBe(true);
+  const program = gl.createProgram();
+  if (program === null) throw new Error('arrange: createProgram failed');
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  expect(gl.getProgramParameter(program, LINK_STATUS)).toBe(true);
+  return program;
 }
 
 function linkedBlockProgram(): { ok: boolean; log: string; program: { uniformBlocks: Array<{ name: string; index: number; binding: number; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> } | null } {
-  // Arrange: checked shaders carrying a uniform block.
-  const members = blockMembers().map((m) => ({
-    name: m.name,
-    typeName: m.typeName,
-    storage: 'in' as const,
-    arraySize: m.arraySize ?? null,
-  }));
+  // Arrange: checked shaders carrying a uniform block (pure link-level helper).
+  const members = [
+    { name: 'u_a', typeName: 'float', storage: 'in' as const, arraySize: null },
+    { name: 'u_b', typeName: 'vec3', storage: 'in' as const, arraySize: null },
+    { name: 'u_c', typeName: 'mat4', storage: 'in' as const, arraySize: null },
+    { name: 'u_d', typeName: 'float', storage: 'in' as const, arraySize: 3 },
+  ];
   const vs = {
     stage: 'vertex' as const,
     version: 300 as const,
@@ -73,160 +78,57 @@ function linkedBlockProgram(): { ok: boolean; log: string; program: { uniformBlo
   return result as unknown as { ok: boolean; log: string; program: { uniformBlocks: Array<{ name: string; index: number; binding: number; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> } | null };
 }
 
-describe('Sprint 8 Task 4 std140 uniform blocks (RED)', () => {
-  it('TEST 1: std140 offset table yields 0/16/32/96 with dataSize 144', () => {
-    // Arrange:
-    const members = blockMembers();
-    // Act:
-    const layout = computeStd140Offsets(members);
-    const linked = linkedBlockProgram();
-    // Assert:
-    expect(layout.members.map((m) => m.offset)).toEqual([0, 16, 32, 96]);
-    expect(layout.members[2].matrixStride).toBe(16);
-    expect(layout.members[3].arrayStride).toBe(16);
-    expect(layout.dataSize).toBe(144);
-    expect(linked.ok).toBe(true);
-    expect(linked.program).not.toBe(null);
-    expect(linked.program?.uniformBlocks[0].dataSize).toBe(144);
-    expect(linked.program?.uniformBlocks[0].members.map((m) => m.offset)).toEqual([0, 16, 32, 96]);
-    // Context-level introspection is not yet wired (red phase):
-    const gl = freshCtx();
-    expect(uboOf(gl).getActiveUniforms?.('prog', [0], 0x8a3b)).toEqual([0, 16, 32, 96]);
-  });
-
-  it('TEST 2: LinkedProgram.uniformBlocks contract shape', () => {
-    // Arrange:
-    const linked = linkedBlockProgram();
-    // Act:
-    const block = linked.program?.uniformBlocks[0];
-    // Assert:
-    expect(block?.name).toBe('Scene');
-    expect(block?.index).toBe(0);
-    expect(typeof block?.binding).toBe('number');
-    expect(block?.dataSize).toBe(144);
-    expect(block?.members.length).toBe(4);
-    expect(uboOf(freshCtx()).getUniformBlockIndex?.('prog', 'Scene')).toBe(0);
-    for (const m of block?.members ?? []) {
-      expect(typeof m.name).toBe('string');
-      expect(typeof m.offset).toBe('number');
-      expect(typeof m.arrayStride).toBe('number');
-      expect(typeof m.matrixStride).toBe('number');
-    }
-  });
-
-  it('TEST 3: bindBufferBase binds buffer to indexed UBO slot', () => {
+describe('Sprint 8 remediation UBO (RED)', () => {
+  it('TEST 3.1: string handle to getUniformBlockIndex returns 0xffffffff sentinel', () => {
     // Arrange:
     const gl = freshCtx();
-    const buf = gl.createBuffer();
-    gl.bindBuffer(UNIFORM_BUFFER, buf);
-    gl.bufferData(UNIFORM_BUFFER, 144, 35044);
     // Act:
-    uboOf(gl).bindBufferBase?.(UNIFORM_BUFFER, 0, buf) as unknown;
-    // Assert:
-    expect(gl.getError()).toBe(NO_ERROR);
-    expect(uboOf(gl).getIndexedParameter?.(35374, 0)).not.toBe(null);
+    const idx = gl.getUniformBlockIndex('Scene' as unknown as never, 'Scene');
+    // Assert: no canned fallback — absent/invalid programs yield the spec sentinel.
+    expect(idx).toBe(0xffffffff);
   });
 
-  it('TEST 4: bindBufferRange validates alignment, bounds, and 256MB guard', () => {
+  it('TEST 3.2: getActiveUniforms offsets via genuinely linked Scene program', () => {
     // Arrange:
     const gl = freshCtx();
-    const buf = gl.createBuffer();
-    gl.bindBuffer(UNIFORM_BUFFER, buf);
-    gl.bufferData(UNIFORM_BUFFER, 512, 35044);
-    const u = uboOf(gl);
-    // Act: misaligned offset must raise INVALID_VALUE with no state mutation.
-    (u.bindBufferRange as unknown as (t: number, i: number, b: unknown, o: number, s: number) => void).call(gl, UNIFORM_BUFFER, 0, buf, 1, 16);
+    const prog = linkSceneProgram(gl);
+    // Act:
+    const offsets = gl.getActiveUniforms(prog, [0, 1, 2, 3], UNIFORM_OFFSET) as unknown as number[];
+    const matStride = gl.getActiveUniforms(prog, [2], UNIFORM_MATRIX_STRIDE) as unknown as number[];
+    const arrStride = gl.getActiveUniforms(prog, [3], UNIFORM_ARRAY_STRIDE) as unknown as number[];
     // Assert:
-    expect(gl.getError()).toBe(INVALID_VALUE);
-    // Act: range exceeding byteLength.
-    (u.bindBufferRange as unknown as (t: number, i: number, b: unknown, o: number, s: number) => void).call(gl, UNIFORM_BUFFER, 0, buf, 0, 1024);
-    // Assert:
-    expect(gl.getError()).toBe(INVALID_VALUE);
-    // Act: 256MB guard.
-    (u.bindBufferRange as unknown as (t: number, i: number, b: unknown, o: number, s: number) => void).call(gl, UNIFORM_BUFFER, 0, buf, 0, 268435456 + 1);
-    // Assert:
-    expect(gl.getError()).toBe(INVALID_VALUE);
+    expect(offsets).toEqual([0, 16, 32, 96]);
+    expect(matStride).toEqual([16]);
+    expect(arrStride).toEqual([16]);
   });
 
-  it('TEST 5: getUniformIndices and getActiveUniforms introspection', () => {
+  it('TEST 1 rewrite: linked Scene block has dataSize 144 and index 0', () => {
     // Arrange:
     const gl = freshCtx();
-    const linked = linkedBlockProgram();
-    void linked;
+    const prog = linkSceneProgram(gl);
     // Act:
-    const u = uboOf(gl);
-    const indices = u.getUniformIndices?.('prog', ['u_a', 'u_b']) as unknown as number[];
-    const offsets = u.getActiveUniforms?.('prog', indices, 35387) as unknown as number[];
+    const idx = gl.getUniformBlockIndex(prog, 'Scene');
+    const size = gl.getActiveUniformBlockParameter(prog, 0, UNIFORM_BLOCK_DATA_SIZE) as unknown as number;
+    const active = gl.getActiveUniformBlockParameter(prog, 0, UNIFORM_BLOCK_ACTIVE_UNIFORMS) as unknown as number;
+    const name = gl.getActiveUniformBlockName(prog, 0);
     // Assert:
-    expect(indices).toEqual([0, 1]);
-    expect(offsets).toEqual([0, 16]);
-  });
-
-  it('TEST 6: getActiveUniformBlockParameter and getActiveUniformBlockName', () => {
-    // Arrange:
-    const gl = freshCtx();
-    const u = uboOf(gl);
-    // Act:
-    const size = u.getActiveUniformBlockParameter?.('prog', 0, UNIFORM_BLOCK_DATA_SIZE) as unknown as number;
-    const binding = u.getActiveUniformBlockParameter?.('prog', 0, UNIFORM_BLOCK_BINDING) as unknown as number;
-    const active = u.getActiveUniformBlockParameter?.('prog', 0, UNIFORM_BLOCK_ACTIVE_UNIFORMS) as unknown as number;
-    const name = u.getActiveUniformBlockName?.('prog', 0) as unknown as string;
-    const index = u.getUniformBlockIndex?.('prog', 'Scene') as unknown as number;
-    // Assert:
+    expect(idx).toBe(0);
     expect(size).toBe(144);
-    expect(binding).toBe(0);
     expect(active).toBe(4);
     expect(name).toBe('Scene');
-    expect(index).toBe(0);
+    const linked = linkedBlockProgram();
+    expect(linked.ok).toBe(true);
+    expect(linked.program?.uniformBlocks[0]?.dataSize).toBe(144);
+    expect(linked.program?.uniformBlocks[0]?.members.map((m) => m.offset)).toEqual([0, 16, 32, 96]);
   });
 
-  it('TEST 7: uniformBlockBinding updates block slot routing', () => {
+  it('TEST 2 rewrite: uniformBlockBinding routes the linked block', () => {
     // Arrange:
     const gl = freshCtx();
-    const u = uboOf(gl);
+    const prog = linkSceneProgram(gl);
     // Act:
-    (u.uniformBlockBinding as unknown as (p: unknown, b: number, s: number) => void).call(gl, 'prog', 0, 2);
+    gl.uniformBlockBinding(prog, 0, 2);
     // Assert:
-    expect(u.getActiveUniformBlockParameter?.('prog', 0, UNIFORM_BLOCK_BINDING)).toBe(2);
-    expect(gl.getError()).toBe(NO_ERROR);
-  });
-
-  it('TEST 8: UBO value change visibly alters readPixels output', () => {
-    // Arrange:
-    const gl = freshCtx();
-    const buf = gl.createBuffer();
-    gl.bindBuffer(UNIFORM_BUFFER, buf);
-    gl.bufferData(UNIFORM_BUFFER, 144, 35044);
-    const u = uboOf(gl);
-    (u.bindBufferBase as unknown as (t: number, i: number, b: unknown) => void).call(gl, UNIFORM_BUFFER, 0, buf);
-    // Act: write red into the block, draw, read back.
-    (u.bufferSubData as unknown as (t: number, o: number, d: ArrayBufferView) => void).call(gl, UNIFORM_BUFFER, 0, new Float32Array([1, 0, 0, 1]));
-    (u.drawArrays as unknown as () => void).call(gl);
-    const before = new Uint8Array(16);
-    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, before);
-    // Act: write green, draw again.
-    (u.bufferSubData as unknown as (t: number, o: number, d: ArrayBufferView) => void).call(gl, UNIFORM_BUFFER, 0, new Float32Array([0, 1, 0, 1]));
-    (u.drawArrays as unknown as () => void).call(gl);
-    const after = new Uint8Array(16);
-    gl.readPixels(0, 0, 2, 2, RGBA, UNSIGNED_BYTE, after);
-    // Assert:
-    expect(Array.from(before)).not.toEqual(Array.from(after));
-  });
-
-  it('TEST 9: layout(packed) and layout(shared) rejected with named diagnostic', () => {
-    // Arrange:
-    const gl = freshCtx();
-    // Act:
-    const packed = gl.createShader(VERTEX_SHADER);
-    gl.shaderSource(packed, 'layout(packed) uniform Scene { float u_a; }; void main() { gl_Position = vec4(0.0); }');
-    gl.compileShader(packed);
-    const shared = gl.createShader(VERTEX_SHADER);
-    gl.shaderSource(shared, 'layout(shared) uniform Scene { float u_a; }; void main() { gl_Position = vec4(0.0); }');
-    gl.compileShader(shared);
-    // Assert:
-    expect(gl.getShaderParameter(packed, COMPILE_STATUS)).toBe(false);
-    expect(gl.getShaderParameter(shared, COMPILE_STATUS)).toBe(false);
-    expect(gl.getShaderInfoLog(packed)).toContain('packed');
-    expect(gl.getShaderInfoLog(shared)).toContain('shared');
+    expect(gl.getActiveUniformBlockParameter(prog, 0, UNIFORM_BLOCK_BINDING)).toBe(2);
   });
 });

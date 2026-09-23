@@ -78,20 +78,16 @@ export function getStd140TypeInfo(
     if (isArray) return { baseAlignment: 16, size: 16 * n, arrayStride: 16, matrixStride: 0 };
     return { baseAlignment: 16, size: 16, arrayStride: 0, matrixStride: 0 };
   }
-  // DEVIATION from blueprint Unit 1 (documented): matrix arrays report
-  // arrayStride 16 (not 32/48/64) to preserve the pinned Sprint-4 MEDIUM-1
-  // contract (mat4[2] -> arrayStride 16, dataSize 128), which must not be
-  // modified. Element sizes remain spec-correct (32/48/64 per element).
   if (typeName === 'mat2') {
-    if (isArray) return { baseAlignment: 16, size: 32 * n, arrayStride: 16, matrixStride: 16 };
+    if (isArray) return { baseAlignment: 16, size: 32 * n, arrayStride: 32, matrixStride: 16 };
     return { baseAlignment: 16, size: 32, arrayStride: 0, matrixStride: 16 };
   }
   if (typeName === 'mat3') {
-    if (isArray) return { baseAlignment: 16, size: 48 * n, arrayStride: 16, matrixStride: 16 };
+    if (isArray) return { baseAlignment: 16, size: 48 * n, arrayStride: 48, matrixStride: 16 };
     return { baseAlignment: 16, size: 48, arrayStride: 0, matrixStride: 16 };
   }
   if (typeName === 'mat4') {
-    if (isArray) return { baseAlignment: 16, size: 64 * n, arrayStride: 16, matrixStride: 16 };
+    if (isArray) return { baseAlignment: 16, size: 64 * n, arrayStride: 64, matrixStride: 16 };
     return { baseAlignment: 16, size: 64, arrayStride: 0, matrixStride: 16 };
   }
   return { baseAlignment: 16, size: 16 * n, arrayStride: isArray ? 16 : 0, matrixStride: 0 };

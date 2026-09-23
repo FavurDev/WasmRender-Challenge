@@ -114,8 +114,10 @@ describe('Headless Environment WebGL Error Draining', () => {
 
 describe('Zero-Crash Error Containment on Uncaught Script Exception', () => {
   it('records CRASH without terminating the process', async () => {
-    // Arrange:
-    const runner = new CTSRunner('/app/renderer.js', `${MANIFEST_ROOT}/00_test_list.txt`, TRIAGE_LOG);
+    // Arrange: synthetic containment probe writes to an isolated log so the
+    // authoritative webgl1-triage.json keeps reporting 0 crashes (TEST 6.1).
+    const SYNTHETIC_LOG = 'test-results/conformance/webgl1-synthetic-crash.json';
+    const runner = new CTSRunner('/app/renderer.js', `${MANIFEST_ROOT}/00_test_list.txt`, SYNTHETIC_LOG);
     // Act:
     const summary = await runner.runSuite(() => true, new Map([['crash-page.html', '']]));
     // Assert:

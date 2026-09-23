@@ -6,7 +6,10 @@ import { WebGL1Context } from '../../src/gl/webgl1-context';
 import {
   ALREADY_SIGNALED,
   ANY_SAMPLES_PASSED,
+  COLOR_BUFFER_BIT,
   CONDITION_SATISFIED,
+  DEPTH_BUFFER_BIT,
+  DEPTH_TEST,
   INVALID_ENUM,
   INVALID_OPERATION,
   QUERY_RESULT,
@@ -17,7 +20,9 @@ import {
   SYNC_GPU_COMMANDS_COMPLETE,
   SYNC_STATUS,
   TIMEOUT_EXPIRED,
+  TRIANGLES,
 } from '../../src/gl/constants';
+import type { DirectVertex } from '../../src/gl/webgl1-context';
 
 // Local fallbacks for enums added in Step 3 (not yet in constants.ts).
 const OBJECT_TYPE = 0x9112;
@@ -76,16 +81,36 @@ describe('Group 1: sync lifecycle and return-code matrix', () => {
 });
 
 describe('Group 2: occlusion query depth-survivor integration', () => {
-  it('TEST 5: occlusion scene with half fragments failing depth reports exact surviving count', () => {
+  it('TEST 2.1: drawOcclusionScene backdoor is absent from WebGL2Context', () => {
+    // Arrange:
+    const gl = new WebGL2Context({ width: 2, height: 2 });
+    // Act:
+    const own = (gl as unknown as Record<string, unknown>)['drawOcclusionScene'];
+    const proto = (Object.getPrototypeOf(gl) as Record<string, unknown>)['drawOcclusionScene'];
+    // Assert:
+    expect(own).toBe(undefined);
+    expect(proto).toBe(undefined);
+  });
+
+  it('TEST 5: full-screen quad under DEPTH_TEST reports exact surviving samples', () => {
     // Arrange:
     const gl = new WebGL2Context({ width: 4, height: 2 });
     const q = gl.createQuery();
+    const quad: DirectVertex[] = [
+      { position: [-1, -1, 0, 1] },
+      { position: [3, -1, 0, 1] },
+      { position: [-1, 3, 0, 1] },
+    ];
+    gl.enable(DEPTH_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clearDepth(1);
+    gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
     // Act:
     gl.beginQuery(ANY_SAMPLES_PASSED_CONSERVATIVE, q);
-    gl.drawOcclusionScene(8, 4);
+    gl.drawArrays(TRIANGLES, 0, 3, quad);
     gl.endQuery(ANY_SAMPLES_PASSED_CONSERVATIVE);
     // Assert:
-    expect(gl.getQueryParameter(q, QUERY_RESULT)).toBe(4);
+    expect(gl.getQueryParameter(q, QUERY_RESULT)).toBe(8);
     expect(gl.getQueryParameter(q, QUERY_RESULT_AVAILABLE)).toBe(true);
   });
 
@@ -93,10 +118,22 @@ describe('Group 2: occlusion query depth-survivor integration', () => {
     // Arrange:
     const gl = new WebGL2Context({ width: 4, height: 2 });
     const q = gl.createQuery();
-    // Act:
+    const mkQuad = (z: number): DirectVertex[] => [
+      { position: [-1, -1, z, 1] },
+      { position: [3, -1, z, 1] },
+      { position: [-1, 3, z, 1] },
+    ];
+    gl.enable(DEPTH_TEST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clearDepth(1);
+    gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+    // Act: pre-render occluder at depth 0.5 outside the query, then inside
+    // the query draw one fully-occluded quad (depth 0.8 -> 0 survivors) and
+    // one fully-visible quad (depth 0.2 -> 8 survivors).
+    gl.drawArrays(TRIANGLES, 0, 3, mkQuad(0));
     gl.beginQuery(ANY_SAMPLES_PASSED, q);
-    gl.drawOcclusionScene(8, 4);
-    gl.drawOcclusionScene(8, 4);
+    gl.drawArrays(TRIANGLES, 0, 3, mkQuad(0.6));
+    gl.drawArrays(TRIANGLES, 0, 3, mkQuad(-0.6));
     gl.endQuery(ANY_SAMPLES_PASSED);
     // Assert:
     expect(gl.getQueryParameter(q, QUERY_RESULT)).toBe(8);

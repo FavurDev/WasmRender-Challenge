@@ -1,6 +1,6 @@
 /** Sprint 8 Task 8 std140 UBO layout engine TDD RED-phase tests (8 cases per blueprint). */
 import { describe, expect, it } from 'vitest';
-import { computeStd140Layout } from '../../src/gl/ubo-layout';
+import { computeStd140Layout, getStd140TypeInfo } from '../../src/gl/ubo-layout';
 import type { UboMemberDescriptor } from '../../src/gl/ubo-layout';
 import { link } from '../../src/gl/program';
 import type { CheckedShader } from '../../src/glsl/checker';
@@ -178,5 +178,175 @@ describe('context introspection (TEST 8, AC-6)', () => {
     expect(active).toBe(2);
     expect(indices).toEqual([0, 1]);
     expect(offsets).toEqual([0, 16]);
+  });
+
+  it('REMED-1a: mat2 array has arrayStride 32 and total size 64', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m2', typeName: 'mat2', arraySize: 2 }];
+    // Act:
+    const info = getStd140TypeInfo('mat2', 2, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(32);
+    expect(info.matrixStride).toBe(16);
+    expect(info.size).toBe(64);
+    expect(layout.dataSize).toBe(64);
+    expect(layout.members[0]?.arrayStride).toBe(32);
+  });
+
+  it('REMED-1b: mat3 array has arrayStride 48 and total size 144', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m3', typeName: 'mat3', arraySize: 3 }];
+    // Act:
+    const info = getStd140TypeInfo('mat3', 3, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(48);
+    expect(info.matrixStride).toBe(16);
+    expect(info.size).toBe(144);
+    expect(layout.dataSize).toBe(144);
+    expect(layout.members[0]?.arrayStride).toBe(48);
+  });
+
+  it('REMED-1c: mat4 array has arrayStride 64 and total size 128', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m4', typeName: 'mat4', arraySize: 2 }];
+    // Act:
+    const info = getStd140TypeInfo('mat4', 2, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(64);
+    expect(info.matrixStride).toBe(16);
+    expect(info.size).toBe(128);
+    expect(layout.dataSize).toBe(128);
+    expect(layout.members[0]?.arrayStride).toBe(64);
+  });
+});
+describe('Sprint 8 remediation: std140 matrix-array strides (CRITICAL)', () => {
+  it('mat2 array: arrayStride 32, size 64, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_mats', typeName: 'mat2', arraySize: 2 }];
+    // Act:
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(layout.members).toHaveLength(1);
+    expect(layout.members[0]?.offset).toBe(0);
+    expect(layout.members[0]?.arrayStride).toBe(32);
+    expect(layout.members[0]?.matrixStride).toBe(16);
+    expect(layout.dataSize).toBe(64);
+  });
+
+  it('mat3 array: arrayStride 48, size 144, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_mats', typeName: 'mat3', arraySize: 3 }];
+    // Act:
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(layout.members).toHaveLength(1);
+    expect(layout.members[0]?.offset).toBe(0);
+    expect(layout.members[0]?.arrayStride).toBe(48);
+    expect(layout.members[0]?.matrixStride).toBe(16);
+    expect(layout.dataSize).toBe(144);
+  });
+
+  it('mat4 array: arrayStride 64, size 128, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_mats', typeName: 'mat4', arraySize: 2 }];
+    // Act:
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(layout.members).toHaveLength(1);
+    expect(layout.members[0]?.offset).toBe(0);
+    expect(layout.members[0]?.arrayStride).toBe(64);
+    expect(layout.members[0]?.matrixStride).toBe(16);
+    expect(layout.dataSize).toBe(128);
+  });
+});
+
+describe('Group R1: std140 matrix-array strides (CRITICAL remediation)', () => {
+  it('R1-mat2: mat2 array has arrayStride 32 and total size 64', async () => {
+    // Arrange:
+    const { getStd140TypeInfo } = await import('../../src/gl/ubo-layout');
+    // Act:
+    const info = getStd140TypeInfo('mat2', 2, null);
+    const layout = computeStd140Layout([{ name: 'u_m', typeName: 'mat2', arraySize: 2 }]);
+    // Assert:
+    expect(info.arrayStride).toBe(32);
+    expect(info.size).toBe(64);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0]?.arrayStride).toBe(32);
+    expect(layout.dataSize).toBe(64);
+  });
+
+  it('R1-mat3: mat3 array has arrayStride 48 and total size 144', async () => {
+    // Arrange:
+    const { getStd140TypeInfo } = await import('../../src/gl/ubo-layout');
+    // Act:
+    const info = getStd140TypeInfo('mat3', 3, null);
+    const layout = computeStd140Layout([{ name: 'u_m', typeName: 'mat3', arraySize: 3 }]);
+    // Assert:
+    expect(info.arrayStride).toBe(48);
+    expect(info.size).toBe(144);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0]?.arrayStride).toBe(48);
+    expect(layout.dataSize).toBe(144);
+  });
+
+  it('R1-mat4: mat4 array has arrayStride 64 and total size 128', async () => {
+    // Arrange:
+    const { getStd140TypeInfo } = await import('../../src/gl/ubo-layout');
+    // Act:
+    const info = getStd140TypeInfo('mat4', 2, null);
+    const layout = computeStd140Layout([{ name: 'u_m', typeName: 'mat4', arraySize: 2 }]);
+    // Assert:
+    expect(info.arrayStride).toBe(64);
+    expect(info.size).toBe(128);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0]?.arrayStride).toBe(64);
+    expect(layout.dataSize).toBe(128);
+  });
+});
+
+describe('Sprint 8 remediation: std140 matrix-array strides (CRITICAL)', () => {
+  it('mat2 array: arrayStride 32, size 64, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m', typeName: 'mat2', arraySize: 2 }];
+    // Act:
+    const info = getStd140TypeInfo('mat2', 2, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(32);
+    expect(info.size).toBe(64);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0].arrayStride).toBe(32);
+    expect(layout.dataSize).toBe(64);
+  });
+
+  it('mat3 array: arrayStride 48, size 144, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m', typeName: 'mat3', arraySize: 3 }];
+    // Act:
+    const info = getStd140TypeInfo('mat3', 3, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(48);
+    expect(info.size).toBe(144);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0].arrayStride).toBe(48);
+    expect(layout.dataSize).toBe(144);
+  });
+
+  it('mat4 array: arrayStride 64, size 128, matrixStride 16', () => {
+    // Arrange:
+    const members: UboMemberDescriptor[] = [{ name: 'u_m', typeName: 'mat4', arraySize: 2 }];
+    // Act:
+    const info = getStd140TypeInfo('mat4', 2, null);
+    const layout = computeStd140Layout(members);
+    // Assert:
+    expect(info.arrayStride).toBe(64);
+    expect(info.size).toBe(128);
+    expect(info.matrixStride).toBe(16);
+    expect(layout.members[0].arrayStride).toBe(64);
+    expect(layout.dataSize).toBe(128);
   });
 });

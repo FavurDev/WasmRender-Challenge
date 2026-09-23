@@ -135,12 +135,6 @@ export class WebGL2Context extends WebGL1Context {
     mgr.bindTexture(target as GLenum, texture);
   }
 
-  /** Test helper: simulate an occlusion draw contributing `passed` surviving samples. */
-  drawOcclusionScene(_total: number, passed: number): void {
-    if (this.isContextLost()) return;
-    this.getQuerySync().incrementSampleCount(passed);
-  }
-
   /** Intercept CURRENT_QUERY (return null, no error), VERTEX_ARRAY_BINDING, WebGL2 version/limits, and MRT queries; all other pnames defer to WebGL1. */
   override getParameter(pname: number): unknown {
     if ((pname as GLenum) === CURRENT_QUERY) return null;

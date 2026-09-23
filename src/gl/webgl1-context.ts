@@ -1384,32 +1384,12 @@ export class WebGL1Context {
     return this.bufferManager.getBufferParameter(target as GLenum, pname as GLenum);
   }
 
-  // DEVIATION from blueprint Unit 5 (documented): the pre-existing Sprint-8
-  // Task-4 suite (tests/unit/ubo.test.ts, unmodifiable) drives these methods
-  // with legacy string program handles ('prog') and pins canned 'Scene' block
-  // data (dataSize 144, offsets [0,16,32,96]). Real WebGLProgram objects always
-  // take the linked-data path with spec sentinels; only string handles take
-  // the canned path, which production code never produces.
-  private uboLegacyCannedBlocks(): Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> {
-    return [{
-      name: 'Scene',
-      dataSize: 144,
-      members: [
-        { name: 'u_a', offset: 0, arrayStride: 0, matrixStride: 0 },
-        { name: 'u_b', offset: 16, arrayStride: 0, matrixStride: 0 },
-        { name: 'u_c', offset: 32, arrayStride: 0, matrixStride: 16 },
-        { name: 'u_d', offset: 96, arrayStride: 16, matrixStride: 0 },
-      ],
-    }];
-  }
-
   private uboResolveBlocks(program: WebGLProgram | null): Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }> | null {
     const linked = (program as WebGLProgram | null)?.handle?.linkedProgram ?? null;
     const blocks = linked?.uniformBlocks ?? null;
     if (blocks !== null && blocks !== undefined) {
       return blocks as Array<{ name: string; dataSize: number; members: Array<{ name: string; offset: number; arrayStride: number; matrixStride: number }> }>;
     }
-    if (typeof program === 'string') return this.uboLegacyCannedBlocks();
     return null;
   }
 
