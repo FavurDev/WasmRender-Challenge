@@ -31,12 +31,26 @@ import {
   INVALID_ENUM,
   INVALID_OPERATION,
   INVALID_VALUE,
+  LIMIT_MAX_3D_TEXTURE_SIZE,
+  LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL2,
+  LIMIT_MAX_FRAGMENT_UNIFORM_VECTORS_WEBGL2,
+  LIMIT_MAX_TEXTURE_IMAGE_UNITS_WEBGL2,
+  LIMIT_MAX_VERTEX_UNIFORM_VECTORS_WEBGL2,
+  MAX_3D_TEXTURE_SIZE,
+  MAX_ARRAY_TEXTURE_LAYERS,
   MAX_COLOR_ATTACHMENTS,
+  MAX_COMBINED_TEXTURE_IMAGE_UNITS,
   MAX_DRAW_BUFFERS,
+  MAX_FRAGMENT_UNIFORM_VECTORS,
+  MAX_TEXTURE_IMAGE_UNITS,
+  MAX_VERTEX_ATTRIBS,
+  MAX_VERTEX_UNIFORM_VECTORS,
   NONE,
+  POINTS,
   READ_BUFFER,
   RGBA,
   STENCIL_ATTACHMENT,
+  TRANSFORM_FEEDBACK_BUFFER,
   TRIANGLES,
   UNSIGNED_BYTE,
   UNSIGNED_INT,
@@ -46,6 +60,8 @@ import {
   UNPACK_SKIP_IMAGES,
   UNPACK_SKIP_PIXELS,
   UNPACK_SKIP_ROWS,
+  VERSION,
+  VERSION_STRING_WEBGL2,
   VERTEX_ARRAY_BINDING,
   VERTEX_ATTRIB_ARRAY_BUFFER_BINDING,
   VERTEX_ATTRIB_ARRAY_DIVISOR,
@@ -61,10 +77,13 @@ import type { GLState, VertexArrayObject } from './state';
 import type { TextureObject } from './texture';
 import { TextureManager } from './texture';
 import { WebGL1Context } from './webgl1-context';
+import type { WebGLProgram } from './webgl1-context';
 import { QuerySyncManager } from './query-sync';
 import type { WebGLQuery, WebGLSync } from './query-sync';
 import type { ErrorSink } from './errors';
-import { resolveIndexSequence } from './vertex-fetch';
+import { createVertexAttribTargetMap, fetchVertexAttributes, resolveIndexSequence } from './vertex-fetch';
+import { executeVertex } from '../glsl/interpreter';
+import type { BufferObject } from './buffer';
 import { SamplerManager } from './sampler-manager';
 import type { WebGLSampler } from './sampler-manager';
 import type { SamplerParams } from './texture';
@@ -89,6 +108,10 @@ type FramebufferManagerInternals = {
 
 export class WebGL2Context extends WebGL1Context {
   private querySyncManager: QuerySyncManager | null = null;
+  private tfVaryingsByProgram = new Map<number, string[]>();
+  private tfActive = false;
+  private tfBoundBuffer: BufferObject | null = null;
+  private tfWriteFloats = 0;
 
   private getQuerySync(): QuerySyncManager {
     if (this.querySyncManager === null) {
@@ -118,9 +141,18 @@ export class WebGL2Context extends WebGL1Context {
     this.getQuerySync().incrementSampleCount(passed);
   }
 
-  /** Intercept CURRENT_QUERY (return null, no error), VERTEX_ARRAY_BINDING, and MRT queries; all other pnames defer to WebGL1. */
+  /** Intercept CURRENT_QUERY (return null, no error), VERTEX_ARRAY_BINDING, WebGL2 version/limits, and MRT queries; all other pnames defer to WebGL1. */
   override getParameter(pname: number): unknown {
     if ((pname as GLenum) === CURRENT_QUERY) return null;
+    if ((pname as GLenum) === VERSION) return VERSION_STRING_WEBGL2;
+    if ((pname as GLenum) === MAX_VERTEX_UNIFORM_VECTORS) return LIMIT_MAX_VERTEX_UNIFORM_VECTORS_WEBGL2;
+    if ((pname as GLenum) === MAX_FRAGMENT_UNIFORM_VECTORS) return LIMIT_MAX_FRAGMENT_UNIFORM_VECTORS_WEBGL2;
+    if ((pname as GLenum) === MAX_TEXTURE_IMAGE_UNITS) return LIMIT_MAX_TEXTURE_IMAGE_UNITS_WEBGL2;
+    if ((pname as GLenum) === MAX_COMBINED_TEXTURE_IMAGE_UNITS)
+      return LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL2;
+    if ((pname as GLenum) === MAX_3D_TEXTURE_SIZE) return LIMIT_MAX_3D_TEXTURE_SIZE;
+    if ((pname as GLenum) === MAX_ARRAY_TEXTURE_LAYERS) return 256;
+    if ((pname as GLenum) === MAX_VERTEX_ATTRIBS) return 16;
     if (this.isContextLost()) return null;
     if ((pname as GLenum) === VERTEX_ARRAY_BINDING) {
       if (this.isContextLost()) return null;
@@ -768,6 +800,261 @@ export class WebGL2Context extends WebGL1Context {
       return;
     }
     sink.recordError(INVALID_ENUM);
+  }
+
+  /** Register transform-feedback varyings for a program (must precede link; post-link is INVALID_OPERATION). */
+  transformFeedbackVaryings(program: unknown, varyings: string[], _bufferMode: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    const id = (program as { id?: unknown } | null)?.id;
+    if (typeof id !== 'number') {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const internals = this as unknown as {
+      programRegistry: { getProgram(id: number): { linkStatus: boolean } | null };
+    };
+    const handle = internals.programRegistry.getProgram(id);
+    if (handle !== null && handle.linkStatus === true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfVaryingsByProgram.set(id, [...varyings]);
+  }
+
+  /** Begin transform-feedback capture; double-begin records INVALID_OPERATION. */
+  beginTransformFeedback(primitiveMode: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (
+      primitiveMode !== (POINTS as number) &&
+      primitiveMode !== (TRIANGLES as number)
+    ) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (this.tfActive) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfActive = true;
+    this.tfWriteFloats = 0;
+  }
+
+  /** End transform-feedback capture; end-without-begin records INVALID_OPERATION. */
+  endTransformFeedback(): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!this.tfActive) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfActive = false;
+  }
+
+  /** Bind a buffer to indexed transform-feedback binding point 0. */
+  bindBufferBase(target: number, index: number, buffer: BufferObject | null): void {
+    if (this.isContextLost()) return;
+    if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      if (index !== 0) {
+        sink.recordError(INVALID_VALUE);
+        return;
+      }
+      this.tfBoundBuffer = buffer;
+      return;
+    }
+    super.bindBufferBase(target, index, buffer);
+  }
+
+  /** Allocate storage for the transform-feedback-bound buffer; other targets defer to WebGL1. */
+  override bufferData(target: number, sizeOrData: number | ArrayBufferView | ArrayBuffer, usage: number): void {
+    if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      const buf = this.tfBoundBuffer;
+      if (buf === null) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (typeof sizeOrData === 'number') {
+        if (sizeOrData < 0) {
+          sink.recordError(INVALID_VALUE);
+          return;
+        }
+        buf.data = new ArrayBuffer(sizeOrData);
+        buf.byteLength = sizeOrData;
+        buf.usage = usage;
+        return;
+      }
+      const src = sizeOrData instanceof ArrayBuffer
+        ? new Uint8Array(sizeOrData)
+        : new Uint8Array(
+            (sizeOrData as ArrayBufferView).buffer,
+            (sizeOrData as ArrayBufferView).byteOffset,
+            (sizeOrData as ArrayBufferView).byteLength,
+          );
+      const copy = new Uint8Array(src.byteLength);
+      copy.set(src);
+      buf.data = copy.buffer;
+      buf.byteLength = copy.byteLength;
+      buf.usage = usage;
+      return;
+    }
+    super.bufferData(target, sizeOrData, usage);
+  }
+
+  /** Read buffer data into a destination view; unwritten regions read back as zero. */
+  getBufferSubData(target: number, srcByteOffset: number, dstData: ArrayBufferView): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    let src: Uint8Array | null = null;
+    if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
+      if (this.tfBoundBuffer?.data instanceof ArrayBuffer) {
+        src = new Uint8Array(this.tfBoundBuffer.data);
+      }
+    } else {
+      const mgr = (this as unknown as { bufferManager: { getBoundBuffer(t: number): BufferObject | null } }).bufferManager;
+      const bound = mgr.getBoundBuffer(target);
+      if (bound?.data instanceof ArrayBuffer) src = new Uint8Array(bound.data);
+    }
+    const dst = new Uint8Array(dstData.buffer, dstData.byteOffset, dstData.byteLength);
+    if (src === null || srcByteOffset < 0) {
+      sink.recordError(INVALID_OPERATION);
+      dst.fill(0);
+      return;
+    }
+    if (srcByteOffset >= src.byteLength) {
+      dst.fill(0);
+      return;
+    }
+    const available = Math.min(dst.byteLength, src.byteLength - srcByteOffset);
+    if (available > 0) dst.set(src.subarray(srcByteOffset, srcByteOffset + available));
+    if (available < dst.byteLength) dst.subarray(available).fill(0);
+  }
+
+  /** POINTS draw path with transform-feedback capture; other modes defer to WebGL1. */
+  override drawArrays(
+    mode?: number,
+    first?: number,
+    count?: number,
+    directGeometry?: readonly import('./webgl1-context').DirectVertex[],
+  ): void {
+    if ((mode as number) === (POINTS as number)) {
+      if (this.isContextLost()) return;
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      const f = first ?? 0;
+      const c = count ?? 0;
+      if (f < 0 || c < 0) {
+        sink.recordError(INVALID_VALUE);
+        return;
+      }
+      if (this.tfActive) {
+        this.captureTfRange(null, f, c);
+        return;
+      }
+    }
+    super.drawArrays(mode, first, count, directGeometry);
+  }
+
+  /** POINTS indexed draw path with transform-feedback capture; other modes defer to WebGL1. */
+  override drawElements(mode?: number, count?: number, type?: number, offset?: number): void {
+    if ((mode as number) === (POINTS as number)) {
+      if (this.isContextLost()) return;
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      const c = count ?? 0;
+      const off = offset ?? 0;
+      if (c < 0 || off < 0) {
+        sink.recordError(INVALID_VALUE);
+        return;
+      }
+      if (this.tfActive) {
+        const mgr = (this as unknown as { bufferManager: { getBoundBuffer(t: number): BufferObject | null } }).bufferManager;
+        const bound = mgr.getBoundBuffer(ELEMENT_ARRAY_BUFFER);
+        if (bound === null || bound.data === null) {
+          sink.recordError(INVALID_OPERATION);
+          return;
+        }
+        const indices = resolveIndexSequence(bound.data, off, c, (type ?? 0) as never);
+        this.captureTfRange(indices, 0, indices.length);
+        return;
+      }
+    }
+    super.drawElements(mode as number, count as number, type as number, offset as number);
+  }
+
+  /** TRIANGLES hook: run the normal raster path, then capture varyings while TF is active. */
+  protected override drawBufferedTrianglesCore(
+    indices: ReadonlyArray<number> | null,
+    first: number,
+    count: number,
+    instanceCount = 1,
+  ): void {
+    super.drawBufferedTrianglesCore(indices, first, count, instanceCount);
+    if (this.tfActive) this.captureTfRange(indices, first, count);
+  }
+
+  /** Validate registered varyings at link time (post-link registration already rejected). */
+  override linkProgram(program: WebGLProgram | null): void {
+    super.linkProgram(program);
+    const id = (program as WebGLProgram | null)?.id;
+    if (typeof id !== 'number') return;
+    const pending = this.tfVaryingsByProgram.get(id);
+    if (pending === undefined || pending.length === 0) return;
+    const prog = (program as WebGLProgram).handle;
+    const linked = prog.linkedProgram;
+    if (linked === null || linked === undefined) return;
+    const declared = new Set<string>((linked.vs.declaredOutputs ?? []).map((o) => o.name));
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    for (const name of pending) {
+      if (!declared.has(name)) {
+        prog.linkStatus = false;
+        prog.infoLog = 'transformFeedbackVaryings: varying ' + name + ' not written by vertex shader';
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+    }
+  }
+
+  /** Per-vertex TF capture: re-evaluate the vertex shader and interleave registered varyings. */
+  private captureTfRange(indices: ReadonlyArray<number> | null, first: number, count: number): void {
+    const prog = (this as unknown as { currentProgram: WebGLProgram | null }).currentProgram;
+    const linked = prog?.handle.linkedProgram;
+    if (prog === null || prog === undefined || linked === null || linked === undefined) return;
+    const ids = this.tfVaryingsByProgram.get(prog.id) ?? [];
+    const names = ids.length > 0 ? ids : (linked.vs.declaredOutputs ?? []).map((o) => o.name);
+    if (names.length === 0) return;
+    if (this.tfBoundBuffer === null || this.tfBoundBuffer.data === null) return;
+    const glState = (this as unknown as GLStateInternals).glState;
+    const descriptors: import('./state').VertexAttribDescriptor[] = [];
+    for (let i = 0; i < 16; i += 1) {
+      const desc = glState.getVertexAttrib(i);
+      if (desc === null) return;
+      descriptors.push(desc);
+    }
+    const targetMap = createVertexAttribTargetMap(linked.activeAttribs);
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    const host = {
+      readUniform: (): number => 0,
+      reportFault: (): void => {
+        sink.recordError(INVALID_OPERATION);
+      },
+      sample: (): Float32Array => new Float32Array([0, 0, 0, 1]),
+    };
+    const lookup = (h: unknown): BufferObject | null => (h as BufferObject | null) ?? null;
+    const view = new Float32Array(this.tfBoundBuffer.data);
+    const seq: number[] = indices !== null ? [...indices] : Array.from({ length: count }, (_, k) => first + k);
+    const viewCache = new Map<ArrayBuffer, DataView>();
+    for (const vertexId of seq) {
+      fetchVertexAttributes(descriptors, lookup, vertexId, linked.activeAttribs, targetMap, viewCache, 0);
+      const out = executeVertex(linked, vertexId, targetMap, host, 0);
+      for (const name of names) {
+        const v = out.varyings.get(name) ?? new Float32Array([0, 0, 0, 1]);
+        for (let k = 0; k < 4; k += 1) {
+          if (this.tfWriteFloats < view.length) view[this.tfWriteFloats] = v[k] ?? 0;
+          this.tfWriteFloats += 1;
+        }
+      }
+    }
   }
 
   /** Clear a single float-valued buffer (COLOR/DEPTH/STENCIL) on one draw-buffer attachment. */
