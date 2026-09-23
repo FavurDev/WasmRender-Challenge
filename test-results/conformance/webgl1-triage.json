@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-23T04:49:02.532Z",
+  "timestamp": "2026-09-23T08:14:15.308Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 3,
@@ -20,7 +20,9 @@
       "passed": false,
       "skipped": true,
       "skipReason": "Requires GLSL 3.00 es",
-      "drainedErrors": []
+      "drainedErrors": [],
+      "classification": "harness-limitation",
+      "rootCauseGroup": "G4"
     },
     {
       "id": "test-b",
@@ -28,7 +30,9 @@
       "passed": false,
       "skipped": true,
       "skipReason": "UNEXPLAINED_SKIP (counts as failure per ADR-017)",
-      "drainedErrors": []
+      "drainedErrors": [],
+      "classification": "spec-defect",
+      "rootCauseGroup": "G4"
     }
   ]
 }

@@ -28,6 +28,9 @@ export interface ExecutionReport {
   crash: CrashInfo | null;
 }
 
+export type TestClassification = 'spec-defect' | 'float-edge' | 'missing-entry-point' | 'harness-limitation';
+export type RootCauseGroup = 'G1' | 'G2' | 'G3' | 'G4';
+
 export interface TestRecord {
   id: string;
   status: 'PASS' | 'FAIL' | 'CRASH' | 'SKIP';
@@ -36,8 +39,58 @@ export interface TestRecord {
   assertions?: TestAssertion[];
   skipped?: boolean;
   skipReason?: string;
+  classification?: TestClassification;
+  rootCauseGroup?: RootCauseGroup;
   error?: string;
   stack?: string;
+}
+
+export function classifyFailure(
+  id: string,
+  verdict: 'FAIL' | 'CRASH',
+  drainedErrors: number[],
+  errorMsg?: string | null,
+  assertions?: TestAssertion[],
+): { classification: TestClassification; rootCauseGroup: RootCauseGroup } {
+  void verdict;
+  void drainedErrors;
+  const msg = (errorMsg ?? '') + ' ' + (assertions ?? []).map((a) => a.message).join(' ');
+  const lower = msg.toLowerCase();
+  const idLower = (id ?? '').toLowerCase();
+  if (
+    lower.includes('finish is not a function') ||
+    lower.includes('flush is not a function') ||
+    lower.includes('linewidth is not a function') ||
+    lower.includes('getshaderprecisionformat is not a function')
+  ) {
+    return { classification: 'missing-entry-point', rootCauseGroup: 'G2' };
+  }
+  if (
+    idLower.includes('gl-shader-test') ||
+    lower.includes('compile') ||
+    lower.includes('link')
+  ) {
+    return { classification: 'spec-defect', rootCauseGroup: 'G1' };
+  }
+  if (
+    lower.includes('tolerance') ||
+    lower.includes('differs by') ||
+    lower.includes('within float epsilon') ||
+    idLower.includes('gl-point-coord') ||
+    idLower.includes('float') ||
+    idLower.includes('precision')
+  ) {
+    return { classification: 'float-edge', rootCauseGroup: 'G3' };
+  }
+  if (
+    lower.includes('synthetic uncaught exception') ||
+    lower.includes('harness') ||
+    lower.includes('timeout') ||
+    lower.includes('out of memory')
+  ) {
+    return { classification: 'harness-limitation', rootCauseGroup: 'G4' };
+  }
+  return { classification: 'spec-defect', rootCauseGroup: 'G1' };
 }
 
 export interface TriageSummary {
@@ -466,9 +519,10 @@ export class CTSTriageLogger {
 
   recordTestResult(testId: string, result: ExecutionReport): void {
     this.executedCount += 1;
-    if (result.crash !== null) {
+    if (result.crash !== null && result.crash !== undefined) {
       this.crashedCount += 1;
       this.failedCount += 1;
+      const c = classifyFailure(testId, 'CRASH', result.drainedErrors, result.crash.message, result.assertions);
       this.records.push({
         id: testId,
         status: 'CRASH',
@@ -476,6 +530,8 @@ export class CTSTriageLogger {
         drainedErrors: [...result.drainedErrors],
         error: result.crash.message,
         stack: result.crash.stack,
+        classification: c.classification,
+        rootCauseGroup: c.rootCauseGroup,
       });
     } else if (result.verdict === 'PASS') {
       this.passedCount += 1;
@@ -488,12 +544,15 @@ export class CTSTriageLogger {
       });
     } else {
       this.failedCount += 1;
+      const c = classifyFailure(testId, 'FAIL', result.drainedErrors, null, result.assertions);
       this.records.push({
         id: testId,
         status: 'FAIL',
         passed: false,
         drainedErrors: [...result.drainedErrors],
         assertions: [...result.assertions],
+        classification: c.classification,
+        rootCauseGroup: c.rootCauseGroup,
       });
     }
   }
@@ -510,8 +569,19 @@ export class CTSTriageLogger {
         skipped: true,
         skipReason: 'UNEXPLAINED_SKIP (counts as failure per ADR-017)',
         drainedErrors: [],
+        classification: 'spec-defect',
+        rootCauseGroup: 'G4',
       });
     } else {
+      let classification: TestClassification = 'harness-limitation';
+      let rootCauseGroup: RootCauseGroup = 'G4';
+      if (reason.includes('precision') || reason.includes('float')) {
+        classification = 'float-edge';
+        rootCauseGroup = 'G3';
+      } else if (reason.includes('GLSL 3.00') || reason.includes('WebGL 2') || reason.includes('extension')) {
+        classification = 'harness-limitation';
+        rootCauseGroup = 'G4';
+      }
       this.records.push({
         id: testId,
         status: 'SKIP',
@@ -519,6 +589,8 @@ export class CTSTriageLogger {
         skipped: true,
         skipReason: reason,
         drainedErrors: [],
+        classification,
+        rootCauseGroup,
       });
     }
   }

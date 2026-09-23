@@ -185,7 +185,7 @@ function selectCubeFace(dir: Float32Array): { faceIndex: number; u: number; v: n
     return { faceIndex: 0, u: Math.fround(0.5), v: Math.fround(0.5) };
   }
 }
-function computeLod(
+export function computeLod(
   explicitLod: number | null,
   derivCtx: DerivativeContext | null,
   dPdx: Float32Array | null,
@@ -200,8 +200,10 @@ function computeLod(
       const dvDx = Math.fround((dPdx[1] as number) * baseHeight);
       const duDy = Math.fround((dPdy[0] as number) * baseWidth);
       const dvDy = Math.fround((dPdy[1] as number) * baseHeight);
-      const lenX = Math.fround(Math.sqrt(Math.fround(duDx * duDx + dvDx * dvDx)));
-      const lenY = Math.fround(Math.sqrt(Math.fround(duDy * duDy + dvDy * dvDy)));
+      const lenSqX = Math.fround(Math.fround(duDx * duDx) + Math.fround(dvDx * dvDx));
+      const lenSqY = Math.fround(Math.fround(duDy * duDy) + Math.fround(dvDy * dvDy));
+      const lenX = Math.fround(Math.sqrt(lenSqX));
+      const lenY = Math.fround(Math.sqrt(lenSqY));
       const rho = Math.max(lenX, lenY);
       if (!(rho > 0) || !Number.isFinite(rho)) return Math.fround(0.0);
       return Math.fround(Math.log2(rho));
@@ -209,7 +211,7 @@ function computeLod(
     if (derivCtx !== null && derivCtx !== undefined) {
       try {
         const dc = derivCtx as unknown as Record<string, unknown>;
-        if (typeof dc['dFdx'] === 'function' && typeof dc['dFdy'] === 'function') {
+        if (typeof dc['computeRho'] === 'function') {
           const rho = (derivCtx as DerivativeContext).computeRho(baseWidth, baseHeight);
           if (!(rho > 0) || !Number.isFinite(rho)) return Math.fround(0.0);
           return Math.fround(Math.log2(rho));
@@ -222,6 +224,28 @@ function computeLod(
   } catch (_e) {
     return Math.fround(0.0);
   }
+}
+
+export function selectMipLevel(
+  clampedLod: number,
+  maxLod: number,
+  minFilter: number,
+): { level0: number; level1: number; fraction: number; mode: 'single' | 'linear_blend' } {
+  if (minFilter === NEAREST || minFilter === LINEAR) {
+    return { level0: 0, level1: 0, fraction: Math.fround(0.0), mode: 'single' };
+  }
+  if (minFilter === NEAREST_MIPMAP_NEAREST || minFilter === LINEAR_MIPMAP_NEAREST) {
+    const rounded = Math.round(clampedLod);
+    const level = Math.min(maxLod, Math.max(0, rounded));
+    return { level0: level, level1: level, fraction: Math.fround(0.0), mode: 'single' };
+  }
+  if (minFilter === NEAREST_MIPMAP_LINEAR || minFilter === LINEAR_MIPMAP_LINEAR) {
+    const d0 = Math.floor(clampedLod);
+    const d1 = Math.min(maxLod, d0 + 1);
+    const frac = Math.fround(clampedLod - d0);
+    return { level0: d0, level1: d1, fraction: frac, mode: 'linear_blend' };
+  }
+  return { level0: 0, level1: 0, fraction: Math.fround(0.0), mode: 'single' };
 }
 const REAL_CUBE_FACES = [
   TEXTURE_CUBE_MAP_POSITIVE_X,
@@ -252,32 +276,31 @@ function sampleRealCube(
     const lodV = computeLod(lod ?? null, null, null, null, base.width, base.height);
     const maxLod = faceMap.size - 1;
     const clamped = Math.fround(Math.max(0, Math.min(maxLod, lodV)));
-    if (!Number.isFinite(clamped)) return sampleMipLevel2D(base, sel.u, sel.v, tex.sampler.magFilter);
-    const minFilter = tex.sampler.minFilter;
-    const magFilter = tex.sampler.magFilter;
+    const minFilter = effectiveSampler?.minFilter ?? tex.sampler.minFilter;
+    const magFilter = effectiveSampler?.magFilter ?? tex.sampler.magFilter;
+    if (!Number.isFinite(clamped)) return sampleMipLevel2D(base, sel.u, sel.v, magFilter);
     if (clamped <= 0) return sampleMipLevel2D(base, sel.u, sel.v, magFilter);
-    if (minFilter === NEAREST || minFilter === LINEAR) {
-      return sampleMipLevel2D(base, sel.u, sel.v, minFilter);
+    const selection = selectMipLevel(clamped, maxLod, minFilter);
+    if (selection.mode === 'single') {
+      const intraFilter =
+        minFilter === NEAREST_MIPMAP_NEAREST || minFilter === NEAREST ? NEAREST : LINEAR;
+      const levelObj = faceMap.get(selection.level0) ?? base;
+      return sampleMipLevel2D(levelObj, sel.u, sel.v, intraFilter);
     }
-    if (minFilter === NEAREST_MIPMAP_NEAREST || minFilter === LINEAR_MIPMAP_NEAREST) {
-      const d = Math.min(maxLod, Math.max(0, Math.round(clamped)));
-      return sampleMipLevel2D(faceMap.get(d) ?? base, sel.u, sel.v, minFilter === NEAREST_MIPMAP_NEAREST ? NEAREST : LINEAR);
-    }
-    if (minFilter === NEAREST_MIPMAP_LINEAR || minFilter === LINEAR_MIPMAP_LINEAR) {
+    {
       const intra = minFilter === NEAREST_MIPMAP_LINEAR ? NEAREST : LINEAR;
-      const d0 = Math.floor(clamped);
-      const d1 = Math.min(maxLod, d0 + 1);
-      const frac = Math.fround(clamped - d0);
-      const om = Math.fround(1 - frac);
-      const c0 = sampleMipLevel2D(faceMap.get(d0) ?? base, sel.u, sel.v, intra);
-      const c1 = sampleMipLevel2D(faceMap.get(d1) ?? base, sel.u, sel.v, intra);
+      const lvl0Obj = faceMap.get(selection.level0) ?? base;
+      const lvl1Obj = faceMap.get(selection.level1) ?? base;
+      const c0 = sampleMipLevel2D(lvl0Obj, sel.u, sel.v, intra);
+      const c1 = sampleMipLevel2D(lvl1Obj, sel.u, sel.v, intra);
+      const frac = selection.fraction;
+      const om = Math.fround(1.0 - frac);
       const out = new Float32Array(4);
       for (let i = 0; i < 4; i++) {
         out[i] = Math.fround(Math.fround((c0[i] as number) * om) + Math.fround((c1[i] as number) * frac));
       }
       return out;
     }
-    return sampleMipLevel2D(base, sel.u, sel.v, NEAREST);
   } catch (_e) {
     void _e;
     return black();
