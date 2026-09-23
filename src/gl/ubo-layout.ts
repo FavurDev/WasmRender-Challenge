@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 8 remediation (46ba504): std140 matrix-array arrayStride corrected to 32/48/64 per ES 3.0 section 2.11 (removed Sprint-4 MEDIUM-1 deviation).
 /** std140 UBO layout engine — pure deterministic OpenGL ES 3.0 rules. */
 export interface UboMemberDescriptor {
   name: string;

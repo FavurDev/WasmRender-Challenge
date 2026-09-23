@@ -3,6 +3,7 @@
 // CHANGELOG: Sprint 5 (2026-09-21): vertexAttribPointer/drawArrays orchestrator, validateUniform extraction (TD-009), depth-state facade methods
 // CHANGELOG: Sprint 6 (2026-09-21): Texture/sampler facade wiring — texture API family, sampler params, unpack flags, fragment-path sampling (Tasks 1-2, 4-5)
 // CHANGELOG: Sprint 7 Tasks 1-5 (2026-09-21): Facade wiring for FBO/stencil/depth/scissor/blend/drawElements/getParameter/lost-flag gating.
+// CHANGELOG: Sprint 8 remediation (46ba504): removed canned legacy UBO blocks and string-handle path; uboResolveBlocks uses linked-program data only.
 /** WebGL1Context — minimal WebGL 1.0 facade; composition root (ADR-013). */
 import {
   ACTIVE_ATTRIBUTES,
