@@ -769,10 +769,6 @@ export class WebGL1Context {
    */
   drawArrays(mode?: number, first?: number, count?: number, directGeometry?: readonly DirectVertex[]): void {
     if (this.errorSink.isContextLost()) return;
-    if (mode === undefined || mode === null) {
-      this.fillFromUboSlot0();
-      return;
-    }
     const firstN = first ?? 0;
     const countN = count ?? 0;
     if (!VALID_PRIMITIVE_MODE_SET.has(mode as GLenum)) {
@@ -1451,7 +1447,6 @@ export class WebGL1Context {
     const flat: Array<{ offset: number; arrayStride: number; matrixStride: number }> = [];
     for (const b of blocks) for (const m of b.members) flat.push(m as { offset: number; arrayStride: number; matrixStride: number });
     if (pname === (UNIFORM_OFFSET as number)) {
-      if (indices.length === 1 && indices[0] === 0) return flat.map((m) => m.offset);
       return indices.map((i) => (i >= 0 && i < flat.length ? (flat[i] as { offset: number }).offset : 0));
     }
     if (pname === (UNIFORM_ARRAY_STRIDE as number)) {
@@ -1511,27 +1506,6 @@ export class WebGL1Context {
     if (target !== 35374) return null;
     if (index < 0 || index >= this.uboIndexedSlots.length) return null;
     return this.uboIndexedSlots[index];
-  }
-
-  /** UBO: fill the drawing buffer from indexed slot 0 (first 4 floats as RGBA). */
-  private fillFromUboSlot0(): void {
-    try {
-      const slot = this.uboIndexedSlots[0];
-      const raw = slot?.data;
-      if (raw === null || raw === undefined) return;
-      const floats = new Float32Array(raw as ArrayBuffer);
-      if (floats.length < 4) return;
-      const toByte = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
-      const buf = this.drawingBuffer.getColorBuffer();
-      for (let i = 0; i + 3 < buf.length; i += 4) {
-        buf[i] = toByte(floats[0] as number);
-        buf[i + 1] = toByte(floats[1] as number);
-        buf[i + 2] = toByte(floats[2] as number);
-        buf[i + 3] = toByte(floats[3] as number);
-      }
-    } catch (_e) {
-      void _e;
-    }
   }
 
   // ---- Sprint 7: framebuffer/renderbuffer facade ----
