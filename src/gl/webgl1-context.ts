@@ -29,6 +29,16 @@ import {
   FLOAT_VEC3,
   FLOAT_VEC4,
   FRAGMENT_SHADER,
+  HIGH_FLOAT,
+  HIGH_INT,
+  INVALID_ENUM,
+  INVALID_VALUE,
+  LINE_WIDTH,
+  LOW_FLOAT,
+  LOW_INT,
+  MEDIUM_FLOAT,
+  MEDIUM_INT,
+  VALID_PRECISION_TYPE_SET,
   COLOR_ATTACHMENT0,
   DEPTH_ATTACHMENT,
   STENCIL_ATTACHMENT,
@@ -37,10 +47,8 @@ import {
   FRAMEBUFFER_BINDING,
   FRAMEBUFFER_COMPLETE,
   FRAMEBUFFER_UNSUPPORTED,
-  INVALID_ENUM,
   INVALID_FRAMEBUFFER_OPERATION,
   INVALID_OPERATION,
-  INVALID_VALUE,
   LIMIT_ALIASED_LINE_WIDTH_RANGE,
   LIMIT_ALIASED_POINT_SIZE_RANGE,
   LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL1,
@@ -119,6 +127,7 @@ import {
   BOOL_VEC2,
   BOOL_VEC3,
   BOOL_VEC4,
+  NO_ERROR as NO_ERROR_CONST,
   VERTEX_SHADER,
   VIEWPORT,
   UNIFORM_BUFFER,
@@ -223,6 +232,25 @@ export class WebGLActiveInfo {
     public readonly type: number,
   ) {}
 }
+
+/** WebGLShaderPrecisionFormat record (GLSL ES 1.00 Section 4.5 minima). */
+export interface WebGLShaderPrecisionFormat {
+  readonly rangeMin: number;
+  readonly rangeMax: number;
+  readonly precision: number;
+}
+
+const PRECISION_FORMAT_TABLE: ReadonlyMap<GLenum, WebGLShaderPrecisionFormat> = (() => {
+  const entries: Array<[GLenum, WebGLShaderPrecisionFormat]> = [
+    [HIGH_FLOAT, Object.freeze({ rangeMin: 127, rangeMax: 127, precision: 24 })],
+    [MEDIUM_FLOAT, Object.freeze({ rangeMin: 14, rangeMax: 14, precision: 10 })],
+    [LOW_FLOAT, Object.freeze({ rangeMin: 1, rangeMax: 1, precision: 8 })],
+    [HIGH_INT, Object.freeze({ rangeMin: 30, rangeMax: 30, precision: 0 })],
+    [MEDIUM_INT, Object.freeze({ rangeMin: 14, rangeMax: 14, precision: 0 })],
+    [LOW_INT, Object.freeze({ rangeMin: 8, rangeMax: 8, precision: 0 })],
+  ];
+  return new Map<GLenum, WebGLShaderPrecisionFormat>(entries);
+})();
 
 const DEFAULT_WIDTH = 300;
 const DEFAULT_HEIGHT = 150;
@@ -375,6 +403,11 @@ export function sampleSnapshotTexture(
 /** Minimal WebGL 1.0 context facade composing ErrorSink, GLState, DrawingBuffer, raster core. */
 export class WebGL1Context {
   readonly canvas: { width: number; height: number };
+  // WebGLRenderingContext enum mirrors (F5/F9 exactness: tests address enums via gl.*).
+  readonly VERTEX_SHADER: GLenum = VERTEX_SHADER;
+  readonly FRAGMENT_SHADER: GLenum = FRAGMENT_SHADER;
+  readonly COMPILE_STATUS: GLenum = COMPILE_STATUS;
+  readonly NO_ERROR: GLenum = NO_ERROR_CONST;
   private readonly errorSink: ErrorSink;
   private readonly glState: GLState;
   private readonly drawingBuffer: DrawingBuffer;
@@ -610,6 +643,40 @@ export class WebGL1Context {
   frontFace(mode: number): void {
     if (this.errorSink.isContextLost()) return;
     this.glState.setFrontFace(mode as GLenum);
+  }
+
+  /** Block until all GL execution completes; synchronous CPU renderer: immediate no-op. */
+  finish(): void {
+    if (this.errorSink.isContextLost()) return;
+  }
+
+  /** Force execution of GL commands; synchronous CPU renderer: immediate no-op. */
+  flush(): void {
+    if (this.errorSink.isContextLost()) return;
+  }
+
+  /** Set line rasterization width; non-finite or <= 0 records INVALID_VALUE without mutating state. */
+  lineWidth(width: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (!Number.isFinite(width) || width <= 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.glState.setLineWidth(width);
+  }
+
+  /** Return memoized range/precision for a shader/precision pair; invalid enums record INVALID_ENUM and return null. */
+  getShaderPrecisionFormat(shaderType: number, precisionType: number): WebGLShaderPrecisionFormat | null {
+    if (this.errorSink.isContextLost()) return null;
+    if (shaderType !== VERTEX_SHADER && shaderType !== FRAGMENT_SHADER) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return null;
+    }
+    if (!VALID_PRECISION_TYPE_SET.has(precisionType as GLenum)) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return null;
+    }
+    return PRECISION_FORMAT_TABLE.get(precisionType as GLenum) ?? null;
   }
 
   /**
@@ -1289,6 +1356,9 @@ export class WebGL1Context {
     }
     if (pname === STENCIL_CLEAR_VALUE) {
       return this.glState.getClearStencil();
+    }
+    if (pname === LINE_WIDTH) {
+      return this.glState.getLineWidth();
     }
     this.errorSink.recordError(INVALID_ENUM);
     return null;

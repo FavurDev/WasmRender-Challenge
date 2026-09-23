@@ -473,3 +473,13 @@ export const VALID_FRAMEBUFFER_STATUS_SET: ReadonlySet<GLenum> = Object.freeze(
 export const VALID_ERROR_CODE_SET: ReadonlySet<GLenum> = Object.freeze(
   new Set<GLenum>([NO_ERROR, INVALID_ENUM, INVALID_VALUE, INVALID_OPERATION, OUT_OF_MEMORY, INVALID_FRAMEBUFFER_OPERATION, CONTEXT_LOST_WEBGL]),
 );
+// Shader precision types (GLSL ES 1.00 Section 4.5)
+export const LOW_FLOAT: GLenum = 0x8df0;
+export const MEDIUM_FLOAT: GLenum = 0x8df1;
+export const HIGH_FLOAT: GLenum = 0x8df2;
+export const LOW_INT: GLenum = 0x8df3;
+export const MEDIUM_INT: GLenum = 0x8df4;
+export const HIGH_INT: GLenum = 0x8df5;
+export const VALID_PRECISION_TYPE_SET: ReadonlySet<GLenum> = Object.freeze(
+  new Set<GLenum>([LOW_FLOAT, MEDIUM_FLOAT, HIGH_FLOAT, LOW_INT, MEDIUM_INT, HIGH_INT]),
+);

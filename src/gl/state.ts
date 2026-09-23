@@ -204,6 +204,7 @@ export interface IGLState {
   setCullFace(mode: GLenum): void;
   setFrontFace(mode: GLenum): void;
   setLineWidth(width: number): void;
+  getLineWidth(): number;
   setPolygonOffset(factor: number, units: number): void;
   setSampleCoverage(value: number, invert: boolean): void;
   setPixelStorei(pname: GLenum, param: number | boolean): void;
@@ -485,6 +486,8 @@ export class GLState implements IGLState {
     if (!Number.isFinite(width) || width <= 0) { this.errorSink.recordError(INVALID_VALUE); return; }
     this.rasterState.lineWidth = width;
   }
+
+  getLineWidth(): number { return this.rasterState.lineWidth; }
 
   setPolygonOffset(factor: number, units: number): void {
     this.rasterState.polygonOffsetFactor = factor;
