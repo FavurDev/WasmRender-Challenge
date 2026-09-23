@@ -173,7 +173,7 @@ describe('G2: drawElements error matrix', () => {
     expect(gl.getError()).toBe(NO_ERROR);
     const before = snapshot(gl);
     // Act:
-    de(gl).call(gl, LINES, 3, UNSIGNED_SHORT, 0);
+    de(gl).call(gl, 0x9999, 3, UNSIGNED_SHORT, 0);
     // Assert:
     expect(gl.getError()).toBe(INVALID_ENUM);
     expect(Array.from(snapshot(gl))).toEqual(Array.from(before));

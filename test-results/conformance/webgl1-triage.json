@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-22T22:59:27.707Z",
+  "timestamp": "2026-09-23T01:40:41.173Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 673,
@@ -2140,19 +2140,11 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: cullFace"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: finish"
         },
         {
           "success": false,
           "message": "Property either does not exist or is not a function: flush"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: frontFace"
         },
         {
           "success": false,
@@ -2173,10 +2165,6 @@
         {
           "success": false,
           "message": "Property either does not exist or is not a function: getVertexAttribOffset"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: hint"
         },
         {
           "success": false,

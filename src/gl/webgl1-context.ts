@@ -84,7 +84,23 @@ import {
   TEXTURE_CUBE_MAP,
   RGBA,
   TRIANGLES,
+  TRIANGLE_STRIP,
+  TRIANGLE_FAN,
+  POINTS,
+  LINES,
+  LINE_STRIP,
+  LINE_LOOP,
+  BACK,
+  FRONT,
+  FRONT_AND_BACK,
+  CCW,
+  CW,
+  GENERATE_MIPMAP_HINT,
+  FASTEST,
+  NICEST,
+  DONT_CARE,
   VALID_DEPTH_FUNC_SET,
+  VALID_PRIMITIVE_MODE_SET,
   VALIDATE_STATUS,
   VENDOR,
   VERSION,
@@ -117,7 +133,7 @@ import {
 import type { GLenum } from './constants';
 import { ErrorSink } from './errors';
 import { GLState } from './state';
-import type { CanvasDimensions, VertexAttribDescriptor } from './state';
+import type { CanvasDimensions, PipelineState, VertexAttribDescriptor } from './state';
 import { BufferManager } from './buffer';
 import type { BufferObject } from './buffer';
 import { TextureManager, isMipmapFilter } from './texture';
@@ -137,6 +153,9 @@ import type { WebGLContextAttributes } from './context-attributes';
 import { clipTriangle } from '../raster/clipper';
 import type { ClipVertex } from '../raster/clipper';
 import { mapClipToScreen, rasterizeTriangle } from '../raster/rasterizer';
+import type { ScreenVertex } from '../raster/rasterizer';
+import { applyBlendAndWrite } from '../raster/blend';
+import { executeFragmentDepthStencil } from '../raster/depth-stencil';
 import { tokenize } from '../glsl/tokenizer';
 import { runPreprocessor } from '../glsl/preprocessor';
 import { parse } from '../glsl/parser';
@@ -580,6 +599,164 @@ export class WebGL1Context {
     this.glState.setEnable(cap as GLenum, false);
   }
 
+  /** Set the cull-face mode; invalid enums record INVALID_ENUM via GLState. */
+  cullFace(mode: number): void {
+    if (this.errorSink.isContextLost()) return;
+    this.glState.setCullFace(mode as GLenum);
+  }
+
+  /** Set the front-face winding; invalid enums record INVALID_ENUM via GLState. */
+  frontFace(mode: number): void {
+    if (this.errorSink.isContextLost()) return;
+    this.glState.setFrontFace(mode as GLenum);
+  }
+
+  /**
+   * Set a pixel-store hint. WebGL1 defines GENERATE_MIPMAP_HINT as the only
+   * valid target and FASTEST/NICEST/DONT_CARE as the only valid modes; the
+   * hint is a no-op on success and records INVALID_ENUM otherwise.
+   */
+  hint(target: number, mode: number): void {
+    if (this.errorSink.isContextLost()) return;
+    if (target !== GENERATE_MIPMAP_HINT) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (mode !== FASTEST && mode !== NICEST && mode !== DONT_CARE) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+  }
+
+  /** Clip/map/rasterize one triangle; culling handled inside rasterizeTriangle. */
+  private emitTriangleFromClip(
+    a: ClipVertex,
+    b: ClipVertex,
+    c: ClipVertex,
+    pipelineState: PipelineState,
+    activeTarget: DrawingBuffer | FboTarget,
+    shade: ((fragVaryings: Float32Array, px: number, py: number) => Float32Array | null) | null,
+  ): void {
+    const clippedFan: ClipVertex[] = clipTriangle(a, b, c);
+    if (clippedFan.length < 3) return;
+    for (let fanIdx = 1; fanIdx < clippedFan.length - 1; fanIdx++) {
+      const sv0 = mapClipToScreen(clippedFan[0] as ClipVertex, pipelineState);
+      const sv1 = mapClipToScreen(clippedFan[fanIdx] as ClipVertex, pipelineState);
+      const sv2 = mapClipToScreen(clippedFan[fanIdx + 1] as ClipVertex, pipelineState);
+      rasterizeTriangle(sv0, sv1, sv2, pipelineState, activeTarget as DrawingBuffer, shade, this.getSamplePassedCallback());
+    }
+  }
+
+  /** Write one point/line pixel through depth-stencil, shade, and blend stages. */
+  private writePointOrLinePixel(
+    color: Uint8Array,
+    ds: Uint32Array,
+    bufW: number,
+    bufH: number,
+    state: PipelineState,
+    shade: ((fragVaryings: Float32Array, px: number, py: number) => Float32Array | null) | null,
+    varyings: Float32Array,
+    x: number,
+    y: number,
+    depth01: number,
+  ): void {
+    if (x < 0 || y < 0 || x >= bufW || y >= bufH) return;
+    const vp = state.viewport;
+    if (x < Math.floor(vp.x) || y < Math.floor(vp.y)) return;
+    if (x > Math.ceil(vp.x + vp.width) - 1 || y > Math.ceil(vp.y + vp.height) - 1) return;
+    const idx = y * bufW + x;
+    const clamped = Number.isNaN(depth01) ? 0 : Math.min(Math.max(depth01, 0), 1);
+    const depth24 = Math.round(clamped * 16777215) & 16777215;
+    const dsPassed = executeFragmentDepthStencil(x, y, depth24, true, state, ds, idx);
+    const cb = this.getSamplePassedCallback();
+    if (dsPassed && cb !== null && cb !== undefined) cb();
+    if (!dsPassed) return;
+    let srcR = 1;
+    let srcG = 1;
+    let srcB = 1;
+    let srcA = 1;
+    const shaded = shade !== null && shade !== undefined ? shade(varyings, x, y) : null;
+    if (shaded !== null && shaded !== undefined) {
+      srcR = shaded[0] as number;
+      srcG = shaded[1] as number;
+      srcB = shaded[2] as number;
+      srcA = shaded[3] as number;
+    } else if (varyings.length >= 4) {
+      srcR = varyings[0] as number;
+      srcG = varyings[1] as number;
+      srcB = varyings[2] as number;
+      srcA = varyings[3] as number;
+    } else if (varyings.length === 3) {
+      srcR = varyings[0] as number;
+      srcG = varyings[1] as number;
+      srcB = varyings[2] as number;
+      srcA = 1;
+    }
+    applyBlendAndWrite(color, idx * 4, srcR, srcG, srcB, srcA, state, x, y, false);
+  }
+
+  /** Rasterize a 1-px Bresenham span between two screen vertices with varying lerp. */
+  private rasterizeLineSpan(
+    s0: ScreenVertex,
+    s1: ScreenVertex,
+    pipelineState: PipelineState,
+    activeTarget: DrawingBuffer | FboTarget,
+    shade: ((fragVaryings: Float32Array, px: number, py: number) => Float32Array | null) | null,
+  ): void {
+    const x0 = Math.round(s0.x / 16);
+    const y0 = Math.round(s0.y / 16);
+    const x1 = Math.round(s1.x / 16);
+    const y1 = Math.round(s1.y / 16);
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const steps = Math.max(dx, dy);
+    const color = activeTarget.getColorBuffer();
+    const ds = activeTarget.getDepthStencilBuffer();
+    const bufW = activeTarget.getWidth();
+    const bufH = activeTarget.getHeight();
+    const n = Math.max(s0.varyings.length, s1.varyings.length);
+    const tmp = new Float32Array(n);
+    if (steps === 0) {
+      tmp.set(s0.varyings);
+      this.writePointOrLinePixel(color, ds, bufW, bufH, pipelineState, shade, tmp, x0, y0, s0.z);
+      return;
+    }
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = Math.round(x0 + (x1 - x0) * t);
+      const y = Math.round(y0 + (y1 - y0) * t);
+      for (let k = 0; k < n; k++) {
+        const a = k < s0.varyings.length ? (s0.varyings[k] as number) : 0;
+        const b = k < s1.varyings.length ? (s1.varyings[k] as number) : 0;
+        tmp[k] = a + (b - a) * t;
+      }
+      this.writePointOrLinePixel(color, ds, bufW, bufH, pipelineState, shade, tmp, x, y, s0.z + (s1.z - s0.z) * t);
+    }
+  }
+
+  /** Rasterize a gl_PointSize-scaled axis-aligned screen-space quad. */
+  private rasterizePointQuad(
+    center: ScreenVertex,
+    pointSize: number,
+    pipelineState: PipelineState,
+    activeTarget: DrawingBuffer | FboTarget,
+    shade: ((fragVaryings: Float32Array, px: number, py: number) => Float32Array | null) | null,
+  ): void {
+    const size = Math.max(1, Math.min(1024, Math.floor(pointSize)));
+    const cx = Math.round(center.x / 16);
+    const cy = Math.round(center.y / 16);
+    const half = Math.floor(size / 2);
+    const color = activeTarget.getColorBuffer();
+    const ds = activeTarget.getDepthStencilBuffer();
+    const bufW = activeTarget.getWidth();
+    const bufH = activeTarget.getHeight();
+    for (let y = cy - half; y < cy - half + size; y++) {
+      for (let x = cx - half; x < cx - half + size; x++) {
+        this.writePointOrLinePixel(color, ds, bufW, bufH, pipelineState, shade, center.varyings, x, y, center.z);
+      }
+    }
+  }
+
   /**
    * Draw TRIANGLES from direct geometry through clip/map/rasterize.
    *
@@ -597,7 +774,7 @@ export class WebGL1Context {
     }
     const firstN = first ?? 0;
     const countN = count ?? 0;
-    if (mode !== TRIANGLES) {
+    if (!VALID_PRIMITIVE_MODE_SET.has(mode as GLenum)) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
@@ -609,10 +786,10 @@ export class WebGL1Context {
       return;
     }
     if (directGeometry === undefined || directGeometry === null) {
-      this.drawBufferedTriangles(firstN, countN);
+      this.drawBufferedTriangles(firstN, countN, mode);
       return;
     }
-    if (countN % 3 !== 0) {
+    if (mode === TRIANGLES && countN % 3 !== 0) {
       this.errorSink.recordError(INVALID_OPERATION);
       return;
     }
@@ -630,26 +807,61 @@ export class WebGL1Context {
     }
     const pipelineState = this.glState.snapshot();
     const activeTarget = this.resolveActiveTarget();
-    for (let index = 0; index < countN; index += 3) {
-      const g0 = vertices[index] as DirectVertex;
-      const g1 = vertices[index + 1] as DirectVertex;
-      const g2 = vertices[index + 2] as DirectVertex;
-      const v0 = toClipVertex(g0);
-      const v1 = toClipVertex(g1);
-      const v2 = toClipVertex(g2);
-      const clippedFan: ClipVertex[] = clipTriangle(v0, v1, v2);
-      if (clippedFan.length < 3) {
-        continue;
+    const clips: ClipVertex[] = vertices.map((g) => toClipVertex(g as DirectVertex));
+    if (mode === TRIANGLES) {
+      for (let index = 0; index < countN; index += 3) {
+        this.emitTriangleFromClip(
+          clips[index] as ClipVertex,
+          clips[index + 1] as ClipVertex,
+          clips[index + 2] as ClipVertex,
+          pipelineState,
+          activeTarget,
+          null,
+        );
       }
-      for (let fanIdx = 1; fanIdx < clippedFan.length - 1; fanIdx++) {
-        const cv0 = clippedFan[0] as ClipVertex;
-        const cv1 = clippedFan[fanIdx] as ClipVertex;
-        const cv2 = clippedFan[fanIdx + 1] as ClipVertex;
-        const sv0 = mapClipToScreen(cv0, pipelineState);
-        const sv1 = mapClipToScreen(cv1, pipelineState);
-        const sv2 = mapClipToScreen(cv2, pipelineState);
-        rasterizeTriangle(sv0, sv1, sv2, pipelineState, activeTarget as DrawingBuffer, null, this.getSamplePassedCallback());
+      return;
+    }
+    if (mode === TRIANGLE_STRIP) {
+      for (let i = 0; i + 2 < countN; i++) {
+        const a = clips[i] as ClipVertex;
+        const b = clips[i + 1] as ClipVertex;
+        const c = clips[i + 2] as ClipVertex;
+        if (i % 2 === 0) this.emitTriangleFromClip(a, b, c, pipelineState, activeTarget, null);
+        else this.emitTriangleFromClip(b, a, c, pipelineState, activeTarget, null);
       }
+      return;
+    }
+    if (mode === TRIANGLE_FAN) {
+      for (let i = 1; i + 1 < countN; i++) {
+        this.emitTriangleFromClip(
+          clips[0] as ClipVertex,
+          clips[i] as ClipVertex,
+          clips[i + 1] as ClipVertex,
+          pipelineState,
+          activeTarget,
+          null,
+        );
+      }
+      return;
+    }
+    const screens = clips.map((cv) => mapClipToScreen(cv, pipelineState));
+    if (mode === POINTS) {
+      for (let i = 0; i < countN; i++) {
+        this.rasterizePointQuad(screens[i] as ScreenVertex, 1, pipelineState, activeTarget, null);
+      }
+      return;
+    }
+    const pairs: Array<[number, number]> = [];
+    if (mode === LINES) {
+      for (let i = 0; i + 1 < countN; i += 2) pairs.push([i, i + 1]);
+    } else if (mode === LINE_STRIP) {
+      for (let i = 0; i + 1 < countN; i++) pairs.push([i, i + 1]);
+    } else {
+      for (let i = 0; i + 1 < countN; i++) pairs.push([i, i + 1]);
+      if (countN > 2) pairs.push([countN - 1, 0]);
+    }
+    for (const [a, b] of pairs) {
+      this.rasterizeLineSpan(screens[a] as ScreenVertex, screens[b] as ScreenVertex, pipelineState, activeTarget, null);
     }
   }
 
@@ -678,7 +890,7 @@ export class WebGL1Context {
    */
   drawElements(mode: number, count: number, type: number, offset: number): void {
     if (this.errorSink.isContextLost()) return;
-    if (mode !== TRIANGLES) {
+    if (!VALID_PRIMITIVE_MODE_SET.has(mode as GLenum)) {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
@@ -706,11 +918,11 @@ export class WebGL1Context {
       return;
     }
     const indexList = resolveIndexSequence(bound.data, offset, count, type);
-    this.drawBufferedTrianglesCore(indexList, 0, count);
+    this.drawBufferedTrianglesCore(indexList, 0, count, 1, mode);
   }
 
-  private drawBufferedTriangles(first: number, count: number): void {
-    this.drawBufferedTrianglesCore(null, first, count);
+  private drawBufferedTriangles(first: number, count: number, mode: number = TRIANGLES): void {
+    this.drawBufferedTrianglesCore(null, first, count, 1, mode);
   }
 
   /**
@@ -721,7 +933,13 @@ export class WebGL1Context {
    *   first: First vertex index (sequential path only).
    *   count: Vertex/index count.
    */
-  protected drawBufferedTrianglesCore(indices: ReadonlyArray<number> | null, first: number, count: number, instanceCount = 1): void {
+  protected drawBufferedTrianglesCore(
+    indices: ReadonlyArray<number> | null,
+    first: number,
+    count: number,
+    instanceCount = 1,
+    mode: number = TRIANGLES,
+  ): void {
     if (this.errorSink.isContextLost()) return;
     const prog = this.currentProgram;
     if (prog === null || prog.handle.linkStatus !== true) {
@@ -839,44 +1057,57 @@ export class WebGL1Context {
       pointSize: 1,
       varyings: new Float32Array(flatWidth),
     }));
-    const triCount = Math.floor(count / 3);
-    for (let instanceIdx = 0; instanceIdx < instanceCount; instanceIdx++) {
-    for (let tri = 0; tri < triCount; tri++) {
-      for (let corner = 0; corner < 3; corner++) {
-        const vertexId = indices !== null ? (indices[tri * 3 + corner] as number) : first + tri * 3 + corner;
-        fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap, viewCache, instanceIdx);
-        const out = executeVertex(linked, vertexId, targetMap, host, instanceIdx);
-        const shell = shells[corner] as ClipVertex;
-        shell.clip[0] = out.clipPos[0] as number;
-        shell.clip[1] = out.clipPos[1] as number;
-        shell.clip[2] = out.clipPos[2] as number;
-        shell.clip[3] = out.clipPos[3] as number;
-        shell.pointSize = out.pointSize;
-        const dst = shell.varyings;
-        if (layout.length === 0) {
-          const flat = flatColor as Float32Array;
-          dst[0] = flat[0] as number;
-          dst[1] = flat[1] as number;
-          dst[2] = flat[2] as number;
-          dst[3] = flat[3] as number;
-        } else {
-          for (let slot = 0; slot < layout.length; slot++) {
-            const item = layout[slot] as { name: string };
-            const vec = out.varyings.get(item.name);
-            const o = slot * 4;
-            if (vec !== undefined) {
-              dst[o] = vec[0] as number;
-              dst[o + 1] = vec[1] as number;
-              dst[o + 2] = vec[2] as number;
-              dst[o + 3] = vec[3] as number;
-            } else {
-              dst[o] = 0;
-              dst[o + 1] = 0;
-              dst[o + 2] = 0;
-              dst[o + 3] = 1;
-            }
+    // Execute one vertex into a fresh ClipVertex record.
+    const runVertex = (vertexId: number, instanceIdx: number): ClipVertex => {
+      fetchVertexAttributes(descriptors, bufferLookup, vertexId, linked.activeAttribs, targetMap, viewCache, instanceIdx);
+      const out = executeVertex(linked, vertexId, targetMap, host, instanceIdx);
+      const shell: ClipVertex = {
+        clip: [out.clipPos[0] as number, out.clipPos[1] as number, out.clipPos[2] as number, out.clipPos[3] as number],
+        pointSize: out.pointSize,
+        varyings: new Float32Array(flatWidth),
+      };
+      const dst = shell.varyings;
+      if (layout.length === 0) {
+        const flat = flatColor as Float32Array;
+        dst[0] = flat[0] as number;
+        dst[1] = flat[1] as number;
+        dst[2] = flat[2] as number;
+        dst[3] = flat[3] as number;
+      } else {
+        for (let slot = 0; slot < layout.length; slot++) {
+          const item = layout[slot] as { name: string };
+          const vec = out.varyings.get(item.name);
+          const o = slot * 4;
+          if (vec !== undefined) {
+            dst[o] = vec[0] as number;
+            dst[o + 1] = vec[1] as number;
+            dst[o + 2] = vec[2] as number;
+            dst[o + 3] = vec[3] as number;
+          } else {
+            dst[o] = 0;
+            dst[o + 1] = 0;
+            dst[o + 2] = 0;
+            dst[o + 3] = 1;
           }
         }
+      }
+      return shell;
+    };
+    const resolveVertexId = (slot: number): number =>
+      indices !== null ? (indices[slot] as number) : first + slot;
+    const triCount = Math.floor(count / 3);
+    for (let instanceIdx = 0; instanceIdx < instanceCount; instanceIdx++) {
+    if (mode === TRIANGLES) {
+    for (let tri = 0; tri < triCount; tri++) {
+      for (let corner = 0; corner < 3; corner++) {
+        const built = runVertex(resolveVertexId(tri * 3 + corner), instanceIdx);
+        const shell = shells[corner] as ClipVertex;
+        shell.clip[0] = built.clip[0];
+        shell.clip[1] = built.clip[1];
+        shell.clip[2] = built.clip[2];
+        shell.clip[3] = built.clip[3];
+        shell.pointSize = built.pointSize;
+        shell.varyings.set(built.varyings);
       }
       const clippedFan: ClipVertex[] = clipTriangle(shells[0] as ClipVertex, shells[1] as ClipVertex, shells[2] as ClipVertex);
       if (clippedFan.length < 3) {
@@ -905,6 +1136,74 @@ export class WebGL1Context {
           }
         };
         rasterizeTriangle(sv0, sv1, sv2, pipelineState, activeTarget as DrawingBuffer, shade, this.getSamplePassedCallback());
+      }
+    }
+    } // end TRIANGLES
+    // Sprint 8 Task 11: non-TRIANGLES assembly reusing the same shade closure.
+    const shadeBuffered = (
+      fragVaryings: Float32Array,
+    ): Float32Array | null => {
+      try {
+        const varyingMap = new Map<string, Float32Array>();
+        for (let li = 0; li < layout.length; li++) {
+          const item = layout[li] as { name: string };
+          const o = li * 4;
+          varyingMap.set(item.name, fragVaryings.slice(o, o + 4));
+        }
+        const frag = executeFragment(linked, varyingMap, host, true);
+        if (frag.discarded === true) return null;
+        this.routeMrtOutputs(linked, frag);
+        return frag.color;
+      } catch (_e) {
+        void _e;
+        return null;
+      }
+    };
+    if (mode === TRIANGLE_STRIP) {
+      for (let i = 0; i + 2 < count; i++) {
+        const a = runVertex(resolveVertexId(i), instanceIdx);
+        const b = runVertex(resolveVertexId(i + 1), instanceIdx);
+        const c = runVertex(resolveVertexId(i + 2), instanceIdx);
+        if (i % 2 === 0) this.emitTriangleFromClip(a, b, c, pipelineState, activeTarget, shadeBuffered);
+        else this.emitTriangleFromClip(b, a, c, pipelineState, activeTarget, shadeBuffered);
+      }
+    } else if (mode === TRIANGLE_FAN) {
+      if (count > 2) {
+        const root = runVertex(resolveVertexId(0), instanceIdx);
+        for (let i = 1; i + 1 < count; i++) {
+          const b = runVertex(resolveVertexId(i), instanceIdx);
+          const c = runVertex(resolveVertexId(i + 1), instanceIdx);
+          this.emitTriangleFromClip(
+            { clip: [root.clip[0], root.clip[1], root.clip[2], root.clip[3]], pointSize: root.pointSize, varyings: root.varyings.slice() },
+            b,
+            c,
+            pipelineState,
+            activeTarget,
+            shadeBuffered,
+          );
+        }
+      }
+    } else if (mode === POINTS || mode === LINES || mode === LINE_STRIP || mode === LINE_LOOP) {
+      const clips: ClipVertex[] = [];
+      for (let i = 0; i < count; i++) clips.push(runVertex(resolveVertexId(i), instanceIdx));
+      const screens = clips.map((cv) => mapClipToScreen(cv, pipelineState));
+      if (mode === POINTS) {
+        for (let i = 0; i < count; i++) {
+          this.rasterizePointQuad(screens[i] as ScreenVertex, (clips[i] as ClipVertex).pointSize, pipelineState, activeTarget, shadeBuffered);
+        }
+      } else {
+        const pairs: Array<[number, number]> = [];
+        if (mode === LINES) {
+          for (let i = 0; i + 1 < count; i += 2) pairs.push([i, i + 1]);
+        } else if (mode === LINE_STRIP) {
+          for (let i = 0; i + 1 < count; i++) pairs.push([i, i + 1]);
+        } else {
+          for (let i = 0; i + 1 < count; i++) pairs.push([i, i + 1]);
+          if (count > 2) pairs.push([count - 1, 0]);
+        }
+        for (const [a, b] of pairs) {
+          this.rasterizeLineSpan(screens[a] as ScreenVertex, screens[b] as ScreenVertex, pipelineState, activeTarget, shadeBuffered);
+        }
       }
     }
     }

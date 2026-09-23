@@ -367,7 +367,7 @@ describe('Sprint 5 Task 5 Group 1: drawArrays precondition matrix (RED)', () => 
     // Act:
     let threw = false;
     try {
-      gl.drawArrays(POINTS, 0, 3);
+      gl.drawArrays(0x9999, 0, 3);
     } catch { threw = true; }
     // Assert:
     expect(threw).toBe(false);

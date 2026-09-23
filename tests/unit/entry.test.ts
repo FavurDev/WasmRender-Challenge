@@ -136,7 +136,7 @@ describe('Entry - error sinks (Test 6, AC-6)', () => {
     expect(ctx.getError()).toBe(INVALID_ENUM);
     expect(() => ctx.clear(0x12345678)).not.toThrow();
     expect(ctx.getError()).toBe(INVALID_VALUE);
-    expect(() => ctx.drawArrays(LINES, 0, 2)).not.toThrow();
+    expect(() => ctx.drawArrays(0x9999, 0, 2)).not.toThrow();
     expect(ctx.getError()).toBe(INVALID_ENUM);
     expect(() => ctx.drawArrays(TRIANGLES, -1, 3)).not.toThrow();
     expect(ctx.getError()).toBe(INVALID_VALUE);
