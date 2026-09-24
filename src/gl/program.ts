@@ -433,7 +433,7 @@ export class ProgramRegistry {
       return true;
     }
     program.linkStatus = false;
-    program.infoLog = result.log;
+    program.infoLog = result.log !== '' ? result.log : 'ERROR: 0:1: Link failed';
     return false;
   }
   getProgram(id: number): ProgramHandle | null {

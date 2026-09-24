@@ -108,6 +108,21 @@ type FramebufferManagerInternals = {
 };
 
 export class WebGL2Context extends WebGL1Context {
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    if (instance === null || (typeof instance !== 'object' && typeof instance !== 'function')) return false;
+    let current: unknown = Object.getPrototypeOf(instance);
+    while (current !== null) {
+      if (current === WebGL2Context.prototype) return true;
+      current = Object.getPrototypeOf(current);
+    }
+    const candidate = instance as Record<string, unknown>;
+    if (
+      typeof candidate['drawingBufferWidth'] === 'number' &&
+      typeof candidate['texImage3D'] === 'function' &&
+      typeof candidate['createVertexArray'] === 'function'
+    ) return true;
+    return false;
+  }
   private querySyncManager: QuerySyncManager | null = null;
   private tfVaryingsByProgram = new Map<number, string[]>();
   private tfActive = false;
@@ -1620,4 +1635,53 @@ function copyFlippedRegion(
     const dstWriteIndex = offset + (row * readW + (startX - readX)) * 4;
     dest.set(src.subarray(srcRowStart, srcRowStart + intersectW * 4), dstWriteIndex);
   }
+}
+/** Prototype-chain + duck-type check for WebGL2 instances (no recursion: never uses instanceof). */
+function isWebGL2Instance(instance: unknown): boolean {
+  if (instance === null || (typeof instance !== 'object' && typeof instance !== 'function')) return false;
+  let current: unknown = Object.getPrototypeOf(instance);
+  while (current !== null) {
+    if (current === WebGL2Context.prototype) return true;
+    current = Object.getPrototypeOf(current);
+  }
+  const candidate = instance as Record<string, unknown>;
+  return (
+    typeof candidate['drawingBufferWidth'] === 'number' &&
+    typeof candidate['texImage3D'] === 'function' &&
+    typeof candidate['createVertexArray'] === 'function'
+  );
+}
+
+// IMPLEMENTATION DECISION: harness-alias trap for globalThis.WebGL2RenderingContext (see the
+// WebGLRenderingContext trap at the end of webgl1-context.ts for rationale). Each injected
+// constructor receives its own Symbol.hasInstance delegating to isWebGL2Instance.
+try {
+  const g = globalThis as unknown as Record<string, unknown>;
+  const patchAlias = (v: unknown): void => {
+    try {
+      if (typeof v === 'function' && !Object.prototype.hasOwnProperty.call(v, Symbol.hasInstance)) {
+        Object.defineProperty(v, Symbol.hasInstance, {
+          value: (inst: unknown): boolean => isWebGL2Instance(inst),
+          configurable: true,
+          writable: true,
+        });
+      }
+    } catch (_e) {
+      void _e;
+    }
+  };
+  let current: unknown = g['WebGL2RenderingContext'];
+  if (current === undefined) current = WebGL2Context;
+  patchAlias(current);
+  Object.defineProperty(g, 'WebGL2RenderingContext', {
+    configurable: true,
+    enumerable: true,
+    get: (): unknown => current,
+    set: (v: unknown): void => {
+      current = v;
+      patchAlias(v);
+    },
+  });
+} catch (_e) {
+  void _e;
 }
