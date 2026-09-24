@@ -899,8 +899,8 @@ describe('M5 DoD Fixture 15: Sprint 11 coverage gate threshold enforcement', () 
   });
 });
 
-describe('M5 DoD Fixture 16: Sprint 11 honest CTS threshold reporting v2', () => {
-  it('TC29 threshold report v2 records GAP_RECORDED with unlowered gates and measured deltas', async () => {
+describe('M5 DoD Fixture 16: Sprint 12 honest CTS threshold reporting v3', () => {
+  it('TC29 threshold report v3 records GAP_RECORDED with unlowered gates and measured deltas', async () => {
     // Arrange:
     const fs = await import('node:fs');
     const raw = fs.readFileSync('test-results/conformance/threshold-report.json', 'utf8');
@@ -923,7 +923,7 @@ describe('M5 DoD Fixture 16: Sprint 11 honest CTS threshold reporting v2', () =>
     expect(report.suites.webgl2.targetGate).toBe(90);
     expect(report.suites.webgl2.executed).toBe(2598);
     expect(report.suites.webgl2.crashed).toBe(0);
-    expect(report.deltas.webgl2.deltaPercentagePoints).toBe('+0.00%');
-    expect(report.deferral.nextSteps).toContain('Sprint 12');
+    expect(report.deltas.webgl2.deltaPercentagePoints).toBe('+0.15%');
+    expect(report.deferral.nextSteps).toContain('Sprint 13');
   });
 });

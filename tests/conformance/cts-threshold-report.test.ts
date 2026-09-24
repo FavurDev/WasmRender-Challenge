@@ -1,4 +1,4 @@
-/** Sprint 10 Task 7 CTS threshold report — RED-phase vitest suite (module not yet implemented). */
+/** Sprint 12 Task 5 CTS threshold report v3 vitest suite. */
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -309,5 +309,163 @@ describe('s11_artifact_emission', () => {
     expect(md).toContain('Root Cause Attribution');
     expect(md).toContain('Measured Deltas vs Sprint 10 Baseline');
     expect(md).toContain('Deferral and Residual Gap Plan');
+  });
+});
+
+describe('v3_delta_computation_vs_sprint11_baseline', () => {
+  it('computes honest deltas +0.44% webgl1 and +0.15% webgl2', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 13, failed: 659, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    const suites = { webgl1: m1, webgl2: m2 } as unknown as Record<string, never>;
+    // Act:
+    const deltas = (ThresholdReportFormatter as unknown as { composeDeltas: (s: unknown) => { webgl1: Record<string, string>; webgl2: Record<string, string> } }).composeDeltas(suites);
+    // Assert:
+    expect(deltas.webgl1.sprint11Ratio).toBe('10/672');
+    expect(deltas.webgl1.sprint11PassRate).toBe('1.49');
+    expect(deltas.webgl1.sprint12Ratio).toBe('13/672');
+    expect(deltas.webgl1.sprint12PassRate).toBe('1.93');
+    expect(deltas.webgl1.deltaPercentagePoints).toBe('+0.44%');
+    expect(deltas.webgl2.sprint11Ratio).toBe('16/2598');
+    expect(deltas.webgl2.sprint11PassRate).toBe('0.62');
+    expect(deltas.webgl2.sprint12Ratio).toBe('20/2598');
+    expect(deltas.webgl2.sprint12PassRate).toBe('0.77');
+    expect(deltas.webgl2.deltaPercentagePoints).toBe('+0.15%');
+  });
+});
+
+describe('v3_zero_delta_honest_recording', () => {
+  it('records +0.00% when counts match the Sprint 11 baseline', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    const suites = { webgl1: m1, webgl2: m2 } as unknown as Record<string, never>;
+    // Act:
+    const deltas = (ThresholdReportFormatter as unknown as { composeDeltas: (s: unknown) => { webgl1: { deltaPercentagePoints: string }; webgl2: { deltaPercentagePoints: string } } }).composeDeltas(suites);
+    // Assert:
+    expect(deltas.webgl1.deltaPercentagePoints).toBe('+0.00%');
+    expect(deltas.webgl2.deltaPercentagePoints).toBe('+0.00%');
+  });
+});
+
+describe('v3_deferral_narrative_td_currency', () => {
+  it('cites TD-026/024/025 closed, TD-023 reduced residuals, TD-001 open', () => {
+    // Arrange: default invocation, no parameters.
+    // Act:
+    const deferral = (ThresholdReportFormatter as unknown as { composeDeferralNarrative: () => { closedDebts: string[]; reducedDebts: string[]; openDebts: string[]; rationale: string; nextSteps: string } }).composeDeferralNarrative();
+    // Assert:
+    const closed = deferral.closedDebts.join('\n');
+    expect(closed).toContain('TD-026');
+    expect(closed).toContain('CLOSED');
+    expect(closed).toContain('9458db5');
+    expect(closed).toContain('TD-024');
+    expect(closed).toContain('0357097');
+    expect(closed).toContain('TD-025');
+    expect(closed).toContain('323a24f');
+    const reduced = deferral.reducedDebts.join('\n');
+    expect(reduced).toContain('TD-023');
+    expect(reduced).toContain('REDUCED');
+    expect(reduced).toContain('659');
+    expect(reduced).toContain('2578');
+    expect(deferral.openDebts.join('\n')).toContain('TD-001');
+    expect(deferral.openDebts.join('\n')).toContain('OPEN');
+    expect(deferral.rationale).toContain('GAP_RECORDED');
+    expect(deferral.rationale).toContain('95.0%');
+    expect(deferral.rationale).toContain('90.0%');
+    const all = [...deferral.closedDebts, ...deferral.reducedDebts, ...deferral.openDebts, deferral.rationale, deferral.nextSteps].join('\n');
+    expect(all).not.toContain('Sprint 10 baseline was invalid');
+    expect(all).not.toContain('audit first');
+  });
+});
+
+describe('v3_gap_recorded_unlowered_gates', () => {
+  it('records GAP_RECORDED with 95/90 gates and v3 header', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 'v3-gap-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 13, failed: 659, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    // Act:
+    const ok = ThresholdReportFormatter.writeReports({ suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true }, mdPath, jsonPath);
+    // Assert:
+    expect(ok).toBe(true);
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    expect(json.overallStatus).toBe('GAP_RECORDED');
+    expect(json.suites.webgl1.targetGate).toBe(95);
+    expect(json.suites.webgl2.targetGate).toBe(90);
+    const md = readFileSync(mdPath, 'utf8');
+    expect(md).toContain('# Sprint 12 CTS Conformance Threshold & Gap Report (v3)');
+    expect(md).toContain('Overall Status: GAP_RECORDED');
+  });
+});
+
+describe('v3_artifact_emission_file_integrity', () => {
+  it('emits parseable JSON and Markdown with all five sections', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 'v3-artifacts-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 13, failed: 659, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    // Act:
+    ThresholdReportFormatter.writeReports({ suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true }, mdPath, jsonPath);
+    // Assert:
+    const jsonRaw = readFileSync(jsonPath, 'utf8');
+    const json = JSON.parse(jsonRaw);
+    expect(json.suites.webgl1).toBeDefined();
+    expect(json.suites.webgl2).toBeDefined();
+    const md = readFileSync(mdPath, 'utf8');
+    expect(md.length).toBeGreaterThan(0);
+    expect(md).toContain('Executive Summary');
+    expect(md).toContain('Reconciliation Analysis');
+    expect(md).toContain('Root Cause Attribution');
+    expect(md).toContain('Measured Deltas vs Sprint 11 Baseline');
+    expect(md).toContain('Deferral and Residual Gap Plan');
+  });
+});
+
+describe('v3_nonzero_crash_rejection', () => {
+  it('throws on non-zero crashes without partial reports', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 'v3-crash-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 671, passed: 13, failed: 657, crashed: 1, skipped: 1 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    // Act & Assert:
+    expect(() => ThresholdReportFormatter.writeReports({ suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true }, mdPath, jsonPath)).toThrow(/Non-zero crashes detected: 1/);
+  });
+});
+
+describe('v3_manifest_zero_discovered_guard', () => {
+  it('throws InvalidManifestError mentioning discovered 0 tests', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const emptyLog = buildTriageLog({ discovered: 0, executed: 0, passed: 0, failed: 0, crashed: 0, skipped: 0 });
+    // Act & Assert:
+    expect(() => aggregator.aggregateSuite('webgl1', emptyLog)).toThrow(InvalidManifestError);
+    expect(() => aggregator.aggregateSuite('webgl1', emptyLog)).toThrow(/discovered 0 tests/);
+  });
+});
+
+describe('v3_strict_verdict_reconciliation', () => {
+  it('accepts valid log and throws ReconciliationError on broken equalities', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const validLog = buildTriageLog({ discovered: 100, executed: 80, passed: 70, failed: 10, crashed: 0, skipped: 20 });
+    const brokenFirst = buildTriageLog({ discovered: 100, executed: 80, passed: 70, failed: 10, crashed: 0, skipped: 15 });
+    const brokenSecond = buildTriageLog({ discovered: 100, executed: 80, passed: 70, failed: 5, crashed: 0, skipped: 20 });
+    // Act:
+    const ok = aggregator.checkReconciliation(validLog);
+    // Assert:
+    expect(ok).toBe(true);
+    expect(() => aggregator.checkReconciliation(brokenFirst)).toThrow(ReconciliationError);
+    expect(() => aggregator.checkReconciliation(brokenSecond)).toThrow(ReconciliationError);
   });
 });

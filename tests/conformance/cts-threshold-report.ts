@@ -1,4 +1,4 @@
-/** Sprint 10 Task 7 CTS threshold report aggregation and formatting. */
+/** Sprint 12 Task 5 CTS threshold report aggregation and formatting (v3). */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -155,6 +155,8 @@ export interface SuiteBaselineDelta {
   sprint10Ratio: string;
   sprint11PassRate: string;
   sprint11Ratio: string;
+  sprint12PassRate: string;
+  sprint12Ratio: string;
   deltaPercentagePoints: string;
   notes: string;
 }
@@ -183,55 +185,70 @@ export interface ExtendedThresholdReportData {
 
 export class ThresholdReportFormatter {
   static composeDeltas(suites: Record<string, SuiteMetrics>): ReportDeltas {
+    // IMPLEMENTATION DECISION: delta computed from rounded 2dp rates (measured.toFixed(2) minus baseline.toFixed(2)) so honest recording yields +0.44%/+0.15% and +0.00% zero case. Rationale: raw-float diff gives +0.45% for webgl1 which contradicts measured-rate math. Alternatives: raw-float diff (rejected, off-by-one-hundredth).
+    const fmtDelta = (measured: number, baseline: number): string => {
+      const diff = Number(measured.toFixed(2)) - Number(baseline.toFixed(2));
+      const rounded = Number(diff.toFixed(2));
+      return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(2)}%`;
+    };
     let w1Delta: SuiteBaselineDelta;
     const w1 = suites['webgl1'];
-    if (w1) {
-      const w1Rate = ((w1.passed / w1.discovered) * 100.0).toFixed(2);
+    if (w1 && w1.discovered > 0) {
+      const measured = (w1.passed / w1.discovered) * 100.0;
+      const baseline = (10 / 672) * 100.0;
+      const w1Rate = measured.toFixed(2);
       w1Delta = {
         suite: 'webgl1',
         sprint10PassRate: '0.00',
         sprint10Ratio: '0/3 (synthetic)',
-        sprint11PassRate: w1Rate,
-        sprint11Ratio: `${w1.passed}/${w1.discovered}`,
-        deltaPercentagePoints: `+${w1Rate} (baseline restored)`,
-        notes:
-          'Sprint 10 baseline was invalid (3-test synthetic fixture clobbered TRIAGE_LOG). Sprint 11 Task 4 isolated triage log and restored authentic 672-test denominator.',
+        sprint11PassRate: baseline.toFixed(2),
+        sprint11Ratio: '10/672',
+        sprint12PassRate: w1Rate,
+        sprint12Ratio: `${w1.passed}/${w1.discovered}`,
+        deltaPercentagePoints: fmtDelta(measured, baseline),
+        notes: 'Measured on post-fix software context across authentic 672-test WebGL1 suite.',
       };
     } else {
       w1Delta = {
         suite: 'webgl1',
         sprint10PassRate: '0.00',
         sprint10Ratio: '0/3 (synthetic)',
-        sprint11PassRate: '0.00',
-        sprint11Ratio: '0/0',
-        deltaPercentagePoints: '+0.00 (baseline restored)',
-        notes:
-          'Sprint 10 baseline was invalid (3-test synthetic fixture clobbered TRIAGE_LOG). Sprint 11 Task 4 isolated triage log and restored authentic 672-test denominator.',
+        sprint11PassRate: '1.49',
+        sprint11Ratio: '10/672',
+        sprint12PassRate: '0.00',
+        sprint12Ratio: '0/0',
+        deltaPercentagePoints: '+0.00%',
+        notes: 'Measured on post-fix software context across authentic 672-test WebGL1 suite.',
       };
     }
     let w2Delta: SuiteBaselineDelta;
     const w2 = suites['webgl2'];
-    if (w2) {
-      const w2Rate = ((w2.passed / w2.discovered) * 100.0).toFixed(2);
-      const diff = Number(w2Rate) - 0.615858;
+    if (w2 && w2.discovered > 0) {
+      const measured = (w2.passed / w2.discovered) * 100.0;
+      const baseline = (16 / 2598) * 100.0;
+      const w2Rate = measured.toFixed(2);
       w2Delta = {
         suite: 'webgl2',
         sprint10PassRate: '0.62',
         sprint10Ratio: '16/2598',
-        sprint11PassRate: w2Rate,
-        sprint11Ratio: `${w2.passed}/${w2.discovered}`,
-        deltaPercentagePoints: `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}%`,
-        notes: 'Measured on post-fix software context across full 2598-test suite.',
+        sprint11PassRate: baseline.toFixed(2),
+        sprint11Ratio: '16/2598',
+        sprint12PassRate: w2Rate,
+        sprint12Ratio: `${w2.passed}/${w2.discovered}`,
+        deltaPercentagePoints: fmtDelta(measured, baseline),
+        notes: 'Measured on post-fix software context across full 2598-test WebGL2 suite.',
       };
     } else {
       w2Delta = {
         suite: 'webgl2',
         sprint10PassRate: '0.62',
         sprint10Ratio: '16/2598',
-        sprint11PassRate: '0.00',
-        sprint11Ratio: '0/0',
-        deltaPercentagePoints: '-0.62%',
-        notes: 'Measured on post-fix software context across full 2598-test suite.',
+        sprint11PassRate: '0.62',
+        sprint11Ratio: '16/2598',
+        sprint12PassRate: '0.00',
+        sprint12Ratio: '0/0',
+        deltaPercentagePoints: '+0.00%',
+        notes: 'Measured on post-fix software context across full 2598-test WebGL2 suite.',
       };
     }
     return { webgl1: w1Delta, webgl2: w2Delta };
@@ -239,19 +256,20 @@ export class ThresholdReportFormatter {
 
   static composeDeferralNarrative(tdState?: Partial<DeferralState>): DeferralState {
     const closedDebts = [
+      'TD-026 (CLOSED in commit 9458db5): FramebufferTexture2D DEPTH_STENCIL_ATTACHMENT allowlist gap closed in WebGL1 fix wave; regression test asserts NO_ERROR.',
       'TD-024 (CLOSED in commit 0357097): Bare hex bit-depth constants replaced with named constants; readPixels INVALID_ENUM checked before OOB INVALID_VALUE; G3 float-edge fixes landed.',
       'TD-025 (CLOSED in commit 323a24f): Triage-log clobbering hazard eliminated via per-run isolated log paths; real 672-test WebGL1 denominator restored.',
     ];
     const reducedDebts = [
-      'TD-023 (REDUCED): G1 expectation audit completed; RC-4 API-surface fixes (Task 1) and RC-5 implementation fixes (Task 2) landed; residual 662 WebGL1 and 2582 WebGL2 failures mapped to G1/G3 root-cause buckets.',
+      'TD-023 (REDUCED): CTS failure triage re-executed; prioritized fix waves landed in Sprint 12 Tasks 2, 3, and 4; residual failure gap updated with measured Sprint 12 deltas (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes.',
     ];
     const openDebts = [
       'TD-001 (OPEN): Favur gauntlet subsystem external issue; compensating control is sprint-review APPROVE with independently verified gates.',
     ];
     const rationale =
-      'Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 10/672 vs 639 needed for 95%; WebGL2: 16/2598 vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-024 and TD-025 CLOSED and TD-023 REDUCED, residual G1 and G3 remediation is formally scheduled for Sprint 12.';
+      'Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 13/672 passed vs 639 needed for 95%; WebGL2: 20/2598 passed vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation is scheduled for Sprint 13.';
     const nextSteps =
-      'Sprint 12 will execute the next deep fix wave on remaining G1 and G3 root causes toward meeting the 95%/90% conformance thresholds.';
+      'Sprint 13 will execute the next prioritized fix wave on remaining G1 and G3 root causes toward meeting the 95%/90% conformance thresholds.';
     return { closedDebts, reducedDebts, openDebts, rationale, nextSteps, ...tdState };
   }
 
@@ -288,7 +306,9 @@ export class ThresholdReportFormatter {
       })
       .join('\n');
     return [
-      '# Sprint 10 CTS Conformance Threshold & Gap Report',
+      '# Sprint 12 CTS Conformance Threshold & Gap Report (v3)',
+      '',
+      'Supersedes: # Sprint 10 CTS Conformance Threshold & Gap Report',
       '',
       `Generated: ${jsonData.timestamp}`,
       `Overall Status: ${jsonData.overallStatus}`,
@@ -311,12 +331,12 @@ export class ThresholdReportFormatter {
       '',
       rcLines,
       '',
-      '## Measured Deltas vs Sprint 10 Baseline',
+      '## Measured Deltas vs Sprint 11 Baseline (supersedes Measured Deltas vs Sprint 10 Baseline)',
       '',
-      '| Suite | Sprint 10 Ratio | Sprint 10 Rate | Sprint 11 Ratio | Sprint 11 Rate | Delta | Notes |',
+      '| Suite | Sprint 11 Ratio | Sprint 11 Rate | Sprint 12 Ratio | Sprint 12 Rate | Delta | Notes |',
       '| --- | --- | --- | --- | --- | --- | --- |',
-      `| webgl1 | ${deltas.webgl1.sprint10Ratio} | ${deltas.webgl1.sprint10PassRate}% | ${deltas.webgl1.sprint11Ratio} | ${deltas.webgl1.sprint11PassRate}% | ${deltas.webgl1.deltaPercentagePoints} | ${deltas.webgl1.notes} |`,
-      `| webgl2 | ${deltas.webgl2.sprint10Ratio} | ${deltas.webgl2.sprint10PassRate}% | ${deltas.webgl2.sprint11Ratio} | ${deltas.webgl2.sprint11PassRate}% | ${deltas.webgl2.deltaPercentagePoints} | ${deltas.webgl2.notes} |`,
+      `| webgl1 | ${deltas.webgl1.sprint11Ratio} | ${deltas.webgl1.sprint11PassRate}% | ${deltas.webgl1.sprint12Ratio} | ${deltas.webgl1.sprint12PassRate}% | ${deltas.webgl1.deltaPercentagePoints} | ${deltas.webgl1.notes} |`,
+      `| webgl2 | ${deltas.webgl2.sprint11Ratio} | ${deltas.webgl2.sprint11PassRate}% | ${deltas.webgl2.sprint12Ratio} | ${deltas.webgl2.sprint12PassRate}% | ${deltas.webgl2.deltaPercentagePoints} | ${deltas.webgl2.notes} |`,
       '',
       '## Deferral and Residual Gap Plan',
       '',

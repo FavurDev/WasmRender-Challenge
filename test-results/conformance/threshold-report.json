@@ -1,46 +1,46 @@
 {
-  "timestamp": "2026-09-24T02:56:54.894Z",
+  "timestamp": "2026-09-24T09:11:11.020Z",
   "suites": {
     "webgl1": {
       "suite": "webgl1",
       "discovered": 672,
       "executed": 672,
-      "passed": 10,
-      "failed": 662,
+      "passed": 13,
+      "failed": 659,
       "crashed": 0,
       "skipped": 0,
-      "passRate": 1.488095238095238,
-      "passRateFormatted": "1.49",
+      "passRate": 1.9345238095238095,
+      "passRateFormatted": "1.93",
       "targetGate": 95,
-      "passGap": 93.51190476190476,
-      "testsNeeded": 629,
+      "passGap": 93.06547619047619,
+      "testsNeeded": 626,
       "rootCauses": {
-        "G1": 619,
+        "G1": 609,
         "G2": 0,
         "G3": 40,
-        "G4": 3,
-        "total": 662
+        "G4": 10,
+        "total": 659
       }
     },
     "webgl2": {
       "suite": "webgl2",
       "discovered": 2598,
       "executed": 2598,
-      "passed": 16,
-      "failed": 2582,
+      "passed": 20,
+      "failed": 2578,
       "crashed": 0,
       "skipped": 0,
-      "passRate": 0.6158583525789069,
-      "passRateFormatted": "0.62",
+      "passRate": 0.7698229407236336,
+      "passRateFormatted": "0.77",
       "targetGate": 90,
-      "passGap": 89.38414164742109,
-      "testsNeeded": 2323,
+      "passGap": 89.23017705927637,
+      "testsNeeded": 2319,
       "rootCauses": {
-        "G1": 2059,
+        "G1": 2048,
         "G2": 0,
         "G3": 517,
-        "G4": 6,
-        "total": 2582
+        "G4": 13,
+        "total": 2578
       }
     }
   },
@@ -53,8 +53,10 @@
       "sprint10Ratio": "0/3 (synthetic)",
       "sprint11PassRate": "1.49",
       "sprint11Ratio": "10/672",
-      "deltaPercentagePoints": "+1.49 (baseline restored)",
-      "notes": "Sprint 10 baseline was invalid (3-test synthetic fixture clobbered TRIAGE_LOG). Sprint 11 Task 4 isolated triage log and restored authentic 672-test denominator."
+      "sprint12PassRate": "1.93",
+      "sprint12Ratio": "13/672",
+      "deltaPercentagePoints": "+0.44%",
+      "notes": "Measured on post-fix software context across authentic 672-test WebGL1 suite."
     },
     "webgl2": {
       "suite": "webgl2",
@@ -62,22 +64,25 @@
       "sprint10Ratio": "16/2598",
       "sprint11PassRate": "0.62",
       "sprint11Ratio": "16/2598",
-      "deltaPercentagePoints": "+0.00%",
-      "notes": "Measured on post-fix software context across full 2598-test suite."
+      "sprint12PassRate": "0.77",
+      "sprint12Ratio": "20/2598",
+      "deltaPercentagePoints": "+0.15%",
+      "notes": "Measured on post-fix software context across full 2598-test WebGL2 suite."
     }
   },
   "deferral": {
     "closedDebts": [
+      "TD-026 (CLOSED in commit 9458db5): FramebufferTexture2D DEPTH_STENCIL_ATTACHMENT allowlist gap closed in WebGL1 fix wave; regression test asserts NO_ERROR.",
       "TD-024 (CLOSED in commit 0357097): Bare hex bit-depth constants replaced with named constants; readPixels INVALID_ENUM checked before OOB INVALID_VALUE; G3 float-edge fixes landed.",
       "TD-025 (CLOSED in commit 323a24f): Triage-log clobbering hazard eliminated via per-run isolated log paths; real 672-test WebGL1 denominator restored."
     ],
     "reducedDebts": [
-      "TD-023 (REDUCED): G1 expectation audit completed; RC-4 API-surface fixes (Task 1) and RC-5 implementation fixes (Task 2) landed; residual 662 WebGL1 and 2582 WebGL2 failures mapped to G1/G3 root-cause buckets."
+      "TD-023 (REDUCED): CTS failure triage re-executed; prioritized fix waves landed in Sprint 12 Tasks 2, 3, and 4; residual failure gap updated with measured Sprint 12 deltas (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes."
     ],
     "openDebts": [
       "TD-001 (OPEN): Favur gauntlet subsystem external issue; compensating control is sprint-review APPROVE with independently verified gates."
     ],
-    "rationale": "Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 10/672 vs 639 needed for 95%; WebGL2: 16/2598 vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-024 and TD-025 CLOSED and TD-023 REDUCED, residual G1 and G3 remediation is formally scheduled for Sprint 12.",
-    "nextSteps": "Sprint 12 will execute the next deep fix wave on remaining G1 and G3 root causes toward meeting the 95%/90% conformance thresholds."
+    "rationale": "Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 13/672 passed vs 639 needed for 95%; WebGL2: 20/2598 passed vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation is scheduled for Sprint 13.",
+    "nextSteps": "Sprint 13 will execute the next prioritized fix wave on remaining G1 and G3 root causes toward meeting the 95%/90% conformance thresholds."
   }
 }

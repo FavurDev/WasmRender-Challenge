@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-24T07:17:56.740Z",
+  "timestamp": "2026-09-24T09:37:19.094Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 2598,
@@ -5178,11 +5178,39 @@
         },
         {
           "success": false,
+          "message": "extraBufferBindings"
+        },
+        {
+          "success": false,
           "message": "depthStencilByFbo"
         },
         {
           "success": false,
           "message": "depthStencilDims"
+        },
+        {
+          "success": false,
+          "message": "attribBindingPoint"
+        },
+        {
+          "success": false,
+          "message": "vertexBufferBindings"
+        },
+        {
+          "success": false,
+          "message": "transformFeedbacks"
+        },
+        {
+          "success": false,
+          "message": "boundTransformFeedbackHandle"
+        },
+        {
+          "success": false,
+          "message": "tfPaused"
+        },
+        {
+          "success": false,
+          "message": "tfIndexedBindings"
         },
         {
           "success": true,
@@ -109916,7 +109944,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: gl.copyBufferSubData is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -109940,7 +109968,519 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: gl.copyBufferSubData is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copying from a gl.currentProgram buffer to a gl.currentProgram buffer should work if all buffers were initially bound to ELEMENT_ARRAY_BUFFER."
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\buffers\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         }
       ],
       "classification": "spec-defect",
@@ -114860,11 +115400,39 @@
         },
         {
           "success": false,
+          "message": "extraBufferBindings"
+        },
+        {
+          "success": false,
           "message": "depthStencilByFbo"
         },
         {
           "success": false,
           "message": "depthStencilDims"
+        },
+        {
+          "success": false,
+          "message": "attribBindingPoint"
+        },
+        {
+          "success": false,
+          "message": "vertexBufferBindings"
+        },
+        {
+          "success": false,
+          "message": "transformFeedbacks"
+        },
+        {
+          "success": false,
+          "message": "boundTransformFeedbackHandle"
+        },
+        {
+          "success": false,
+          "message": "tfPaused"
+        },
+        {
+          "success": false,
+          "message": "tfIndexedBindings"
         },
         {
           "success": true,
@@ -115006,10 +115574,6 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: copyBufferSubData"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: blitFramebuffer"
         },
         {
@@ -115018,19 +115582,7 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: getInternalformatParameter"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: renderbufferStorageMultisample"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: texStorage2D"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: texStorage3D"
         },
         {
           "success": false,
@@ -115082,31 +115634,7 @@
         },
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: createTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: deleteTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: isTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: bindTransformFeedback"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: getTransformFeedbackVarying"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: pauseTransformFeedback"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: resumeTransformFeedback"
         },
         {
           "success": true,
@@ -116151,7 +116679,7 @@
         },
         {
           "success": false,
-          "message": "gl.createTransformFeedback() instanceof WebGLTransformFeedback should be true. Threw exception TypeError: gl.createTransformFeedback is not a function"
+          "message": "gl.createTransformFeedback() instanceof WebGLTransformFeedback should be true. Threw exception ReferenceError: WebGLTransformFeedback is not defined"
         },
         {
           "success": false,
@@ -117015,9 +117543,7 @@
       "id": "conformance2/renderbuffers/invalidate-framebuffer.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": true,
@@ -117025,7 +117551,19 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.getInternalformatParameter is not a function"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : calling invalidateSubFramebuffer to invalidate an incomplete attachment will be ignored. There should be no errors"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : calling invalidateFramebuffer to invalidate an incomplete attachment will be ignored. There should be no errors."
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: Cannot read properties of null (reading '0')"
         },
         {
           "success": false,
@@ -117061,7 +117599,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.getInternalformatParameter is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: Cannot read properties of null (reading '0')"
         },
         {
           "success": false,
@@ -117081,7 +117619,7 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: gl.getInternalformatParameter is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\renderbuffers\\inline-script.js: TypeError: Cannot read properties of null (reading '0')"
         },
         {
           "success": false,
@@ -117587,7 +118125,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.getInternalformatParameter is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: Cannot read properties of null (reading '0')"
         },
         {
           "success": false,
@@ -117999,9 +118537,7 @@
       "id": "conformance2/rendering/out-of-bounds-index-buffers-after-copying.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": true,
@@ -118021,11 +118557,27 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.copyBufferSubData is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : copyBufferSubData should generate no errors"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "Invalid error flagged by drawElements. Should be INVALID_OPERATION or NO_ERROR"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : copyBufferSubData should generate no errors"
+        },
+        {
+          "success": false,
+          "message": "Invalid error flagged by drawElements. Should be INVALID_OPERATION or NO_ERROR"
+        },
+        {
+          "success": true,
+          "message": "getError was expected value: NO_ERROR : Running tests should generate no errors"
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -118075,11 +118627,39 @@
       "assertions": [
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\rendering\\inline-script.js: TypeError: gl.getInternalformatParameter is not a function"
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no errors from getInternalformatParameter()"
         },
         {
           "success": false,
-          "message": "successfullyParsed should be true (of type boolean). Was undefined (of type undefined)."
+          "message": "getInternalformatParameter on RGB8 fails to return valid samples"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no errors from texture setup"
+        },
+        {
+          "success": false,
+          "message": "framebuffer with texture is incomplete"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no errors from clear()"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no errors from texture setup"
+        },
+        {
+          "success": false,
+          "message": "framebuffer with texture is incomplete"
+        },
+        {
+          "success": false,
+          "message": "getError expected: NO_ERROR. Was 0x500 : should be no errors from clear()"
+        },
+        {
+          "success": true,
+          "message": "successfullyParsed is true"
         }
       ],
       "classification": "spec-defect",
@@ -120863,7 +121443,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: gl.texStorage2D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -120887,7 +121467,7 @@
         },
         {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: gl.texStorage3D is not a function"
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\textures\\misc\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         },
         {
           "success": false,
@@ -133287,8 +133867,24 @@
           "message": "gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING) is null"
         },
         {
+          "success": true,
+          "message": "gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING) is null"
+        },
+        {
           "success": false,
-          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\transform_feedback\\inline-script.js: TypeError: gl.createTransformFeedback is not a function"
+          "message": "gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": false,
+          "message": "gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING) should be [object Object]. Was null."
+        },
+        {
+          "success": true,
+          "message": "gl.getParameter(gl.TRANSFORM_FEEDBACK_BINDING) is null"
+        },
+        {
+          "success": false,
+          "message": "Script error in vendor\\WebGL\\conformance-suites\\2.0.0\\conformance2\\transform_feedback\\inline-script.js: TypeError: Cannot read properties of undefined (reading 'length')"
         }
       ],
       "classification": "spec-defect",
