@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-09-24T09:37:04.865Z",
+  "timestamp": "2026-09-24T09:48:49.252Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 672,
     "executed": 672,
-    "passed": 13,
-    "failed": 659,
+    "passed": 12,
+    "failed": 660,
     "skipped": 0,
     "crashed": 0
   },
@@ -35982,8 +35982,8 @@
     },
     {
       "id": "conformance/typedarrays/array-large-array-tests.html",
-      "status": "PASS",
-      "passed": true,
+      "status": "FAIL",
+      "passed": false,
       "drainedErrors": [],
       "assertions": [
         {
@@ -35991,30 +35991,32 @@
           "message": "Construction of huge Float32Array threw exception"
         },
         {
-          "success": true,
-          "message": "Construction of huge Float64Array threw exception"
+          "success": false,
+          "message": "Construction of huge Float64Array should throw exception"
         },
         {
-          "success": true,
-          "message": "Construction of huge Int16Array threw exception"
+          "success": false,
+          "message": "Construction of huge Int16Array should throw exception"
         },
         {
-          "success": true,
-          "message": "Construction of huge Int32Array threw exception"
+          "success": false,
+          "message": "Construction of huge Int32Array should throw exception"
         },
         {
-          "success": true,
-          "message": "Construction of huge Uint16Array threw exception"
+          "success": false,
+          "message": "Construction of huge Uint16Array should throw exception"
         },
         {
-          "success": true,
-          "message": "Construction of huge Uint32Array threw exception"
+          "success": false,
+          "message": "Construction of huge Uint32Array should throw exception"
         },
         {
           "success": true,
           "message": "successfullyParsed is true"
         }
-      ]
+      ],
+      "classification": "spec-defect",
+      "rootCauseGroup": "G1"
     },
     {
       "id": "conformance/uniforms/gl-uniform-arrays.html",
