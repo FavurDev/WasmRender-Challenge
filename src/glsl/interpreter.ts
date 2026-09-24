@@ -233,13 +233,16 @@ function isMatVal(v: Value, n: number): v is Float32Array {
 }
 
 function matVecMul(mat: Float32Array, vec: Float32Array): Float32Array {
-  // Column-major: mat is MxM, vec is M.
+  // Column-major: mat is MxM, vec is M. Per-step float32 (ADR-012).
   const m = vec.length;
   const out = new Float32Array(m);
   for (let r = 0; r < m; r++) {
-    let acc = 0;
-    for (let c = 0; c < m; c++) acc += (mat[c * m + r] as number) * (vec[c] as number);
-    out[r] = f(acc);
+    let acc = f(0);
+    for (let c = 0; c < m; c++) {
+      const term = f(f(mat[c * m + r] as number) * f(vec[c] as number));
+      acc = f(acc + term);
+    }
+    out[r] = acc;
   }
   return out;
 }
@@ -248,21 +251,27 @@ function vecMatMul(vec: Float32Array, mat: Float32Array): Float32Array {
   const m = vec.length;
   const out = new Float32Array(m);
   for (let c = 0; c < m; c++) {
-    let acc = 0;
-    for (let r = 0; r < m; r++) acc += (vec[r] as number) * (mat[c * m + r] as number);
-    out[c] = f(acc);
+    let acc = f(0);
+    for (let r = 0; r < m; r++) {
+      const term = f(f(vec[r] as number) * f(mat[c * m + r] as number));
+      acc = f(acc + term);
+    }
+    out[c] = acc;
   }
   return out;
 }
 
 function matMatMul(a: Float32Array, b: Float32Array, m: number): Float32Array {
-  // C = A * B, column-major MxM.
+  // C = A * B, column-major MxM. Per-step float32 (ADR-012).
   const out = new Float32Array(m * m);
   for (let c = 0; c < m; c++) {
     for (let r = 0; r < m; r++) {
-      let acc = 0;
-      for (let k = 0; k < m; k++) acc += (a[k * m + r] as number) * (b[c * m + k] as number);
-      out[c * m + r] = f(acc);
+      let acc = f(0);
+      for (let k = 0; k < m; k++) {
+        const term = f(f(a[k * m + r] as number) * f(b[c * m + k] as number));
+        acc = f(acc + term);
+      }
+      out[c * m + r] = acc;
     }
   }
   return out;
@@ -452,9 +461,11 @@ function evalBinary(op: string, l: Value | Value[], r: Value | Value[]): Value |
     const lm = matSizes.includes(l.length) && (l.length === 4 || l.length === 9 || l.length === 16);
     const rm = matSizes.includes(r.length) && (r.length === 4 || r.length === 9 || r.length === 16);
     const mOf = (len: number): number => (len === 4 ? 2 : len === 9 ? 3 : 4);
+    if (op === '*' && l.length !== r.length) {
+      if (lm && r.length === mOf(l.length)) return matVecMul(l, r);
+      if (rm && l.length === mOf(r.length)) return vecMatMul(l, r);
+    }
     if (lm && rm && l.length === r.length) return matMatMul(l, r, mOf(l.length));
-    if (lm && !rm && r.length === mOf(l.length)) return matVecMul(l, r);
-    if (!lm && rm && l.length === mOf(r.length)) return vecMatMul(l, r);
   }
   // Component-wise vector ops (same length, same kind).
   if (l instanceof Float32Array && r instanceof Float32Array && l.length === r.length) {

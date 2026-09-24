@@ -656,7 +656,7 @@ function evalReflect(...args: Value[]): Value {
     }
     if (isNum(i) && isNum(n)) {
       const d = f(n * i);
-      return f(i - f(2 * d * n));
+      return f(f(i) - f(f(2 * d) * n));
     }
   } catch (_e) {
     return f(0);
@@ -675,7 +675,7 @@ function evalRefract(...args: Value[]): Value {
       const k = f(1 - f(f(eta * eta) * f(1 - f(d * d))));
       const len = Math.min(i.length, n.length);
       if (k < 0) return new Float32Array(len);
-      const a = f(eta * d + Math.sqrt(k));
+      const a = f(f(eta * d) + f(Math.sqrt(k)));
       const out = new Float32Array(len);
       for (let j = 0; j < len; j++) out[j] = f(f(eta * (i[j] as number)) - f(a * (n[j] as number)));
       return out;
@@ -974,7 +974,7 @@ function inv4(m: Float32Array): Float32Array {
       const cc = allR.filter((v) => v !== c);
       const minor = minor3(m, rr[0] as number, rr[1] as number, rr[2] as number, cc[0] as number, cc[1] as number, cc[2] as number);
       const sign = (r + c) % 2 === 0 ? 1 : -1;
-      out[c * 4 + r] = f(sign * minor * inv);
+      out[c * 4 + r] = f(f(sign * minor) * inv);
     }
   }
   return out;

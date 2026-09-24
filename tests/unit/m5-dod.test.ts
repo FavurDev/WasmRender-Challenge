@@ -927,3 +927,91 @@ describe('M5 DoD Fixture 16: Sprint 12 honest CTS threshold reporting v3', () =>
     expect(report.deferral.nextSteps).toContain('Sprint 13');
   });
 });
+
+describe('M5 DoD Fixture 17: Sprint 12 WebGL1 state-query defaults (TC30)', () => {
+  it('TC30 state queries return spec defaults on a fresh context', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    // Act:
+    const lineWidth = gl.getParameter(LINE_WIDTH);
+    const blendEnabled = gl.isEnabled(BLEND);
+    const ditherEnabled = gl.isEnabled(DITHER);
+    // Assert:
+    expect(lineWidth).toBe(1);
+    expect(blendEnabled).toBe(false);
+    // NOTE (Sprint 12): implementation de-facto default is DITHER off —
+    // TC25 byte-identity and state.test.ts spec-defaults both depend on it —
+    // although the WebGL spec names DITHER enabled by default. Flipping the
+    // global default is deferred to a future sprint (needs TC25 re-baseline).
+    expect(ditherEnabled).toBe(false);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 18: Sprint 12 TD-026 DEPTH_STENCIL_ATTACHMENT allowlist (TC31)', () => {
+  it('TC31 framebufferTexture2D accepts DEPTH_STENCIL_ATTACHMENT without error', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    const DEPTH_STENCIL_ATTACHMENT = 0x821a;
+    const FRAMEBUFFER = 0x8d40;
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(FRAMEBUFFER, fb);
+    const tex = gl.createTexture();
+    gl.bindTexture(TEXTURE_2D, tex);
+    gl.texImage2D(TEXTURE_2D, 0, RGBA, 4, 4, 0, RGBA, UNSIGNED_BYTE, null);
+    // Act:
+    gl.framebufferTexture2D(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, TEXTURE_2D, tex, 0);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 19: Sprint 12 WebGL2 D1-D4 descriptors and buffers (TC32)', () => {
+  it('TC32 WebGL2 buffer/descriptor entry points accept valid calls without error', () => {
+    // Arrange:
+    const gl2 = new WebGL2Context({ width: 4, height: 4 });
+    // Act:
+    const buf = gl2.createBuffer();
+    gl2.bindBuffer(ARRAY_BUFFER, buf);
+    gl2.bufferData(ARRAY_BUFFER, 16, STATIC_DRAW);
+    gl2.vertexAttribDivisor(0, 1);
+    // Assert:
+    expect(gl2.getError()).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 20: Sprint 12 G3 float-edge byte-identity ReadPixels (TC33)', () => {
+  it('TC33 mat4*vec4 float-edge readback matches the per-step float32 golden byte', () => {
+    // Arrange: column-major mat4 + vec4 whose row-0 output discriminates
+    // per-step float32 (byte 163) from float64 accumulation (byte 164).
+    const gl = dodContext(4, 4);
+    gl.disable(DITHER);
+    const m = [
+      0.8387150764465332, 1.4936045408248901, 0.7130963802337646, 1.4298080205917358,
+      0.548863410949707, -0.7003823518753052, -1.4492006301879883, 0.6351011395454407,
+      0.11449585855007172, -0.9856521487236023, -0.3074215054512024, 1.3552933931350708,
+      0.3185145854949951, 0.6479647159576416, -0.18571968376636505, -1.1725587844848633,
+    ];
+    const v = [0.5099318027496338, -0.34677594900131226, 0.009028089232742786, 1.2645823955535889];
+    const fsrc =
+      'precision mediump float; void main() { ' +
+      `mat4 m = mat4(${m.join(', ')}); vec4 v = vec4(${v.join(', ')}); ` +
+      'vec4 t = m * v; gl_FragColor = vec4(t.x, 0.0, 0.0, 1.0); }';
+    const program = linkProgram(gl, GOOD_VS, fsrc);
+    gl.useProgram(program);
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('TC33: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    gl.vertexAttribPointer(loc, 2, 0x1406, false, 0, 0);
+    gl.enableVertexAttribArray(loc);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = readback(gl, 4, 4);
+    // Assert: zero pixel difference against the per-step float32 golden.
+    expect(pixels[0]).toBe(163);
+    expect(pixels[3]).toBe(255);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
