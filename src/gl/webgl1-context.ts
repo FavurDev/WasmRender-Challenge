@@ -42,6 +42,9 @@ import {
   MEDIUM_INT,
   VALID_PRECISION_TYPE_SET,
   COLOR_ATTACHMENT0,
+  COLOR_ATTACHMENT1,
+  COLOR_ATTACHMENT2,
+  COLOR_ATTACHMENT3,
   DEPTH_ATTACHMENT,
   STENCIL_ATTACHMENT,
   DEPTH_STENCIL_ATTACHMENT,
@@ -1686,6 +1689,7 @@ export class WebGL1Context {
 
   /** Query framebuffer completeness for the bound framebuffer. */
   checkFramebufferStatus(target: number): number {
+    if ((target as GLenum) !== FRAMEBUFFER) return FRAMEBUFFER_UNSUPPORTED;
     if ((target as GLenum) === FRAMEBUFFER) {
       const bound = this.framebufferManager.getBoundFramebuffer();
       if (bound !== null && this.depthStencilFbos.has(bound.id)) return FRAMEBUFFER_UNSUPPORTED;
@@ -1701,6 +1705,29 @@ export class WebGL1Context {
   /** Attach a texture level to the bound framebuffer. */
   framebufferTexture2D(target: number, attachment: number, textarget: number, texture: unknown, level: number): void {
     if (this.errorSink.isContextLost()) return;
+    if ((target as GLenum) !== FRAMEBUFFER) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (
+      (attachment as GLenum) !== COLOR_ATTACHMENT0 &&
+      (attachment as GLenum) !== COLOR_ATTACHMENT1 &&
+      (attachment as GLenum) !== COLOR_ATTACHMENT2 &&
+      (attachment as GLenum) !== COLOR_ATTACHMENT3 &&
+      (attachment as GLenum) !== DEPTH_ATTACHMENT &&
+      (attachment as GLenum) !== STENCIL_ATTACHMENT
+    ) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if ((textarget as GLenum) !== TEXTURE_2D) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (level !== 0) {
+      this.errorSink.recordError(INVALID_VALUE);
+      return;
+    }
     this.framebufferManager.framebufferTexture2D(
       target as GLenum,
       attachment as GLenum,
