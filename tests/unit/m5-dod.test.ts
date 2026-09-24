@@ -638,3 +638,292 @@ describe('M5 DoD Fixture 8: TD-015/016 harness hardening', () => {
     }
   });
 });
+
+describe('M5 DoD Fixture 9: Sprint 11 RC-4 API surface completion', () => {
+  it('TC22 RC-4 API surface completion matrix', async () => {
+    // Arrange:
+    const gl1 = dodContext(640, 480);
+    const gl2 = new WebGL2Context({ width: 640, height: 480 });
+    const C = await import('../../src/gl/constants');
+    const g = globalThis as unknown as Record<string, unknown>;
+    const saved1 = g['WebGLRenderingContext'];
+    const saved2 = g['WebGL2RenderingContext'];
+    g['WebGLRenderingContext'] = function WebGLRenderingContext(): void {};
+    g['WebGL2RenderingContext'] = function WebGL2RenderingContext(): void {};
+    // Act:
+    let r1 = false;
+    let r2 = false;
+    try {
+      r1 = gl1 instanceof (g['WebGLRenderingContext'] as never);
+      r2 = gl2 instanceof (g['WebGL2RenderingContext'] as never);
+    } finally {
+      g['WebGLRenderingContext'] = saved1;
+      g['WebGL2RenderingContext'] = saved2;
+    }
+    const vs = gl1.createShader(VERTEX_SHADER);
+    if (vs === null) throw new Error('arrange: shader creation failed');
+    const vsSrc = 'precision mediump float;\nvoid main() { gl_Position = vec4(0.0); }';
+    gl1.shaderSource(vs, vsSrc);
+    const returnedSrc = gl1.getShaderSource(vs);
+    const errShaderSource = gl1.getError();
+    gl1.clearStencil(127);
+    const stencilVal = gl1.getParameter(C.STENCIL_CLEAR_VALUE);
+    const errClearStencil = gl1.getError();
+    const dbw = gl1.drawingBufferWidth;
+    const dbh = gl1.drawingBufferHeight;
+    const depthBit1 = (gl1 as unknown as Record<string, unknown>)['DEPTH_BUFFER_BIT'];
+    const depthBit2 = (gl2 as unknown as Record<string, unknown>)['DEPTH_BUFFER_BIT'];
+    // Assert:
+    expect(r1).toBe(true);
+    expect(r2).toBe(true);
+    expect(returnedSrc).toBe(vsSrc);
+    expect(errShaderSource).toBe(NO_ERROR);
+    expect(stencilVal).toBe(127);
+    expect(errClearStencil).toBe(NO_ERROR);
+    expect(dbw).toBe(640);
+    expect(dbh).toBe(480);
+    expect(depthBit1).toBe(0x00000100);
+    expect(depthBit2).toBe(0x00000100);
+  });
+});
+
+describe('M5 DoD Fixture 10: Sprint 11 RC-5 implementation defects strictness', () => {
+  it('TC23 RC-5 error strictness, link diagnostics, and framebuffer completeness', async () => {
+    // Arrange:
+    const gl = dodContext(64, 64);
+    const C = await import('../../src/gl/constants');
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act - Part 1: success path strictness.
+    gl.viewport(0, 0, 100, 100);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    const errSuccessPath = gl.getError();
+    // Act - Part 2: link diagnostic failure on varying mismatch.
+    const vs = gl.createShader(VERTEX_SHADER);
+    const fs = gl.createShader(FRAGMENT_SHADER);
+    if (vs === null || fs === null) throw new Error('arrange: shader creation failed');
+    gl.shaderSource(vs, 'varying vec4 v_col;\nvoid main() { gl_Position = vec4(0.0); }');
+    gl.compileShader(vs);
+    gl.shaderSource(fs, 'varying vec4 v_other;\nvoid main() { gl_FragColor = v_other; }');
+    gl.compileShader(fs);
+    const prog = gl.createProgram();
+    if (prog === null) throw new Error('arrange: program creation failed');
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    const linkStatus = gl.getProgramParameter(prog, LINK_STATUS);
+    const infoLog = gl.getProgramInfoLog(prog);
+    // Act - Part 3: framebuffer completeness exact enums.
+    const anyGl = gl as unknown as Record<string, (...args: never[]) => unknown>;
+    const fb = (anyGl['createFramebuffer'] as () => unknown)();
+    gl.bindFramebuffer(C.FRAMEBUFFER, fb as never);
+    const statusMissing = gl.checkFramebufferStatus(C.FRAMEBUFFER) as unknown as number;
+    const rb = (anyGl['createRenderbuffer'] as () => unknown)();
+    (anyGl['framebufferRenderbuffer'] as (t: unknown, a: unknown, r: unknown, o: unknown) => void)(
+      C.FRAMEBUFFER,
+      C.COLOR_ATTACHMENT0,
+      C.RENDERBUFFER,
+      rb,
+    );
+    const statusIncomplete = gl.checkFramebufferStatus(C.FRAMEBUFFER) as unknown as number;
+    // Assert:
+    expect(errSuccessPath).toBe(NO_ERROR);
+    expect(linkStatus).toBe(false);
+    expect(typeof infoLog).toBe('string');
+    expect((infoLog as string).length).toBeGreaterThan(0);
+    expect(statusMissing).toBe(C.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+    expect(statusIncomplete).toBe(C.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+    expect(statusMissing).not.toBe(0);
+    expect(statusIncomplete).not.toBe(0);
+  });
+});
+
+describe('M5 DoD Fixture 11: Sprint 11 TD-024 dual-fault ordering and bit-depth constants', () => {
+  it('TC24 readPixels dual-fault INVALID_ENUM-before-INVALID_VALUE and bit depths', () => {
+    // Arrange:
+    const gl = dodContext(64, 64);
+    const dst = new Uint8Array(16);
+    // Act - Part 1: dual-fault invalid format + out-of-bounds.
+    gl.readPixels(-10, -10, 100, 100, 0x1234, UNSIGNED_BYTE, dst);
+    const errDualFault1 = gl.getError();
+    const errDrain1 = gl.getError();
+    // Act - Part 2: dual-fault invalid type + out-of-bounds.
+    gl.readPixels(-5, -5, 200, 200, RGBA, 0x5678, dst);
+    const errDualFault2 = gl.getError();
+    const errDrain2 = gl.getError();
+    // Act - Part 3: bit-depth named constant queries.
+    const rBits = gl.getParameter(0x0d52);
+    const gBits = gl.getParameter(0x0d53);
+    const bBits = gl.getParameter(0x0d54);
+    const aBits = gl.getParameter(0x0d55);
+    const dBits = gl.getParameter(0x0d56);
+    const sBits = gl.getParameter(0x0d57);
+    const errBitDepths = gl.getError();
+    // Assert:
+    expect(errDualFault1).toBe(INVALID_ENUM);
+    expect(errDrain1).toBe(NO_ERROR);
+    expect(errDualFault2).toBe(INVALID_ENUM);
+    expect(errDrain2).toBe(NO_ERROR);
+    expect([rBits, gBits, bBits, aBits]).toEqual([8, 8, 8, 8]);
+    expect(dBits).toBe(24);
+    expect(sBits).toBe(8);
+    expect(errBitDepths).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 12: Sprint 11 G3 float-edge byte-identity and coverage', () => {
+  it('TC25 Math.fround float32 readPixels byte-identity and deterministic raster coverage', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    const vsSrc = 'attribute vec4 aPos; void main() { gl_Position = aPos; }';
+    const fsSrc = 'precision mediump float; void main() { gl_FragColor = vec4(0.5 - 0.000000001, 0.0, 0.0, 1.0); }';
+    const prog = linkProgram(gl, vsSrc, fsSrc);
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('arrange: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'aPos');
+    gl.vertexAttribPointer(loc, 2, 0x1406, false, 0, 0);
+    gl.enableVertexAttribArray(loc);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(COLOR_BUFFER_BIT);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const dst = new Uint8Array(4 * 4 * 4);
+    gl.readPixels(0, 0, 4, 4, RGBA, UNSIGNED_BYTE, dst);
+    // Assert: Math.fround(0.5 - 1e-9) evaluates to 0.5 in float32, scaling to byte 128.
+    expect(dst[0]).toBe(128);
+    expect(dst[1]).toBe(0);
+    expect(dst[2]).toBe(0);
+    expect(dst[3]).toBe(255);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 13: Sprint 11 error-queue exactness Part 2', () => {
+  it('TC26 draw/program/framebuffer/context-loss exact error codes and sticky queue', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    expect(gl.getError()).toBe(NO_ERROR);
+    // Act - Part 1: draw invalid mode and negative first.
+    gl.drawArrays(0xffff, 0, 3);
+    const errInvalidMode = gl.getError();
+    gl.drawArrays(TRIANGLES, -1, 3);
+    const errNegFirst = gl.getError();
+    // Act - Part 2: framebuffer invalid target.
+    gl.bindFramebuffer(0x9999, null);
+    const errBadFbTarget = gl.getError();
+    // Act - Part 3: context-loss sentinels and sticky queue.
+    const loseExt = gl.getExtension('WEBGL_lose_context') as unknown as {
+      loseContext(): void;
+      restoreContext(): void;
+    };
+    loseExt.loseContext();
+    expect(gl.isContextLost()).toBe(true);
+    const lostBuf = gl.createBuffer();
+    const errLost = gl.getError();
+    const errLostDrained = gl.getError();
+    loseExt.restoreContext();
+    expect(gl.isContextLost()).toBe(false);
+    // Act - Part 4: sticky-queue verification (first error retained, second discarded).
+    gl.drawArrays(0xffff, 0, 3);
+    gl.drawArrays(TRIANGLES, -1, 3);
+    const stickyErr1 = gl.getError();
+    const stickyErr2 = gl.getError();
+    // Assert:
+    expect(errInvalidMode).toBe(INVALID_ENUM);
+    expect(errNegFirst).toBe(INVALID_VALUE);
+    expect(errBadFbTarget).toBe(INVALID_ENUM);
+    expect(lostBuf).toBeNull();
+    expect(errLost).toBe(CONTEXT_LOST_WEBGL);
+    expect(errLostDrained).toBe(NO_ERROR);
+    expect(stickyErr1).toBe(INVALID_ENUM);
+    expect(stickyErr2).toBe(NO_ERROR);
+  });
+});
+
+describe('M5 DoD Fixture 14: Sprint 11 TD-025 triage-log isolation', () => {
+  it('TC27 synthetic triage write leaves production log untouched and run-scoped path isolated', async () => {
+    // Arrange:
+    const fs = await import('node:fs');
+    const harness = await import('../conformance/webgl1-harness');
+    const prodPath = harness.WEBGL1_TRIAGE_LOG as string;
+    const statBefore = fs.statSync(prodPath);
+    const contentBefore = fs.readFileSync(prodPath, 'utf8');
+    const tempLogPath = harness.createRunScopedLogPath('dod-isolation-test');
+    const logger = new harness.CTSTriageLogger(tempLogPath);
+    try {
+      // Act:
+      logger.recordTestResult('synth-test-dod', {
+        verdict: 'FAIL',
+        assertions: [{ success: false, message: 'probe' }],
+        drainedErrors: [],
+        crash: null,
+      });
+      const summary = logger.finalizeReport();
+      // Assert:
+      expect(fs.existsSync(tempLogPath)).toBe(true);
+      expect(fs.readFileSync(prodPath, 'utf8')).toBe(contentBefore);
+      expect(fs.statSync(prodPath).size).toBe(statBefore.size);
+      expect(fs.statSync(prodPath).mtimeMs).toBe(statBefore.mtimeMs);
+      expect(summary.totals.failed).toBe(1);
+    } finally {
+      // Cleanup:
+      try {
+        if (fs.existsSync(tempLogPath)) fs.unlinkSync(tempLogPath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  });
+});
+
+describe('M5 DoD Fixture 15: Sprint 11 coverage gate threshold enforcement', () => {
+  it('TC28 vitest config enforces 90% coverage threshold', async () => {
+    // Arrange:
+    const fs = await import('node:fs');
+    const configSrc = fs.readFileSync('vitest.config.ts', 'utf8');
+    // Act:
+    const hasLines90 = configSrc.includes('lines: 90');
+    const hasFuncs96 = configSrc.includes('functions: 96');
+    const hasBranches81 = configSrc.includes('branches: 81');
+    const hasStatements90 = configSrc.includes('statements: 90');
+    // Assert:
+    expect(hasLines90).toBe(true);
+    expect(hasFuncs96).toBe(true);
+    expect(hasBranches81).toBe(true);
+    expect(hasStatements90).toBe(true);
+  });
+});
+
+describe('M5 DoD Fixture 16: Sprint 11 honest CTS threshold reporting v2', () => {
+  it('TC29 threshold report v2 records GAP_RECORDED with unlowered gates and measured deltas', async () => {
+    // Arrange:
+    const fs = await import('node:fs');
+    const raw = fs.readFileSync('test-results/conformance/threshold-report.json', 'utf8');
+    const report = JSON.parse(raw) as {
+      overallStatus: string;
+      reconciliationValid: boolean;
+      suites: {
+        webgl1: { targetGate: number; executed: number; crashed: number };
+        webgl2: { targetGate: number; executed: number; crashed: number };
+      };
+      deltas: { webgl2: { deltaPercentagePoints: string } };
+      deferral: { nextSteps: string };
+    };
+    // Act & Assert:
+    expect(report.overallStatus).toBe('GAP_RECORDED');
+    expect(report.reconciliationValid).toBe(true);
+    expect(report.suites.webgl1.targetGate).toBe(95);
+    expect(report.suites.webgl1.executed).toBe(672);
+    expect(report.suites.webgl1.crashed).toBe(0);
+    expect(report.suites.webgl2.targetGate).toBe(90);
+    expect(report.suites.webgl2.executed).toBe(2598);
+    expect(report.suites.webgl2.crashed).toBe(0);
+    expect(report.deltas.webgl2.deltaPercentagePoints).toBe('+0.00%');
+    expect(report.deferral.nextSteps).toContain('Sprint 12');
+  });
+});
