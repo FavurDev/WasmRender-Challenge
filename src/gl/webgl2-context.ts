@@ -1,6 +1,7 @@
 // CHANGELOG: Sprint 8 Task 5 (2026-09-22): WebGL2-only 3D/array texture facade (texImage3D family + WebGL2 pixel-store interception). ADR-004: WebGL1Context never exposes these methods.
 // CHANGELOG: Sprint 8 Task 1 (2026-09-22): VAO family merged alongside Task 5 facade (create/bind/delete/isVertexArray + getVertexAttrib/Offset, everBound tracking).
 // CHANGELOG: Sprint 8 remediation (46ba504): removed test-only drawOcclusionScene helper; occlusion counts flow via QuerySync only.
+// CHANGELOG: Sprint 11 (2026-09-23): Symbol.hasInstance guard + WebGL2RenderingContext alias trap.
 /** WebGL2Context — WebGL1Context subclass exposing the WebGL 2.0 3D/array texture family.
  *
  * Responsibility: texImage3D/texSubImage3D/copyTexSubImage3D facade plus WebGL2

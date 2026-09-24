@@ -8,6 +8,7 @@
 // CHANGELOG:
 // - Sprint 4 (2026-09-20): ProgramRegistry, LinkedProgram, UniformStore, link(), computeStd140Offsets.
 // - Sprint 8 Task 10 (2026-09-22): MRT remediation — fragOutputs on LinkedProgram, mixed-dialect link gate.
+// - Sprint 11 (2026-09-23): link-failure non-empty info-log fallback.
 import type { GLenum } from './constants';
 import {
   BOOL,

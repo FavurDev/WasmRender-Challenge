@@ -1,6 +1,7 @@
 // CHANGELOG: Sprint 1 (2026-09-20): Sprint 1 initial GL constants table
 // CHANGELOG: Sprint 4 (2026-09-20): 5 new UNSIGNED_INT enums.
 // CHANGELOG: Sprint 9 Task 2: shader precision enums LOW/MEDIUM/HIGH_FLOAT/INT + VALID_PRECISION_TYPE_SET (GLSL ES 1.00 Section 4.5).
+// CHANGELOG: Sprint 11 (2026-09-23): six named bit-depth constants RED_BITS..STENCIL_BITS (TD-024).
 /** GL constants — single definition of every WebGL1/WebGL2 enum. L0: imports nothing, no logic. */
 export type GLenum = number;
 
