@@ -15,7 +15,7 @@
  * caller's typed arrays via clone-on-bind; no persistent slot arrays are kept,
  * so repeated identical invocations produce byte-identical outputs (AC-4).
  */
-// CHANGELOG:
+// CHANGELOG: Sprint 13 (2026-09-24): T5 TD-027 closure: per-step f(-f(x)) fround negation in evalUnary (Float32Array/scalar/Value[]) plus scalarFloatOp '/' signed-zero IEEE 754 fix (5efbbae).
 // - Sprint 4 (2026-09-20): New AST interpreter (Task 5).
 // - Sprint 6 (2026-09-21): Real texture sampling hookup in fragment path (Task 5).
 // - Sprint 7 Task 8 (2026-09-21): TD-012 explicit error scoping, no silent catch-all.

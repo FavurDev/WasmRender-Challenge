@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T4 threshold report v4: baseline deltas, gate-feasibility assessment, operator-escalation recommendation (d04b1de).
 /** Sprint 12 Task 5 CTS threshold report aggregation and formatting (v3). */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';

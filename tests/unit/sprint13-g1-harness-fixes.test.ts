@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T2 per-defect regression suite D1-D4 (349a3eb).
 /** Sprint 13 remediation red-phase: G1 harness defects (T2 wave). All must FAIL until fixed. */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T2 harness wave: getElementsByTagName numeric indexing + item(), MockXMLHttpRequest.overrideMimeType, resolveXhrFile activeTestBaseDir/vendor-root resolution, DOMElementStub.canPlayType (349a3eb).
 /** WebGL1 CTS conformance harness — manifest parsing, headless VM execution, triage logging, runner. */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';

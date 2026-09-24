@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T4 v4 test extensions (d04b1de).
 /** Sprint 12 Task 5 CTS threshold report v3 vitest suite. */
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

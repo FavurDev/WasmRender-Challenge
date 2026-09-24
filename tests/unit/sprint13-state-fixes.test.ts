@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T3 per-signature regression suite T5-T9 (349a3eb).
 /** Sprint 13 remediation red-phase: GL state fixes (T3 wave). Must FAIL until fixed. */
 import { describe, expect, it } from 'vitest';
 import { createSoftwareWebGLContext } from '../../src/entry';

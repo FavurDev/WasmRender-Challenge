@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): TD-027 5-test byte-identity suite (5efbbae).
 /** Sprint 13 Task 5 TD-027 closure regression suite (TDD red phase) — unary negation byte-identity. */
 import { describe, expect, it } from 'vitest';
 import { createSoftwareWebGLContext } from '../../src/entry';

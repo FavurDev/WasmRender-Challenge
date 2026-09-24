@@ -1,3 +1,4 @@
+// CHANGELOG: Sprint 13 (2026-09-24): T6: TC29a/TC29b per-context split (ce2d189) + TC34-TC36 Demo Carrier Fixtures 21-23 (349a3eb).
 /** Sprint 9 Task 9 — M5 Definition-of-Done suite (Demo Carrier). Entry-point semantics, error-taxonomy spot-checks, TD-003 determinism, CTS classification discipline. */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
