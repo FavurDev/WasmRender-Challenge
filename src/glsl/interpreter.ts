@@ -19,6 +19,7 @@
 // - Sprint 4 (2026-09-20): New AST interpreter (Task 5).
 // - Sprint 6 (2026-09-21): Real texture sampling hookup in fragment path (Task 5).
 // - Sprint 7 Task 8 (2026-09-21): TD-012 explicit error scoping, no silent catch-all.
+// - Sprint 12 (2026-09-24): G3 per-step Math.fround normalization in matVecMul/vecMatMul/matMatMul accumulators and evalBinary (16,4)/(4,16) matrix-vector dispatch guard (remediation 9b10e19).
 import type {
   AssignmentExpression,
   BinaryExpression,
