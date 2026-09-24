@@ -149,3 +149,165 @@ describe('test_unexplained_skips_accounted_in_gap', () => {
     expect(metrics.testsNeeded).toBe(Math.ceil(0.95 * 35) - 10);
   });
 });
+
+describe('s11_metrics_extraction', () => {
+  it('extracts exact Sprint 11 counts and rates from real triage totals', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const w1 = buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 });
+    const w2 = buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 });
+    // Act:
+    const m1 = aggregator.aggregateSuite('webgl1', w1);
+    const m2 = aggregator.aggregateSuite('webgl2', w2);
+    // Assert:
+    expect(m1.discovered).toBe(672);
+    expect(m1.passed).toBe(10);
+    expect(m1.failed).toBe(662);
+    expect(m1.crashed).toBe(0);
+    expect(m1.passRateFormatted).toBe('1.49');
+    expect(m2.discovered).toBe(2598);
+    expect(m2.passed).toBe(16);
+    expect(m2.failed).toBe(2582);
+    expect(m2.crashed).toBe(0);
+    expect(m2.passRateFormatted).toBe('0.62');
+    expect(m1.discovered).toBe(m1.executed + m1.skipped);
+  });
+});
+
+describe('s11_reconciliation_validity', () => {
+  it('accepts valid logs and throws ReconciliationError for each broken equality', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const valid = buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 });
+    const badFirst = buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 1 });
+    const badSecond = buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 661, crashed: 0, skipped: 0 });
+    // Act:
+    const ok = aggregator.checkReconciliation(valid);
+    // Assert:
+    expect(ok).toBe(true);
+    expect(() => aggregator.checkReconciliation(badFirst)).toThrow(ReconciliationError);
+    expect(() => aggregator.checkReconciliation(badSecond)).toThrow(ReconciliationError);
+  });
+});
+
+describe('s11_gap_recorded_status', () => {
+  it('records GAP_RECORDED in JSON and Markdown when gates are unmet', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 's11-gap-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    const metrics = { suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true };
+    // Act:
+    const ok = ThresholdReportFormatter.writeReports(metrics, mdPath, jsonPath);
+    // Assert:
+    expect(ok).toBe(true);
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    expect(json.overallStatus).toBe('GAP_RECORDED');
+    const md = readFileSync(mdPath, 'utf8');
+    expect(md).toContain('GAP_RECORDED');
+  });
+});
+
+describe('s11_deferral_narrative_currency', () => {
+  it('cites current TD register state without stale audit-first narration', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 's11-deferral-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    // Act:
+    const deferral = (ThresholdReportFormatter as unknown as { composeDeferralNarrative: () => { rationale: string; nextSteps: string } }).composeDeferralNarrative();
+    ThresholdReportFormatter.writeReports({ suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true }, mdPath, jsonPath);
+    const md = readFileSync(mdPath, 'utf8');
+    const text = `${deferral.rationale} ${deferral.nextSteps} ${md}`;
+    // Assert:
+    expect(text).toContain('TD-024');
+    expect(text).toContain('CLOSED');
+    expect(text).toContain('TD-025');
+    expect(text).toContain('TD-023');
+    expect(text).toContain('REDUCED');
+    expect(text.toLowerCase()).not.toContain('audit first');
+    expect(text.toLowerCase()).not.toContain('pending audit');
+  });
+});
+
+describe('s11_delta_recording', () => {
+  it('records WebGL2 baseline and WebGL1 denominator restoration honestly', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    const suites = { webgl1: m1, webgl2: m2 } as unknown as Record<string, never>;
+    // Act:
+    const deltas = (ThresholdReportFormatter as unknown as { composeDeltas: (s: unknown) => { webgl1: { sprint10Ratio: string; sprint11Ratio: string; notes: string }; webgl2: { sprint10Ratio: string; sprint11Ratio: string } } }).composeDeltas(suites);
+    // Assert:
+    expect(deltas.webgl2.sprint10Ratio).toContain('16/2598');
+    expect(deltas.webgl2.sprint11Ratio).toContain('16/2598');
+    expect(deltas.webgl1.sprint10Ratio).toContain('0/3');
+    expect(deltas.webgl1.sprint11Ratio).toContain('10/672');
+    expect(deltas.webgl1.notes).toContain('672');
+  });
+});
+
+describe('s11_zero_crashes', () => {
+  it('asserts zero crashes across both suites', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    // Act:
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    // Assert:
+    expect(m1.crashed).toBe(0);
+    expect(m2.crashed).toBe(0);
+    expect(m1.crashed + m2.crashed).toBe(0);
+  });
+});
+
+describe('s11_unlowered_gates', () => {
+  it('keeps target gates strictly at 95.0 and 90.0', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    // Act:
+    const g1 = aggregator.calculateGap('webgl1', 672, 10);
+    const g2 = aggregator.calculateGap('webgl2', 2598, 16);
+    // Assert:
+    expect(g1.targetGate).toBe(95.0);
+    expect(g2.targetGate).toBe(90.0);
+    expect(g1.passRate).toBeLessThan(95.0);
+    expect(g2.passRate).toBeLessThan(90.0);
+  });
+});
+
+describe('s11_artifact_emission', () => {
+  it('emits non-empty JSON and Markdown artifacts with all sections', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 's11-artifacts-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 10, failed: 662, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 16, failed: 2582, crashed: 0, skipped: 0 }));
+    // Act:
+    const ok = ThresholdReportFormatter.writeReports({ suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true }, mdPath, jsonPath);
+    // Assert:
+    expect(ok).toBe(true);
+    const jsonRaw = readFileSync(jsonPath, 'utf8');
+    expect(jsonRaw.length).toBeGreaterThan(0);
+    const json = JSON.parse(jsonRaw);
+    expect(json.suites.webgl1).toBeDefined();
+    expect(json.suites.webgl2).toBeDefined();
+    expect(json.overallStatus).toBe('GAP_RECORDED');
+    const md = readFileSync(mdPath, 'utf8');
+    expect(md.length).toBeGreaterThan(0);
+    expect(md).toContain('Executive Summary');
+    expect(md).toContain('Reconciliation Analysis');
+    expect(md).toContain('Root Cause Attribution');
+    expect(md).toContain('Measured Deltas vs Sprint 10 Baseline');
+    expect(md).toContain('Deferral and Residual Gap Plan');
+  });
+});

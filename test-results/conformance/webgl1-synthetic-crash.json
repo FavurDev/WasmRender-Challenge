@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-24T01:59:40.843Z",
+  "timestamp": "2026-09-24T03:04:03.522Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 673,
@@ -23180,7 +23180,7 @@
       "passed": false,
       "drainedErrors": [],
       "error": "Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined",
-      "stack": "Error: Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined\n    at CTSRunner.runSuite (C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1-harness.ts:950:17)\n    at C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1.test.ts:129:34\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+      "stack": "Error: Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined\n    at CTSRunner.runSuite (C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1-harness.ts:990:17)\n    at C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1.test.ts:129:34\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
       "classification": "spec-defect",
       "rootCauseGroup": "G1"
     }

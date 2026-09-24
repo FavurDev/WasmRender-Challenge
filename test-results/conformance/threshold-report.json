@@ -1,25 +1,25 @@
 {
-  "timestamp": "2026-09-23T19:57:04.061Z",
+  "timestamp": "2026-09-24T02:56:54.894Z",
   "suites": {
     "webgl1": {
       "suite": "webgl1",
-      "discovered": 3,
-      "executed": 1,
-      "passed": 0,
-      "failed": 1,
+      "discovered": 672,
+      "executed": 672,
+      "passed": 10,
+      "failed": 662,
       "crashed": 0,
-      "skipped": 2,
-      "passRate": 0,
-      "passRateFormatted": "0.00",
+      "skipped": 0,
+      "passRate": 1.488095238095238,
+      "passRateFormatted": "1.49",
       "targetGate": 95,
-      "passGap": 95,
-      "testsNeeded": 3,
+      "passGap": 93.51190476190476,
+      "testsNeeded": 629,
       "rootCauses": {
-        "G1": 0,
+        "G1": 619,
         "G2": 0,
-        "G3": 0,
-        "G4": 2,
-        "total": 2
+        "G3": 40,
+        "G4": 3,
+        "total": 662
       }
     },
     "webgl2": {
@@ -45,5 +45,39 @@
     }
   },
   "reconciliationValid": true,
-  "overallStatus": "GAP_RECORDED"
+  "overallStatus": "GAP_RECORDED",
+  "deltas": {
+    "webgl1": {
+      "suite": "webgl1",
+      "sprint10PassRate": "0.00",
+      "sprint10Ratio": "0/3 (synthetic)",
+      "sprint11PassRate": "1.49",
+      "sprint11Ratio": "10/672",
+      "deltaPercentagePoints": "+1.49 (baseline restored)",
+      "notes": "Sprint 10 baseline was invalid (3-test synthetic fixture clobbered TRIAGE_LOG). Sprint 11 Task 4 isolated triage log and restored authentic 672-test denominator."
+    },
+    "webgl2": {
+      "suite": "webgl2",
+      "sprint10PassRate": "0.62",
+      "sprint10Ratio": "16/2598",
+      "sprint11PassRate": "0.62",
+      "sprint11Ratio": "16/2598",
+      "deltaPercentagePoints": "+0.00%",
+      "notes": "Measured on post-fix software context across full 2598-test suite."
+    }
+  },
+  "deferral": {
+    "closedDebts": [
+      "TD-024 (CLOSED in commit 0357097): Bare hex bit-depth constants replaced with named constants; readPixels INVALID_ENUM checked before OOB INVALID_VALUE; G3 float-edge fixes landed.",
+      "TD-025 (CLOSED in commit 323a24f): Triage-log clobbering hazard eliminated via per-run isolated log paths; real 672-test WebGL1 denominator restored."
+    ],
+    "reducedDebts": [
+      "TD-023 (REDUCED): G1 expectation audit completed; RC-4 API-surface fixes (Task 1) and RC-5 implementation fixes (Task 2) landed; residual 662 WebGL1 and 2582 WebGL2 failures mapped to G1/G3 root-cause buckets."
+    ],
+    "openDebts": [
+      "TD-001 (OPEN): Favur gauntlet subsystem external issue; compensating control is sprint-review APPROVE with independently verified gates."
+    ],
+    "rationale": "Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 10/672 vs 639 needed for 95%; WebGL2: 16/2598 vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-024 and TD-025 CLOSED and TD-023 REDUCED, residual G1 and G3 remediation is formally scheduled for Sprint 12.",
+    "nextSteps": "Sprint 12 will execute the next deep fix wave on remaining G1 and G3 root causes toward meeting the 95%/90% conformance thresholds."
+  }
 }
