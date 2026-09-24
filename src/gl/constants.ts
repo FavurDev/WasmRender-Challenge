@@ -128,6 +128,7 @@ export const LINEAR_MIPMAP_LINEAR: GLenum = 0x2703;
 export const CLAMP_TO_EDGE: GLenum = 0x812f;
 export const MIRRORED_REPEAT: GLenum = 0x8370;
 export const REPEAT: GLenum = 0x2901;
+export const COMPRESSED_TEXTURE_FORMATS: GLenum = 0x86a3;
 
 // Formats / types
 export const ALPHA: GLenum = 0x1906;

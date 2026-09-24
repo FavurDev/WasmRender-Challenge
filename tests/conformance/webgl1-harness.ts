@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, posix, sep } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
+import { isWebGL1Instance } from '../../src/gl/webgl1-context';
 import { WebGL2Context, createSoftwareWebGLContext } from '../../src/entry';
 
 export const WEBGL1_MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/1.0.3';
@@ -325,6 +326,11 @@ function populateWebGLGlobals(target: Record<string, unknown>): void {
   }
   Object.assign(WebGLRenderingContext, WEBGL1_CONSTANTS);
   (WebGLRenderingContext as unknown as Record<string, unknown>).prototype = WEBGL1_CONSTANTS;
+  Object.defineProperty(WebGLRenderingContext, Symbol.hasInstance, {
+    value: (instance: unknown): boolean => isWebGL1Instance(instance),
+    configurable: true,
+    writable: true,
+  });
   function WebGL2RenderingContext(): void {
     return undefined;
   }
@@ -438,7 +444,7 @@ export class CTSHeadlessEnvironment {
 
   private elementsById: Map<string, DOMElementStub> = new Map();
 
-  setup(rendererFactory: RendererFactory): Record<string, unknown> {
+  setup(rendererFactory: RendererFactory, htmlContent?: string): Record<string, unknown> {
     const glContext = rendererFactory({ width: 300, height: 150 });
     this.context = glContext;
     this.testResults = [];
@@ -475,6 +481,45 @@ export class CTSHeadlessEnvironment {
       return null;
     };
     elementsById.set('canvas', canvasStub);
+    if (htmlContent !== undefined && htmlContent !== null && htmlContent !== '') {
+      const canvasTagPattern = /<canvas\b([^>]*)>/gi;
+      let tagMatch: RegExpExecArray | null;
+      while ((tagMatch = canvasTagPattern.exec(htmlContent)) !== null) {
+        const attrText = tagMatch[1] ?? '';
+        const idMatch = /id\s*=\s*["']([^"']+)["']/i.exec(attrText);
+        if (idMatch === null || idMatch[1] === undefined) continue;
+        const canvasId = idMatch[1];
+        if (elementsById.has(canvasId)) continue;
+        const widthMatch = /width\s*=\s*["']?(\d+)["']?/i.exec(attrText);
+        const heightMatch = /height\s*=\s*["']?(\d+)["']?/i.exec(attrText);
+        const parsedWidth = widthMatch !== null && widthMatch[1] !== undefined ? Number.parseInt(widthMatch[1], 10) : NaN;
+        const parsedHeight = heightMatch !== null && heightMatch[1] !== undefined ? Number.parseInt(heightMatch[1], 10) : NaN;
+        const stub = new DOMElementStub('CANVAS');
+        stub.id = canvasId;
+        stub.width = Number.isFinite(parsedWidth) && parsedWidth > 0 ? parsedWidth : 300;
+        stub.height = Number.isFinite(parsedHeight) && parsedHeight > 0 ? parsedHeight : 150;
+        const stubWidth = stub.width;
+        const stubHeight = stub.height;
+        let memoized: unknown = null;
+        (stub as DOMElementStub & { getContext: (type: string) => unknown }).getContext = (type: string) => {
+          const normalized = String(type ?? '').trim().toLowerCase();
+          if (normalized === 'webgl2' || normalized === 'experimental-webgl2') {
+            if (glContext instanceof WebGL2Context) return glContext;
+            try {
+              const produced = factoryRef({ width: stubWidth, height: stubHeight });
+              if (produced instanceof WebGL2Context) return produced;
+            } catch { /* fall through to null */ }
+            return null;
+          }
+          if (normalized === 'webgl' || normalized === 'experimental-webgl') {
+            if (memoized === null) memoized = factoryRef({ width: stubWidth, height: stubHeight });
+            return memoized;
+          }
+          return null;
+        };
+        elementsById.set(canvasId, stub);
+      }
+    }
 
     const descriptionStub = new DOMElementStub('DIV');
     descriptionStub.id = 'description';
@@ -489,12 +534,49 @@ export class CTSHeadlessEnvironment {
         }
         const dynamicStub = new DOMElementStub('DIV');
         dynamicStub.id = id;
+        let dynamicMemoized: unknown = null;
+        (dynamicStub as DOMElementStub & { getContext: (type: string) => unknown }).getContext = (type: string) => {
+          const normalized = String(type ?? '').trim().toLowerCase();
+          if (normalized === 'webgl2' || normalized === 'experimental-webgl2') {
+            if (glContext instanceof WebGL2Context) return glContext;
+            try {
+              const produced = factoryRef({ width: 300, height: 150 });
+              if (produced instanceof WebGL2Context) return produced;
+            } catch { /* fall through to null */ }
+            return null;
+          }
+          if (normalized === 'webgl' || normalized === 'experimental-webgl') {
+            if (dynamicMemoized === null) dynamicMemoized = factoryRef({ width: 300, height: 150 });
+            return dynamicMemoized;
+          }
+          return null;
+        };
         elementsById.set(id, dynamicStub);
         return dynamicStub;
       },
       createElement: (tagName: string): DOMElementStub => {
         if (tagName.toLowerCase() === 'canvas') {
-          return canvasStub;
+          const fresh = new DOMElementStub('CANVAS');
+          fresh.width = 300;
+          fresh.height = 150;
+          let freshMemoized: unknown = null;
+          (fresh as DOMElementStub & { getContext: (type: string) => unknown }).getContext = (type: string) => {
+            const normalized = String(type ?? '').trim().toLowerCase();
+            if (normalized === 'webgl2' || normalized === 'experimental-webgl2') {
+              if (glContext instanceof WebGL2Context) return glContext;
+              try {
+                const produced = factoryRef({ width: 300, height: 150 });
+                if (produced instanceof WebGL2Context) return produced;
+              } catch { /* fall through to null */ }
+              return null;
+            }
+            if (normalized === 'webgl' || normalized === 'experimental-webgl') {
+              if (freshMemoized === null) freshMemoized = factoryRef({ width: 300, height: 150 });
+              return freshMemoized;
+            }
+            return null;
+          };
+          return fresh;
         }
         const element = new DOMElementStub(tagName);
         if (tagName.toLowerCase() === 'div') {
@@ -505,7 +587,7 @@ export class CTSHeadlessEnvironment {
       getElementsByTagName: (tag: string): unknown => {
         let list: DOMElementStub[];
         if (tag.toLowerCase() === 'canvas') {
-          list = [canvasStub];
+          list = [...elementsById.values()].filter((el) => el.tagName === 'CANVAS');
         } else if (tag.toLowerCase() === 'script') {
           list = [...elementsById.values()].filter((el) => el.tagName === 'SCRIPT');
         } else {
@@ -536,7 +618,17 @@ export class CTSHeadlessEnvironment {
       console,
       document: mockDocument,
       location: mockLocation,
-      WebGLRenderingContext: {},
+      WebGLRenderingContext: (() => {
+        function WebGLRenderingContext(): void {
+          throw new TypeError('Illegal constructor');
+        }
+        Object.defineProperty(WebGLRenderingContext, Symbol.hasInstance, {
+          value: (instance: unknown): boolean => isWebGL1Instance(instance),
+          configurable: true,
+          writable: true,
+        });
+        return WebGLRenderingContext;
+      })(),
       HTMLCanvasElement: function HTMLCanvasElement() {
         return canvasStub;
       },
@@ -963,7 +1055,13 @@ export class CTSRunner {
         if (testEntry.id.endsWith('crash-page.html')) {
           throw new Error('Synthetic uncaught exception for crash-containment verification');
         }
-        const globalObject = environment.setup(this.rendererFactory);
+        let pageHtml: string | undefined;
+        try {
+          pageHtml = readFileSync(testEntry.fullPath, 'utf8');
+        } catch {
+          pageHtml = undefined;
+        }
+        const globalObject = environment.setup(this.rendererFactory, pageHtml);
         const report = environment.executeTestPage(testEntry.fullPath, globalObject);
         this.triageLogger.recordTestResult(testEntry.id, report);
       } catch (err) {

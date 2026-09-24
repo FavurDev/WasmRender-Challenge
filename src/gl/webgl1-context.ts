@@ -10,6 +10,7 @@
 /** WebGL1Context — minimal WebGL 1.0 facade; composition root (ADR-013). */
 import {
   ACTIVE_ATTRIBUTES,
+  ACTIVE_TEXTURE,
   ACTIVE_UNIFORMS,
   ALIASED_LINE_WIDTH_RANGE,
   ALIASED_POINT_SIZE_RANGE,
@@ -19,6 +20,7 @@ import {
   COLOR_BUFFER_BIT,
   COLOR_CLEAR_VALUE,
   COMPILE_STATUS,
+  COMPRESSED_TEXTURE_FORMATS,
   DELETE_STATUS,
   DEPTH_BUFFER_BIT,
   DEPTH_CLEAR_VALUE,
@@ -246,23 +248,28 @@ export class WebGLActiveInfo {
 }
 
 /** WebGLShaderPrecisionFormat record (GLSL ES 1.00 Section 4.5 minima). */
-export interface WebGLShaderPrecisionFormat {
-  readonly rangeMin: number;
-  readonly rangeMax: number;
-  readonly precision: number;
+export class WebGLShaderPrecisionFormat {
+  public constructor(
+    public readonly rangeMin: number,
+    public readonly rangeMax: number,
+    public readonly precision: number,
+  ) {}
 }
 
 const PRECISION_FORMAT_TABLE: ReadonlyMap<GLenum, WebGLShaderPrecisionFormat> = (() => {
   const entries: Array<[GLenum, WebGLShaderPrecisionFormat]> = [
-    [HIGH_FLOAT, Object.freeze({ rangeMin: 127, rangeMax: 127, precision: 24 })],
-    [MEDIUM_FLOAT, Object.freeze({ rangeMin: 14, rangeMax: 14, precision: 10 })],
-    [LOW_FLOAT, Object.freeze({ rangeMin: 1, rangeMax: 1, precision: 8 })],
-    [HIGH_INT, Object.freeze({ rangeMin: 30, rangeMax: 30, precision: 0 })],
-    [MEDIUM_INT, Object.freeze({ rangeMin: 14, rangeMax: 14, precision: 0 })],
-    [LOW_INT, Object.freeze({ rangeMin: 8, rangeMax: 8, precision: 0 })],
+    [HIGH_FLOAT, new WebGLShaderPrecisionFormat(127, 127, 24)],
+    [MEDIUM_FLOAT, new WebGLShaderPrecisionFormat(14, 14, 10)],
+    [LOW_FLOAT, new WebGLShaderPrecisionFormat(1, 1, 8)],
+    [HIGH_INT, new WebGLShaderPrecisionFormat(30, 30, 0)],
+    [MEDIUM_INT, new WebGLShaderPrecisionFormat(14, 14, 0)],
+    [LOW_INT, new WebGLShaderPrecisionFormat(8, 8, 0)],
   ];
   return new Map<GLenum, WebGLShaderPrecisionFormat>(entries);
 })();
+
+/** Memoized per-pair getShaderPrecisionFormat instances (preserves Object.is identity). */
+const PRECISION_FORMAT_INSTANCE_CACHE: Map<string, WebGLShaderPrecisionFormat> = new Map();
 
 const DEFAULT_WIDTH = 300;
 const DEFAULT_HEIGHT = 150;
@@ -423,6 +430,7 @@ export class WebGL1Context {
   readonly DEPTH_BUFFER_BIT: GLenum = DEPTH_BUFFER_BIT;
   readonly STENCIL_BUFFER_BIT: GLenum = STENCIL_BUFFER_BIT;
   readonly COLOR_BUFFER_BIT: GLenum = COLOR_BUFFER_BIT;
+  readonly POINTS: GLenum = POINTS;
   static [Symbol.hasInstance](instance: unknown): boolean {
     return isWebGL1Instance(instance);
   }
@@ -718,7 +726,19 @@ export class WebGL1Context {
       this.errorSink.recordError(INVALID_ENUM);
       return null;
     }
-    return PRECISION_FORMAT_TABLE.get(precisionType as GLenum) ?? null;
+    const entry = PRECISION_FORMAT_TABLE.get(precisionType as GLenum) ?? null;
+    if (entry === null) return null;
+    // IMPLEMENTATION DECISION: memoized per-pair instance. Rationale: pre-existing
+    // entry-points/m5-dod tests require Object.is identity per enum pair, while Sprint 12
+    // TEST 6 requires instanceof WebGLShaderPrecisionFormat — a shared cached instance
+    // satisfies both. Alternatives: fresh instance per call (breaks memoization tests — rejected).
+    const cacheKey = `${shaderType}:${precisionType as number}`;
+    let cached = PRECISION_FORMAT_INSTANCE_CACHE.get(cacheKey) ?? null;
+    if (cached === null) {
+      cached = new WebGLShaderPrecisionFormat(entry.rangeMin, entry.rangeMax, entry.precision);
+      PRECISION_FORMAT_INSTANCE_CACHE.set(cacheKey, cached);
+    }
+    return cached;
   }
 
   /**
@@ -1408,6 +1428,12 @@ export class WebGL1Context {
     if (pname === LINE_WIDTH) {
       return this.glState.getLineWidth();
     }
+    if (pname === (COMPRESSED_TEXTURE_FORMATS as GLenum)) {
+      return new Uint32Array(0);
+    }
+    if (pname === (ACTIVE_TEXTURE as GLenum)) {
+      return this.glState.getActiveTexture();
+    }
     this.errorSink.recordError(INVALID_ENUM);
     return null;
   }
@@ -1417,9 +1443,9 @@ export class WebGL1Context {
     return this.errorSink.getError();
   }
 
-  /** Return the resolved (frozen) context attributes. */
+  /** Return a fresh snapshot copy of the resolved context attributes. */
   getContextAttributes(): WebGLContextAttributes {
-    return this.contextAttributes;
+    return { ...this.contextAttributes };
   }
 
   /**
@@ -1710,6 +1736,32 @@ export class WebGL1Context {
       this.errorSink.recordError(INVALID_ENUM);
       return;
     }
+    if ((attachment as GLenum) === DEPTH_STENCIL_ATTACHMENT) {
+      // Facade mapping (TD-026): the manager has no combined depth-stencil slot,
+      // so the combined point aliases the stencil slot while the framebuffer id
+      // is tracked for an UNSUPPORTED completeness result.
+      if ((textarget as GLenum) !== TEXTURE_2D) {
+        this.errorSink.recordError(INVALID_ENUM);
+        return;
+      }
+      if (level !== 0) {
+        this.errorSink.recordError(INVALID_VALUE);
+        return;
+      }
+      const bound = this.framebufferManager.getBoundFramebuffer();
+      this.framebufferManager.framebufferTexture2D(
+        target as GLenum,
+        STENCIL_ATTACHMENT as GLenum,
+        textarget as GLenum,
+        texture,
+        level,
+        this.buildTextureLookup(),
+      );
+      this.errorSink.getError();
+      if (bound !== null && texture !== null && texture !== undefined) this.depthStencilFbos.add(bound.id);
+      else if (bound !== null) this.depthStencilFbos.delete(bound.id);
+      return;
+    }
     if (
       (attachment as GLenum) !== COLOR_ATTACHMENT0 &&
       (attachment as GLenum) !== COLOR_ATTACHMENT1 &&
@@ -1963,6 +2015,30 @@ export class WebGL1Context {
   copyTexImage2D(target: number, level: number, internalformat: number, x: number, y: number, width: number, height: number, border: number): void {
     if (this.errorSink.isContextLost()) return;
     this.textureManager.copyTexImage2D(target as GLenum, level, internalformat as GLenum, x, y, width, height, border, this.drawingBuffer);
+  }
+
+  /** Upload a compressed texture image; WebGL1 core has no compressed formats: non-TEXTURE_2D targets record INVALID_ENUM. */
+  compressedTexImage2D(
+    target: number,
+    level: number,
+    internalformat: number,
+    width: number,
+    height: number,
+    border: number,
+    data?: ArrayBufferView | null,
+  ): void {
+    void level;
+    void internalformat;
+    void width;
+    void height;
+    void border;
+    void data;
+    if (this.errorSink.isContextLost()) return;
+    if ((target as GLenum) !== TEXTURE_2D) {
+      this.errorSink.recordError(INVALID_ENUM);
+      return;
+    }
+    this.errorSink.recordError(INVALID_ENUM);
   }
 
   /** Set integer texture parameter via TextureManager. */
@@ -2842,7 +2918,7 @@ function toClipVertex(g: DirectVertex): ClipVertex {
 }
 
 /** Prototype-chain + duck-type check for WebGL1 instances (no recursion: never uses instanceof). */
-function isWebGL1Instance(instance: unknown): boolean {
+export function isWebGL1Instance(instance: unknown): boolean {
   if (instance === null || (typeof instance !== 'object' && typeof instance !== 'function')) return false;
   let current: unknown = Object.getPrototypeOf(instance);
   while (current !== null) {
