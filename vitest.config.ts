@@ -15,7 +15,7 @@ export default defineConfig({
       exclude: ["src/**/*.d.ts", "src/context-intercept.ts", "tests/**", "scripts/**"],
       all: true,
       clean: true,
-      thresholds: { lines: 0, functions: 0, branches: 0, statements: 0 },
+      thresholds: { lines: 90, functions: 96, branches: 81, statements: 90 },
     },
   },
 });
