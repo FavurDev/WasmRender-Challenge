@@ -900,7 +900,7 @@ describe('M5 DoD Fixture 15: Sprint 11 coverage gate threshold enforcement', () 
 });
 
 describe('M5 DoD Fixture 16: Sprint 13 honest CTS threshold reporting v4', () => {
-  it('TC29 threshold report v4 records GAP_RECORDED with unlowered gates and measured deltas', async () => {
+  it('TC29a WebGL1 CTS threshold report v4 records GAP_RECORDED with unlowered 95% gate and measured deltas', async () => {
     // Arrange:
     const fs = await import('node:fs');
     const raw = fs.readFileSync('test-results/conformance/threshold-report.json', 'utf8');
@@ -909,30 +909,50 @@ describe('M5 DoD Fixture 16: Sprint 13 honest CTS threshold reporting v4', () =>
       reconciliationValid: boolean;
       suites: {
         webgl1: { targetGate: number; executed: number; passed: number; crashed: number };
-        webgl2: { targetGate: number; executed: number; passed: number; crashed: number };
       };
       deltas: {
         webgl1: { deltaPercentagePoints: string; sprint12Ratio: string; sprint13Ratio: string };
-        webgl2: { deltaPercentagePoints: string; sprint12Ratio: string; sprint13Ratio: string };
       };
-      deferral: { nextSteps: string };
-      feasibility: { verdict: string; projectedSprints: { webgl1: number; webgl2: number } };
     };
     const md = fs.readFileSync('test-results/conformance/threshold-report.md', 'utf8');
-    // Act & Assert (JSON):
+    // Act & Assert (WebGL1 JSON Fields):
     expect(report.overallStatus).toBe('GAP_RECORDED');
     expect(report.reconciliationValid).toBe(true);
     expect(report.suites.webgl1.targetGate).toBe(95);
     expect(report.suites.webgl1.executed).toBe(672);
     expect(report.suites.webgl1.passed).toBe(13);
     expect(report.suites.webgl1.crashed).toBe(0);
+    expect(report.deltas.webgl1.deltaPercentagePoints).toBe('+0.00%');
+    expect(report.deltas.webgl1.sprint12Ratio).toBe('13/672');
+    expect(report.deltas.webgl1.sprint13Ratio).toBe('13/672');
+    // Act & Assert (WebGL1 Markdown Sections):
+    expect(md).toContain('95.00%');
+    expect(md).toContain('13/672');
+    expect(md).toContain('+0.00%');
+    expect(md).toContain('## Gate-Feasibility Assessment');
+    expect(md).toContain('179 sprints');
+    expect(md).toContain('## Operator-Escalation Recommendation');
+  });
+  it('TC29b WebGL2 CTS threshold report v4 records GAP_RECORDED with unlowered 90% gate and measured deltas', async () => {
+    // Arrange:
+    const fs = await import('node:fs');
+    const raw = fs.readFileSync('test-results/conformance/threshold-report.json', 'utf8');
+    const report = JSON.parse(raw) as {
+      suites: {
+        webgl2: { targetGate: number; executed: number; passed: number; crashed: number };
+      };
+      deltas: {
+        webgl2: { deltaPercentagePoints: string; sprint12Ratio: string; sprint13Ratio: string };
+      };
+      deferral: { nextSteps: string };
+      feasibility: { verdict: string; projectedSprints: { webgl1: number; webgl2: number } };
+    };
+    const md = fs.readFileSync('test-results/conformance/threshold-report.md', 'utf8');
+    // Act & Assert (WebGL2 JSON Fields):
     expect(report.suites.webgl2.targetGate).toBe(90);
     expect(report.suites.webgl2.executed).toBe(2598);
     expect(report.suites.webgl2.passed).toBe(20);
     expect(report.suites.webgl2.crashed).toBe(0);
-    expect(report.deltas.webgl1.deltaPercentagePoints).toBe('+0.00%');
-    expect(report.deltas.webgl1.sprint12Ratio).toBe('13/672');
-    expect(report.deltas.webgl1.sprint13Ratio).toBe('13/672');
     expect(report.deltas.webgl2.deltaPercentagePoints).toBe('+0.00%');
     expect(report.deltas.webgl2.sprint12Ratio).toBe('20/2598');
     expect(report.deltas.webgl2.sprint13Ratio).toBe('20/2598');
@@ -940,18 +960,13 @@ describe('M5 DoD Fixture 16: Sprint 13 honest CTS threshold reporting v4', () =>
     expect(report.feasibility.verdict).toBe('UNFEASIBLE_AT_CURRENT_VELOCITY');
     expect(report.feasibility.projectedSprints.webgl1).toBe(179);
     expect(report.feasibility.projectedSprints.webgl2).toBe(663);
-    // Act & Assert (markdown):
+    // Act & Assert (WebGL2 Markdown Sections):
     expect(md).toContain('# Sprint 13 CTS Conformance Threshold & Gap Report (v4)');
     expect(md).toContain('Overall Status: GAP_RECORDED');
-    expect(md).toContain('95.00%');
     expect(md).toContain('90.00%');
-    expect(md).toContain('13/672');
     expect(md).toContain('20/2598');
     expect(md).toContain('+0.00%');
-    expect(md).toContain('## Gate-Feasibility Assessment');
-    expect(md).toContain('179 sprints');
     expect(md).toContain('663 sprints');
-    expect(md).toContain('## Operator-Escalation Recommendation');
   });
 });
 
