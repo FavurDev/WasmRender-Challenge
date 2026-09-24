@@ -1,5 +1,6 @@
 /** WebGL1 CTS conformance harness — manifest parsing, headless VM execution, triage logging, runner. */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, posix, sep } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
@@ -9,6 +10,28 @@ export const WEBGL1_MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/1.0.3';
 export const WEBGL1_TRIAGE_LOG = 'test-results/conformance/webgl1-triage.json';
 export const WEBGL2_MANIFEST_ROOT = 'vendor/WebGL/conformance-suites/2.0.0';
 export const WEBGL2_TRIAGE_LOG = 'test-results/conformance/webgl2-triage.json';
+
+/** Generates a collision-free run-scoped triage log path. */
+export function createRunScopedLogPath(baseName?: string, baseDir?: string): string {
+  const name = baseName ?? 'cts-triage';
+  const dir = baseDir ?? tmpdir();
+  let hex = '';
+  try {
+    hex = randomBytes(3).toString('hex');
+  } catch {
+    hex = Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+  }
+  return join(dir, `${name}-${process.pid}-${Date.now()}-${hex}.json`);
+}
+
+/** Injectable rename used by finalizeReport; overridable in tests for ESM-safe fallback coverage. */
+export let triageRenameSync: (oldPath: string, newPath: string) => void = renameSync;
+export function __setTriageRenameSync(fn: (oldPath: string, newPath: string) => void): void {
+  triageRenameSync = fn;
+}
+export function __resetTriageRenameSync(): void {
+  triageRenameSync = renameSync;
+}
 
 export interface TestEntry {
   id: string;
@@ -833,7 +856,7 @@ export class CTSTriageLogger {
     const tempLogPath = `${this.logFilePath}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tempLogPath, JSON.stringify(summary, null, 2), 'utf8');
     try {
-      renameSync(tempLogPath, this.logFilePath);
+      triageRenameSync(tempLogPath, this.logFilePath);
     } catch {
       copyFileSync(tempLogPath, this.logFilePath);
       try {
@@ -847,21 +870,38 @@ export class CTSTriageLogger {
 }
 
 /** Orchestrates enumeration, sharded execution, containment, and determinism checks. */
+export interface CTSRunnerOptions {
+  rendererPath: string;
+  manifestRoot: string;
+  triageLogPath?: string;
+  isolated?: boolean;
+}
+
 export class CTSRunner {
   manifestParser: CTSManifestParser;
   triageLogger: CTSTriageLogger;
   rendererFactory: RendererFactory;
   options: { rendererPath: string; manifestRoot: string; triageLogPath: string };
 
-  constructor(rendererPath: string, manifestRoot: string, triageLogPath: string, contextType?: 'webgl' | 'webgl2') {
+  constructor(
+    rendererPath: string,
+    manifestRoot: string,
+    triageLogPath?: string,
+    contextType?: 'webgl' | 'webgl2',
+    options?: Pick<CTSRunnerOptions, 'isolated'>,
+  ) {
     const normalized = normalize(manifestRoot);
     const baseDir = normalized.endsWith('.txt') ? dirname(normalized) : normalized;
+    const resolvedTriageLogPath =
+      triageLogPath === undefined || options?.isolated === true
+        ? createRunScopedLogPath('cts-runner-run')
+        : triageLogPath;
     this.manifestParser = new CTSManifestParser(baseDir);
-    this.triageLogger = new CTSTriageLogger(triageLogPath);
+    this.triageLogger = new CTSTriageLogger(resolvedTriageLogPath);
     const resolvedType =
       contextType ?? (normalized.toLowerCase().includes('2.0.0') ? 'webgl2' : 'webgl');
     this.rendererFactory = CTSRunner.loadFactory(rendererPath, resolvedType);
-    this.options = { rendererPath, manifestRoot, triageLogPath };
+    this.options = { rendererPath, manifestRoot, triageLogPath: resolvedTriageLogPath };
   }
 
   private static loadFactory(rendererPath: string, contextType?: 'webgl' | 'webgl2'): RendererFactory {
