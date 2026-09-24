@@ -10,18 +10,26 @@
  * behavior is inherited untouched; the 3D family exists ONLY here (ADR-004).
  */
 import {
+  ARRAY_BUFFER,
   BACK,
+  BYTE,
   COLOR,
   COLOR_ATTACHMENT0,
   COLOR_ATTACHMENT1,
   COLOR_ATTACHMENT2,
   COLOR_ATTACHMENT3,
+  COPY_READ_BUFFER,
+  COPY_WRITE_BUFFER,
   CURRENT_QUERY,
   CURRENT_VERTEX_ATTRIB,
   DEPTH_ATTACHMENT,
   DEPTH,
+  DEPTH24_STENCIL8,
+  DEPTH_COMPONENT16,
+  DEPTH_COMPONENT24,
   DEPTH_STENCIL,
   DEPTH_STENCIL_ATTACHMENT,
+  DYNAMIC_DRAW,
   DRAW_BUFFER0,
   DRAW_BUFFER1,
   DRAW_BUFFER2,
@@ -29,7 +37,7 @@ import {
   DRAW_FRAMEBUFFER,
   ELEMENT_ARRAY_BUFFER,
   FRAMEBUFFER,
-  READ_FRAMEBUFFER,
+  INT,
   INVALID_ENUM,
   INVALID_OPERATION,
   INVALID_VALUE,
@@ -37,6 +45,7 @@ import {
   LIMIT_MAX_COMBINED_TEXTURE_IMAGE_UNITS_WEBGL2,
   LIMIT_MAX_FRAGMENT_UNIFORM_VECTORS_WEBGL2,
   LIMIT_MAX_TEXTURE_IMAGE_UNITS_WEBGL2,
+  LIMIT_MAX_TEXTURE_SIZE,
   LIMIT_MAX_VERTEX_UNIFORM_VECTORS_WEBGL2,
   MAX_3D_TEXTURE_SIZE,
   MAX_ARRAY_TEXTURE_LAYERS,
@@ -48,12 +57,31 @@ import {
   MAX_VERTEX_ATTRIBS,
   MAX_VERTEX_UNIFORM_VECTORS,
   NONE,
+  PIXEL_PACK_BUFFER,
+  PIXEL_UNPACK_BUFFER,
   POINTS,
   READ_BUFFER,
+  READ_FRAMEBUFFER,
+  RENDERBUFFER,
+  RGB565,
+  RGB5_A1,
+  RGB8,
   RGBA,
+  RGBA4,
+  RGBA8,
+  SHORT,
+  STATIC_DRAW,
   STENCIL_ATTACHMENT,
+  STREAM_DRAW,
+  TEXTURE0,
+  TEXTURE_2D,
+  TEXTURE_2D_ARRAY,
+  TEXTURE_3D,
+  TEXTURE_CUBE_MAP,
+  TRANSFORM_FEEDBACK,
   TRANSFORM_FEEDBACK_BUFFER,
   TRIANGLES,
+  UNIFORM_BUFFER,
   UNSIGNED_BYTE,
   UNSIGNED_INT,
   UNSIGNED_SHORT,
@@ -107,6 +135,7 @@ type FramebufferManagerInternals = {
     getBoundFramebuffer(): { id: number } | null;
   };
 };
+
 
 export class WebGL2Context extends WebGL1Context {
   static [Symbol.hasInstance](instance: unknown): boolean {
@@ -168,6 +197,15 @@ export class WebGL2Context extends WebGL1Context {
     if ((pname as GLenum) === VERTEX_ARRAY_BINDING) {
       if (this.isContextLost()) return null;
       return (this as unknown as GLStateInternals).glState.getBoundVertexArray();
+    }
+    if (pname === PNAME_SAMPLER_BINDING) {
+      return this.getSamplers().getBoundSamplerHandle(this.activeTextureUnitIndex());
+    }
+    if (pname === PNAME_TRANSFORM_FEEDBACK_BINDING) {
+      return this.boundTransformFeedbackHandle;
+    }
+    if (pname === PNAME_TRANSFORM_FEEDBACK_PAUSED) {
+      return this.tfPaused;
     }
     if ((pname as GLenum) === MAX_DRAW_BUFFERS) return 4;
     if ((pname as GLenum) === MAX_COLOR_ATTACHMENTS) return 4;
@@ -297,8 +335,15 @@ export class WebGL2Context extends WebGL1Context {
     return this.everBound.has(id);
   }
 
-  /** Query per-attribute state, incl. DIVISOR and CURRENT_VERTEX_ATTRIB. */
+  /** Query per-attribute state, incl. DIVISOR, INTEGER, BINDING, CURRENT_VERTEX_ATTRIB (Sprint 12 Task 3). */
   getVertexAttrib(index: number, pname: number): unknown {
+    if (pname === PNAME_VERTEX_ATTRIB_ARRAY_INTEGER) {
+      const desc = (this as unknown as GLStateInternals).glState.getVertexAttrib(index);
+      return desc === null ? false : desc.isInteger === true;
+    }
+    if (pname === PNAME_VERTEX_ATTRIB_BINDING) {
+      return this.attribBindingPoint[index] ?? index;
+    }
     if (this.isContextLost()) return null;
     const sink = (this as unknown as ErrorSinkInternals).errorSink;
     const desc = (this as unknown as GLStateInternals).glState.getVertexAttrib(index);
@@ -678,6 +723,16 @@ export class WebGL2Context extends WebGL1Context {
     return this.samplerManager;
   }
 
+  /** Zero-based active texture unit index (0..15) derived from TEXTURE0-based getActiveTexture(). */
+  private activeTextureUnitIndex(): number {
+    const mgr = (this as unknown as TextureManagerInternals).textureManager;
+    const active = mgr.getActiveTexture() as number;
+    const idx = active - (TEXTURE0 as number);
+    if (!Number.isInteger(idx) || idx < 0) return 0;
+    if (idx > 15) return 15;
+    return idx;
+  }
+
   /** Sampler hook override: per-unit bound sampler params for the fragment path. */
   protected override getBoundSamplerForUnit(unit: number): SamplerParams | null {
     const bound = this.getSamplers().getBoundSampler(unit);
@@ -852,37 +907,108 @@ export class WebGL2Context extends WebGL1Context {
     this.tfWriteFloats = 0;
   }
 
-  /** End transform-feedback capture; end-without-begin records INVALID_OPERATION. */
-  endTransformFeedback(): void {
-    if (this.isContextLost()) return;
-    const sink = (this as unknown as ErrorSinkInternals).errorSink;
-    if (!this.tfActive) {
-      sink.recordError(INVALID_OPERATION);
-      return;
-    }
-    this.tfActive = false;
+  /** WebGL2-only generic binding points held locally (BufferManager only knows ARRAY/ELEMENT/UNIFORM). */
+  private readonly extraBufferBindings = new Map<number, BufferObject | null>();
+
+  /** True iff the target is a WebGL2-only generic binding point held locally. */
+  private isExtraBufferTarget(target: number): boolean {
+    return (
+      target === (COPY_READ_BUFFER as number) ||
+      target === (COPY_WRITE_BUFFER as number) ||
+      target === (PIXEL_PACK_BUFFER as number) ||
+      target === (PIXEL_UNPACK_BUFFER as number) ||
+      target === (TRANSFORM_FEEDBACK_BUFFER as number)
+    );
   }
 
-  /** Bind a buffer to indexed transform-feedback binding point 0. */
-  bindBufferBase(target: number, index: number, buffer: BufferObject | null): void {
-    if (this.isContextLost()) return;
-    if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
-      const sink = (this as unknown as ErrorSinkInternals).errorSink;
-      if (index !== 0) {
-        sink.recordError(INVALID_VALUE);
+  /** Resolve the buffer bound to a target, including WebGL2-local extra bindings. */
+  private resolveBoundBuffer(target: number): BufferObject | null {
+    if (this.isExtraBufferTarget(target)) {
+      const direct = this.extraBufferBindings.get(target) ?? null;
+      if (direct !== null) return direct;
+      // TRANSFORM_FEEDBACK_BUFFER may have been bound via the indexed path
+      // (bindBufferBase/bindBufferRange); fall back to indexed slot 0 so the
+      // generic target stays usable (pre-T3 behavior via tfBoundBuffer).
+      if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) return this.tfCaptureBuffer();
+      return null;
+    }
+    const internals = this as unknown as { bufferManager: { getBoundBuffer(t: number): BufferObject | null } };
+    return internals.bufferManager.getBoundBuffer(target);
+  }
+
+  /** Unified transform-feedback capture buffer: generic binding, legacy slot, then indexed slot 0. */
+  private tfCaptureBuffer(): BufferObject | null {
+    const generic = this.extraBufferBindings.get(TRANSFORM_FEEDBACK_BUFFER as number) ?? null;
+    if (generic !== null) return generic;
+    if (this.tfBoundBuffer !== null) return this.tfBoundBuffer;
+    return this.tfIndexedBindings[0]?.buffer ?? null;
+  }
+
+  /** Bind a buffer; WebGL2-only copy/pixel targets are held locally (Sprint 12 Task 3, D4). */
+  override bindBuffer(target: number, buffer: BufferObject | null): void {
+    if (this.isExtraBufferTarget(target)) {
+      if (this.isContextLost()) return;
+      if (buffer !== null && buffer.alive !== true) {
+        (this as unknown as ErrorSinkInternals).errorSink.recordError(INVALID_OPERATION);
         return;
       }
-      this.tfBoundBuffer = buffer;
+      this.extraBufferBindings.set(target, buffer);
+      // Keep the TF capture stores in sync so indexed bindings stay visible
+      // to the generic TRANSFORM_FEEDBACK_BUFFER target and vice versa.
+      if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
+        this.tfBoundBuffer = buffer;
+        if (buffer === null) {
+          this.tfIndexedBindings[0] = null;
+        } else {
+          this.tfIndexedBindings[0] = { buffer, offset: 0, size: buffer.byteLength };
+        }
+      }
       return;
     }
-    super.bindBufferBase(target, index, buffer);
+    super.bindBuffer(target, buffer);
   }
 
   /** Allocate storage for the transform-feedback-bound buffer; other targets defer to WebGL1. */
   override bufferData(target: number, sizeOrData: number | ArrayBufferView | ArrayBuffer, usage: number): void {
+    if (this.isExtraBufferTarget(target)) {
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      if (this.isContextLost()) return;
+      const buf = this.extraBufferBindings.get(target) ?? null;
+      if (buf === null) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      if (usage !== (STATIC_DRAW as number) && usage !== (DYNAMIC_DRAW as number) && usage !== (STREAM_DRAW as number)) {
+        sink.recordError(INVALID_ENUM);
+        return;
+      }
+      if (typeof sizeOrData === 'number') {
+        if (!Number.isInteger(sizeOrData) || sizeOrData < 0) {
+          sink.recordError(INVALID_VALUE);
+          return;
+        }
+        buf.data = new ArrayBuffer(sizeOrData);
+        buf.byteLength = sizeOrData;
+        buf.usage = usage as GLenum;
+        return;
+      }
+      const src = sizeOrData instanceof ArrayBuffer
+        ? new Uint8Array(sizeOrData)
+        : new Uint8Array(
+            (sizeOrData as ArrayBufferView).buffer,
+            (sizeOrData as ArrayBufferView).byteOffset,
+            (sizeOrData as ArrayBufferView).byteLength,
+          );
+      const copy = new Uint8Array(src.byteLength);
+      copy.set(src);
+      buf.data = copy.buffer;
+      buf.byteLength = copy.byteLength;
+      buf.usage = usage as GLenum;
+      return;
+    }
     if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
       const sink = (this as unknown as ErrorSinkInternals).errorSink;
-      const buf = this.tfBoundBuffer;
+      const buf = this.resolveBoundBuffer(target);
       if (buf === null) {
         sink.recordError(INVALID_OPERATION);
         return;
@@ -920,8 +1046,9 @@ export class WebGL2Context extends WebGL1Context {
     const sink = (this as unknown as ErrorSinkInternals).errorSink;
     let src: Uint8Array | null = null;
     if ((target as number) === (TRANSFORM_FEEDBACK_BUFFER as number)) {
-      if (this.tfBoundBuffer?.data instanceof ArrayBuffer) {
-        src = new Uint8Array(this.tfBoundBuffer.data);
+      const cap = this.tfCaptureBuffer();
+      if (cap?.data instanceof ArrayBuffer) {
+        src = new Uint8Array(cap.data);
       }
     } else {
       const mgr = (this as unknown as { bufferManager: { getBoundBuffer(t: number): BufferObject | null } }).bufferManager;
@@ -1034,7 +1161,8 @@ export class WebGL2Context extends WebGL1Context {
     const ids = this.tfVaryingsByProgram.get(prog.id) ?? [];
     const names = ids.length > 0 ? ids : (linked.vs.declaredOutputs ?? []).map((o) => o.name);
     if (names.length === 0) return;
-    if (this.tfBoundBuffer === null || this.tfBoundBuffer.data === null) return;
+    const captureBuffer = this.tfCaptureBuffer();
+    if (captureBuffer === null || captureBuffer.data === null) return;
     const glState = (this as unknown as GLStateInternals).glState;
     const descriptors: import('./state').VertexAttribDescriptor[] = [];
     for (let i = 0; i < 16; i += 1) {
@@ -1052,7 +1180,7 @@ export class WebGL2Context extends WebGL1Context {
       sample: (): Float32Array => new Float32Array([0, 0, 0, 1]),
     };
     const lookup = (h: unknown): BufferObject | null => (h as BufferObject | null) ?? null;
-    const view = new Float32Array(this.tfBoundBuffer.data);
+    const view = new Float32Array((captureBuffer.data as ArrayBuffer));
     const seq: number[] = indices !== null ? [...indices] : Array.from({ length: count }, (_, k) => first + k);
     const viewCache = new Map<ArrayBuffer, DataView>();
     for (const vertexId of seq) {
@@ -1403,7 +1531,13 @@ export class WebGL2Context extends WebGL1Context {
       sink.recordError(INVALID_OPERATION);
       return -1;
     }
-    return linked.fragOutputs.get(name) ?? -1;
+    const found = linked.fragOutputs.get(name);
+    if (found !== undefined) return found;
+    // Legacy GLSL ES 1.00 fragment path: the single implicit color output is
+    // exposed at location 0 under both its built-in name and the conventional
+    // default-output alias; all other names are unbound (-1).
+    if (linked.fragOutputs.size === 0 && (name === 'gl_FragColor' || name === 'outColor')) return 0;
+    return -1;
   }
 
   /** Validate invalidateFramebuffer attachments; no-op on success. */
@@ -1544,6 +1678,534 @@ export class WebGL2Context extends WebGL1Context {
 
   /** Dimensions paired with each entry of depthStencilByFbo. */
   private readonly depthStencilDims = new Map<number, { width: number; height: number }>();
+
+  // ---- Sprint 12 Task 3: D1 attribute/divisor semantics ----
+
+  /** Integer vertex attribute pointer (WebGL2); float types record INVALID_ENUM. */
+  vertexAttribIPointer(index: number, size: number, type: number, stride: number, offset: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!Number.isInteger(index) || index < 0 || index >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (size !== 1 && size !== 2 && size !== 3 && size !== 4) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (
+      type !== (BYTE as number) && type !== (UNSIGNED_BYTE as number) &&
+      type !== (SHORT as number) && type !== (UNSIGNED_SHORT as number) &&
+      type !== (INT as number) && type !== (UNSIGNED_INT as number)
+    ) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!Number.isInteger(stride) || stride < 0 || stride > 255) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(offset) || offset < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const state = (this as unknown as GLStateInternals).glState;
+    const internals = this as unknown as { bufferManager: { getBoundBuffer(t: number): BufferObject | null } };
+    const bound = internals.bufferManager.getBoundBuffer(ARRAY_BUFFER as number);
+    if (bound === null && offset !== 0) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    state.setVertexAttribPointer(index, size, type as GLenum, false, stride, offset, bound);
+    state.setVertexAttribInteger(index, true);
+  }
+
+  /** Bind a vertex buffer to a vertex-buffer binding point (WebGL2 D1). */
+  bindVertexBuffer(bindingIndex: number, buffer: BufferObject | null, offset: number, stride: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!Number.isInteger(bindingIndex) || bindingIndex < 0 || bindingIndex >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(stride) || stride < 0 || stride > 255) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (buffer !== null && buffer.alive !== true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.vertexBufferBindings[bindingIndex] = { buffer, offset, stride, divisor: 0 };
+  }
+
+  /** Associate a vertex attribute with a vertex-buffer binding point (WebGL2 D1). */
+  vertexAttribBinding(attribIndex: number, bindingIndex: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!Number.isInteger(attribIndex) || attribIndex < 0 || attribIndex >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(bindingIndex) || bindingIndex < 0 || bindingIndex >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.attribBindingPoint[attribIndex] = bindingIndex;
+  }
+
+  /** Set the divisor on a vertex-buffer binding point (WebGL2 D1). */
+  vertexBindingDivisor(bindingIndex: number, divisor: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!Number.isInteger(bindingIndex) || bindingIndex < 0 || bindingIndex >= 16) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(divisor) || divisor < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const entry = this.vertexBufferBindings[bindingIndex];
+    if (entry !== undefined) entry.divisor = divisor;
+  }
+
+  /** Per-attribute -> binding-point association table (default: attribute index). */
+  private readonly attribBindingPoint: number[] = Array.from({ length: 16 }, (_, i) => i);
+
+  /** Vertex-buffer binding-point state (WebGL2 D1). */
+  private readonly vertexBufferBindings: Array<{ buffer: BufferObject | null; offset: number; stride: number; divisor: number }> =
+    Array.from({ length: 16 }, () => ({ buffer: null, offset: 0, stride: 0, divisor: 0 }));
+
+  // ---- Sprint 12 Task 3: D2 immutable texture storage ----
+
+  /** Allocate immutable 2D texture storage (WebGL2 D2). */
+  texStorage2D(target: number, levels: number, internalformat: number, width: number, height: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (target !== (TEXTURE_2D as number) && target !== (TEXTURE_CUBE_MAP as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!TEXSTORAGE_INTERNALFORMATS.has(internalformat)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!Number.isInteger(levels) || levels <= 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width > LIMIT_MAX_TEXTURE_SIZE || height > LIMIT_MAX_TEXTURE_SIZE) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const maxLevels = Math.floor(Math.log2(Math.max(width, height))) + 1;
+    if (levels > maxLevels) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const mgr = (this as unknown as TextureManagerInternals).textureManager;
+    const bound = mgr.getBoundTexture(target as GLenum);
+    if (bound === null || bound.alive !== true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (bound.immutable === true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    for (let level = 0; level < levels; level += 1) {
+      const lw = Math.max(1, Math.floor(width / Math.pow(2, level)));
+      const lh = Math.max(1, Math.floor(height / Math.pow(2, level)));
+      const mip = { width: lw, height: lh, depth: 1, internalFormat: internalformat, type: UNSIGNED_BYTE as number, data: new Uint8Array(lw * lh * 4) };
+      bound.levels2D.set(level, mip);
+    }
+    bound.immutable = true;
+    bound.immutableLevels = levels;
+  }
+
+  /** Allocate immutable 3D/array texture storage (WebGL2 D2). */
+  texStorage3D(target: number, levels: number, internalformat: number, width: number, height: number, depth: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (target !== (TEXTURE_3D as number) && target !== (TEXTURE_2D_ARRAY as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!TEXSTORAGE_INTERNALFORMATS.has(internalformat)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (!Number.isInteger(levels) || levels <= 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0 || !Number.isInteger(depth) || depth <= 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (width > LIMIT_MAX_3D_TEXTURE_SIZE || height > LIMIT_MAX_3D_TEXTURE_SIZE || depth > 256) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const maxLevels = Math.floor(Math.log2(Math.max(width, height, depth))) + 1;
+    if (levels > maxLevels) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const mgr = (this as unknown as TextureManagerInternals).textureManager;
+    const bound = mgr.getBoundTexture(target as GLenum);
+    if (bound === null || bound.alive !== true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (bound.immutable === true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const store = target === (TEXTURE_3D as number)
+      ? (bound.levels3D ?? (bound.levels3D = new Map()))
+      : (bound.levels2DArray ?? (bound.levels2DArray = new Map()));
+    for (let level = 0; level < levels; level += 1) {
+      const lw = Math.max(1, Math.floor(width / Math.pow(2, level)));
+      const lh = Math.max(1, Math.floor(height / Math.pow(2, level)));
+      const ld = target === (TEXTURE_3D as number) ? Math.max(1, Math.floor(depth / Math.pow(2, level))) : depth;
+      const mip = { width: lw, height: lh, depth: ld, internalFormat: internalformat, type: UNSIGNED_BYTE as number, data: new Uint8Array(lw * lh * ld * 4) };
+      store.set(level, mip);
+    }
+    bound.immutable = true;
+    bound.immutableLevels = levels;
+  }
+
+  /** Intercept TEXTURE_IMMUTABLE_FORMAT on getTexParameter (WebGL2 D2). */
+  override getTexParameter(target: number, pname: number): number | GLenum | null {
+    if (pname === PNAME_TEXTURE_IMMUTABLE_FORMAT) {
+      const mgr = (this as unknown as TextureManagerInternals).textureManager;
+      const bound = mgr.getBoundTexture(target as GLenum);
+      if (bound === null || bound.alive !== true) {
+        (this as unknown as ErrorSinkInternals).errorSink.recordError(INVALID_OPERATION);
+        return null;
+      }
+      return (bound.immutable === true) as unknown as number;
+    }
+    return super.getTexParameter(target, pname);
+  }
+
+  /** Reject texImage2D on immutable textures (WebGL2 D2). */
+  override texImage2D(
+    target: number,
+    level: number,
+    internalformat: number,
+    width: number,
+    height: number,
+    border: number,
+    format: number,
+    type: number,
+    pixels?: ArrayBufferView | null,
+  ): void {
+    const mgr = (this as unknown as TextureManagerInternals).textureManager;
+    // Cube-face uploads address the TEXTURE_CUBE_MAP binding; querying the
+    // face enum directly would record INVALID_ENUM in getBoundTexture.
+    const lookupTarget = target >= 0x8515 && target <= 0x851a ? (TEXTURE_CUBE_MAP as number) : target;
+    const bound = mgr.getBoundTexture(lookupTarget as GLenum);
+    if (bound !== null && bound.alive === true && bound.immutable === true) {
+      (this as unknown as ErrorSinkInternals).errorSink.recordError(INVALID_OPERATION);
+      return;
+    }
+    super.texImage2D(target, level, internalformat, width, height, border, format, type, pixels ?? null);
+  }
+
+  // ---- Sprint 12 Task 3: D3 transform-feedback V2 objects ----
+
+  /** Transform-feedback object registry (Sprint 12 Task 3, D3). */
+  private readonly transformFeedbacks = new Map<number, TransformFeedbackObject>();
+
+  /** Handle of the currently bound transform-feedback object (null = default). */
+  private boundTransformFeedbackHandle: WebGLTransformFeedback | null = null;
+
+  /** True while transform feedback is paused (Sprint 12 Task 3, D3). */
+  private tfPaused = false;
+
+  /** Create a transform-feedback object; null on context loss. */
+  createTransformFeedback(): WebGLTransformFeedback | null {
+    if (this.isContextLost()) return null;
+    const id = this.transformFeedbacks.size + 1;
+    const obj: TransformFeedbackObject = { id, alive: true, everBound: false };
+    this.transformFeedbacks.set(id, obj);
+    return new WebGLTransformFeedback(id);
+  }
+
+  /** Delete a transform-feedback object; bound object reverts to default. */
+  deleteTransformFeedback(tf: WebGLTransformFeedback | null | undefined): void {
+    if (this.isContextLost()) return;
+    if (tf === null || tf === undefined) return;
+    const obj = this.transformFeedbacks.get(tf.id);
+    if (obj === undefined || obj.alive !== true) return;
+    obj.alive = false;
+    this.transformFeedbacks.delete(tf.id);
+    if (this.boundTransformFeedbackHandle !== null && this.boundTransformFeedbackHandle.id === tf.id) {
+      this.boundTransformFeedbackHandle = null;
+    }
+  }
+
+  /** True iff the handle is a live, ever-bound transform-feedback object. */
+  isTransformFeedback(tf: unknown): boolean {
+    if (this.isContextLost()) return false;
+    if (tf === null || typeof tf !== 'object') return false;
+    const candidate = tf as { id?: unknown };
+    if (typeof candidate.id !== 'number') return false;
+    const obj = this.transformFeedbacks.get(candidate.id);
+    return obj !== undefined && obj.alive === true && obj.everBound === true;
+  }
+
+  /** Bind a transform-feedback object to TRANSFORM_FEEDBACK; binding while active is INVALID_OPERATION. */
+  bindTransformFeedback(target: number, tf: WebGLTransformFeedback | null): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (target !== (TRANSFORM_FEEDBACK as number)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    if (this.tfActive) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (tf === null) {
+      this.boundTransformFeedbackHandle = null;
+      return;
+    }
+    const obj = this.transformFeedbacks.get(tf.id);
+    if (obj === undefined || obj.alive !== true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    obj.everBound = true;
+    this.boundTransformFeedbackHandle = tf;
+  }
+
+  /** Pause active transform feedback; pause without active records INVALID_OPERATION. */
+  pauseTransformFeedback(): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!this.tfActive || this.tfPaused) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfPaused = true;
+  }
+
+  /** Resume paused transform feedback; resume without paused records INVALID_OPERATION. */
+  resumeTransformFeedback(): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!this.tfActive || !this.tfPaused) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfPaused = false;
+  }
+
+  /** End-of-TF hook: clear the paused flag when capture ends (Sprint 12 Task 3, D3). */
+  endTransformFeedback(): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (!this.tfActive) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    this.tfActive = false;
+    this.tfPaused = false;
+  }
+
+  /** Bind an indexed TF buffer range; misaligned offset/size record INVALID_VALUE (WebGL2 D3). */
+  bindBufferRange(target: number, index: number, buffer: BufferObject | null, offset: number, size: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (target !== (TRANSFORM_FEEDBACK_BUFFER as number)) {
+      super.bindBufferRange(target, index, buffer, offset, size);
+      return;
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= 4) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (buffer === null) {
+      this.tfIndexedBindings[index] = null;
+      if (index === 0) {
+        this.extraBufferBindings.set(TRANSFORM_FEEDBACK_BUFFER as number, null);
+        this.tfBoundBuffer = null;
+      }
+      return;
+    }
+    if (buffer.alive !== true) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(size) || size <= 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (offset % 4 !== 0 || size % 4 !== 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (offset + size > buffer.byteLength) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    this.tfIndexedBindings[index] = { buffer, offset, size };
+    if (index === 0) {
+      this.extraBufferBindings.set(TRANSFORM_FEEDBACK_BUFFER as number, buffer);
+      this.tfBoundBuffer = buffer;
+    }
+  }
+
+  /** Indexed TF buffer bindings (Sprint 12 Task 3, D3). */
+  private readonly tfIndexedBindings: Array<{ buffer: BufferObject; offset: number; size: number } | null> = [null, null, null, null];
+
+  /** Indexed TF buffer queries: BINDING/START/SIZE (WebGL2 D3). */
+  override getIndexedParameter(target: number, index: number): unknown {
+    if (target === PNAME_TF_BUFFER_BINDING || target === PNAME_TF_BUFFER_START || target === PNAME_TF_BUFFER_SIZE) {
+      if (!Number.isInteger(index) || index < 0 || index >= 4) return null;
+      const entry = this.tfIndexedBindings[index];
+      if (entry === null) return target === PNAME_TF_BUFFER_BINDING ? null : 0;
+      if (target === PNAME_TF_BUFFER_BINDING) return entry.buffer;
+      if (target === PNAME_TF_BUFFER_START) return entry.offset;
+      return entry.size;
+    }
+    return super.getIndexedParameter(target, index);
+  }
+
+  /** Extend bindBufferBase to all four TF indexed slots (WebGL2 D3). */
+  override bindBufferBase(target: number, index: number, buffer: BufferObject | null): void {
+    if (target === (TRANSFORM_FEEDBACK_BUFFER as number)) {
+      if (this.isContextLost()) return;
+      const sink = (this as unknown as ErrorSinkInternals).errorSink;
+      if (!Number.isInteger(index) || index < 0 || index >= 4) {
+        sink.recordError(INVALID_VALUE);
+        return;
+      }
+      if (buffer === null) {
+        this.tfIndexedBindings[index] = null;
+        if (index === 0) {
+          this.extraBufferBindings.set(TRANSFORM_FEEDBACK_BUFFER as number, null);
+          this.tfBoundBuffer = null;
+        }
+        return;
+      }
+      if (buffer.alive !== true) {
+        sink.recordError(INVALID_OPERATION);
+        return;
+      }
+      this.tfIndexedBindings[index] = { buffer, offset: 0, size: buffer.byteLength };
+      if (index === 0) {
+        this.extraBufferBindings.set(TRANSFORM_FEEDBACK_BUFFER as number, buffer);
+        this.tfBoundBuffer = buffer;
+      }
+      return;
+    }
+    super.bindBufferBase(target, index, buffer);
+  }
+
+  // ---- Sprint 12 Task 3: D4 misc queries and buffer copies ----
+
+  /** Copy a sub-region between buffer objects (WebGL2 D4). */
+  copyBufferSubData(readTarget: number, writeTarget: number, readOffset: number, writeOffset: number, size: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    const validTargets = new Set<number>([
+      ARRAY_BUFFER as number, ELEMENT_ARRAY_BUFFER as number, TRANSFORM_FEEDBACK_BUFFER as number,
+      UNIFORM_BUFFER as number, COPY_READ_BUFFER as number, COPY_WRITE_BUFFER as number,
+      PIXEL_PACK_BUFFER as number, PIXEL_UNPACK_BUFFER as number,
+    ]);
+    if (!validTargets.has(readTarget) || !validTargets.has(writeTarget)) {
+      sink.recordError(INVALID_ENUM);
+      return;
+    }
+    const readBuf = this.resolveBoundBuffer(readTarget);
+    const writeBuf = this.resolveBoundBuffer(writeTarget);
+    if (readBuf === null || writeBuf === null) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    if (!Number.isInteger(readOffset) || readOffset < 0 || !Number.isInteger(writeOffset) || writeOffset < 0 || !Number.isInteger(size) || size < 0) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (readOffset + size > readBuf.byteLength || writeOffset + size > writeBuf.byteLength) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (readBuf === writeBuf && ((readOffset <= writeOffset && readOffset + size > writeOffset) || (writeOffset <= readOffset && writeOffset + size > readOffset))) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    if (readBuf.data === null || writeBuf.data === null) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const srcView = new Uint8Array(readBuf.data, readOffset, size);
+    const dstView = new Uint8Array(writeBuf.data, writeOffset, size);
+    dstView.set(srcView);
+  }
+
+  /** Query unsigned-integer uniform values (WebGL2 D4). */
+  getUniformuiv(program: unknown, location: unknown, params: Uint32Array, srcOffset?: number, length?: number): void {
+    if (this.isContextLost()) return;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (params === null || params === undefined) {
+      sink.recordError(INVALID_VALUE);
+      return;
+    }
+    const loc = location as { programId?: number; location?: number } | null;
+    if (loc === null || typeof loc !== 'object' || typeof loc.programId !== 'number' || typeof loc.location !== 'number') {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const prog = (this as unknown as { currentProgram: WebGLProgram | null }).currentProgram;
+    if (prog === null || prog.id !== loc.programId) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const linked = prog.handle.linkedProgram;
+    if (linked === null || linked === undefined) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const found = linked.activeUniforms.find((u) => u.location === loc.location);
+    if (found === undefined) {
+      sink.recordError(INVALID_OPERATION);
+      return;
+    }
+    const off = srcOffset ?? 0;
+    const count = length ?? params.length - off;
+    for (let i = 0; i < count; i += 1) {
+      params[off + i] = linked.uniformStore.u32[found.slot + i] ?? 0;
+    }
+  }
+
+  /** Query internalformat support (WebGL2 D4). */
+  getInternalformatParameter(target: number, internalformat: number, pname: number): Int32Array | null {
+    if (this.isContextLost()) return null;
+    const sink = (this as unknown as ErrorSinkInternals).errorSink;
+    if (target !== (RENDERBUFFER as number)) {
+      sink.recordError(INVALID_ENUM);
+      return null;
+    }
+    if (!TEXSTORAGE_INTERNALFORMATS.has(internalformat)) {
+      sink.recordError(INVALID_ENUM);
+      return null;
+    }
+    if (pname !== PNAME_SAMPLES) {
+      sink.recordError(INVALID_ENUM);
+      return null;
+    }
+    return new Int32Array([4]);
+  }
 }
 
 /** STENCIL buffer selector (0x1802) for the clearBuffer* family; no constants.ts export exists. */
@@ -1551,6 +2213,54 @@ const STENCIL: GLenum = 0x1802;
 
 /** 24-bit depth ceiling shared with the framebuffer packed depth/stencil layout. */
 const DEPTH_MAX_24 = 16777215;
+
+/** Public WebGLTransformFeedback handle exposed to callers (Sprint 12 Task 3, D3). */
+export class WebGLTransformFeedback {
+  readonly id: number;
+  constructor(id: number) {
+    this.id = id;
+  }
+}
+
+/** Internal transform-feedback object state (Sprint 12 Task 3, D3). */
+interface TransformFeedbackObject {
+  readonly id: number;
+  alive: boolean;
+  everBound: boolean;
+}
+
+/** Sized internalformats accepted by texStorage* (Sprint 12 Task 3, D2). */
+const TEXSTORAGE_INTERNALFORMATS = new Set<number>([
+  RGBA8 as number,
+  RGB8 as number,
+  RGBA4 as number,
+  RGB5_A1 as number,
+  RGB565 as number,
+  DEPTH_COMPONENT16 as number,
+  DEPTH_COMPONENT24 as number,
+  DEPTH24_STENCIL8 as number,
+]);
+
+/** VERTEX_ATTRIB_ARRAY_INTEGER (0x88fd; no constants.ts export). */
+const PNAME_VERTEX_ATTRIB_ARRAY_INTEGER = 0x88fd;
+/** VERTEX_ATTRIB_BINDING (0x82d4; no constants.ts export). */
+const PNAME_VERTEX_ATTRIB_BINDING = 0x82d4;
+/** TEXTURE_IMMUTABLE_FORMAT (0x912f; no constants.ts export). */
+const PNAME_TEXTURE_IMMUTABLE_FORMAT = 0x912f;
+/** SAMPLER_BINDING (0x8919; no constants.ts export). */
+const PNAME_SAMPLER_BINDING = 0x8919;
+/** TRANSFORM_FEEDBACK_BINDING (0x8e25; no constants.ts export). */
+const PNAME_TRANSFORM_FEEDBACK_BINDING = 0x8e25;
+/** TRANSFORM_FEEDBACK_PAUSED (0x8e23; no constants.ts export). */
+const PNAME_TRANSFORM_FEEDBACK_PAUSED = 0x8e23;
+/** TRANSFORM_FEEDBACK_BUFFER_BINDING (0x8c8f; no constants.ts export). */
+const PNAME_TF_BUFFER_BINDING = 0x8c8f;
+/** TRANSFORM_FEEDBACK_BUFFER_START (0x8c84; no constants.ts export). */
+const PNAME_TF_BUFFER_START = 0x8c84;
+/** TRANSFORM_FEEDBACK_BUFFER_SIZE (0x8c85; no constants.ts export). */
+const PNAME_TF_BUFFER_SIZE = 0x8c85;
+/** SAMPLES (0x80a9; no constants.ts export). */
+const PNAME_SAMPLES = 0x80a9;
 
 /** Clamp a float to [0,1]; non-finite inputs become 0. */
 function clamp01Attachment(v: number): number {

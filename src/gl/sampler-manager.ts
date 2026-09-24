@@ -54,6 +54,7 @@ export interface SamplerObject {
   readonly id: number;
   alive: boolean;
   params: SamplerParamsExtended;
+  readonly handle: WebGLSampler;
 }
 
 /** Public WebGLSampler handle exposed to callers. */
@@ -97,9 +98,10 @@ export class SamplerManager {
   createSampler(): WebGLSampler {
     const id = this.nextSamplerId;
     this.nextSamplerId += 1;
-    const samplerObj: SamplerObject = { id, alive: true, params: defaultParams() };
+    const handle = new WebGLSampler(id);
+    const samplerObj: SamplerObject = { id, alive: true, params: defaultParams(), handle };
     this.samplers.set(id, samplerObj);
-    return new WebGLSampler(id);
+    return handle;
   }
 
   /** True iff candidate is a live sampler owned by this manager. */
@@ -145,6 +147,12 @@ export class SamplerManager {
   getBoundSampler(unit: number): SamplerObject | null {
     if (!Number.isInteger(unit) || unit < 0 || unit >= SAMPLER_BINDING_UNITS) return null;
     return this.samplerBindings[unit];
+  }
+
+  /** Return the bound sampler's public handle for a unit (SAMPLER_BINDING query; Sprint 12 Task 3). */
+  getBoundSamplerHandle(unit: number): WebGLSampler | null {
+    const bound = this.getBoundSampler(unit);
+    return bound === null ? null : bound.handle;
   }
 
   /** Integer-valued parameter entry point. */

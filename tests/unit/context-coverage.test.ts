@@ -432,9 +432,10 @@ describe('context coverage TC-CTX round 2 (Sprint 10 Task 8)', () => {
     expect(gl.getError()).toBe(NO_ERROR);
     // Act: select texture unit 0.
     gl.activeTexture(TEXTURE0);
-    // Assert: active-texture selection records no error; getParameter returns null in this implementation.
+    // Assert: active-texture selection records no error; per ADR-S12T2-3 getParameter
+    // returns the spec-correct default TEXTURE0 (0x84C0), not null.
     expect(gl.getError()).toBe(NO_ERROR);
-    expect(gl.getParameter(ACTIVE_TEXTURE)).toBe(null);
+    expect(gl.getParameter(ACTIVE_TEXTURE)).toBe(TEXTURE0);
     // Act: invalid enum for bind target.
     gl.bindBuffer(0x9999, buf);
     // Assert:

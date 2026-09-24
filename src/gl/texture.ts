@@ -155,6 +155,10 @@ export interface TextureObject {
   levels2DArray?: Map<number, MipLevel>;
   sampler: SamplerParams;
   isNPOT: boolean;
+  /** True once texStorage* allocates immutable levels (WebGL2 D2; Sprint 12 Task 3). */
+  immutable?: boolean;
+  /** Number of levels allocated by texStorage* (immutable textures only; D2). */
+  immutableLevels?: number;
   completeness: GLenum | null;
 }
 
