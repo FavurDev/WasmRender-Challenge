@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-09-24T03:40:46.935Z",
+  "timestamp": "2026-09-24T03:58:21.280Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 673,
     "executed": 673,
-    "passed": 9,
-    "failed": 664,
+    "passed": 10,
+    "failed": 663,
     "skipped": 0,
     "crashed": 1
   },
@@ -22271,8 +22271,8 @@
     },
     {
       "id": "conformance/typedarrays/array-large-array-tests.html",
-      "status": "FAIL",
-      "passed": false,
+      "status": "PASS",
+      "passed": true,
       "drainedErrors": [],
       "assertions": [
         {
@@ -22280,32 +22280,30 @@
           "message": "Construction of huge Float32Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Float64Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Float64Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Int16Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Int16Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Int32Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Int32Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Uint16Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Uint16Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Uint32Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Uint32Array threw exception"
         },
         {
           "success": true,
           "message": "successfullyParsed is true"
         }
-      ],
-      "classification": "spec-defect",
-      "rootCauseGroup": "G1"
+      ]
     },
     {
       "id": "conformance/uniforms/gl-uniform-arrays.html",
