@@ -26,6 +26,14 @@ export const INVALID_OPERATION: GLenum = 0x0502;
 export const OUT_OF_MEMORY: GLenum = 0x0505;
 export const INVALID_FRAMEBUFFER_OPERATION: GLenum = 0x0506;
 
+// Pixel bit-depth query pnames (TD-024: named constants for getParameter)
+export const RED_BITS: GLenum = 0x0d52;
+export const GREEN_BITS: GLenum = 0x0d53;
+export const BLUE_BITS: GLenum = 0x0d54;
+export const ALPHA_BITS: GLenum = 0x0d55;
+export const DEPTH_BITS: GLenum = 0x0d56;
+export const STENCIL_BITS: GLenum = 0x0d57;
+
 // Capabilities
 export const BLEND: GLenum = 0x0be2;
 export const CULL_FACE: GLenum = 0x0b44;
