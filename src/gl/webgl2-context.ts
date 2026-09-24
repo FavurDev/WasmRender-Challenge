@@ -207,6 +207,9 @@ export class WebGL2Context extends WebGL1Context {
     if (pname === PNAME_TRANSFORM_FEEDBACK_PAUSED) {
       return this.tfPaused;
     }
+    // WebGL2 limit queries (numeric literals: no constants.ts entries for these enums).
+    if (pname === 0x8ffe) return 0xffffff;
+    if (pname === 0x9111) return 0;
     if ((pname as GLenum) === MAX_DRAW_BUFFERS) return 4;
     if ((pname as GLenum) === MAX_COLOR_ATTACHMENTS) return 4;
     if (

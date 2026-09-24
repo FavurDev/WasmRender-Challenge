@@ -289,6 +289,12 @@ export class DOMElementStub {
   dispatchEvent(_event: unknown): boolean {
     return true;
   }
+
+  canPlayType(type: string): string {
+    const t = String(type ?? '').toLowerCase();
+    if (t.startsWith('video/')) return 'maybe';
+    return '';
+  }
 }
 
 const WEBGL1_CONSTANTS: Record<string, number> = {
@@ -340,11 +346,19 @@ function populateWebGLGlobals(target: Record<string, unknown>): void {
   target['WebGL2RenderingContext'] = WebGL2RenderingContext;
 }
 
-function resolveXhrFile(url: string): string | null {
+let activeTestBaseDir = '';
+function resolveXhrFile(url: string, baseDir?: string): string | null {
   const cleaned = String(url ?? '').split('?')[0].split('#')[0];
   const candidates: string[] = [];
+  const roots = [baseDir ?? '', activeTestBaseDir].filter((r) => r !== '');
   if (cleaned !== '') {
+    for (const root of roots) {
+      candidates.push(join(root, cleaned));
+    }
     candidates.push(join(process.cwd(), cleaned));
+    candidates.push(join(process.cwd(), 'vendor', 'WebGL', 'conformance-suites', '1.0.3', cleaned));
+    candidates.push(join(process.cwd(), 'vendor', 'WebGL', 'conformance-suites', '2.0.0', cleaned));
+    candidates.push(join(process.cwd(), 'vendor', 'WebGL', cleaned));
   }
   try {
     const base = cleaned.split('/').pop() ?? '';
@@ -396,6 +410,12 @@ class MockXMLHttpRequest {
   setRequestHeader(header: string, value: string): void {
     this.requestHeaders.set(header, value);
   }
+
+  overrideMimeType(mime: string): void {
+    this.mimeTypeOverride = String(mime ?? '');
+  }
+
+  private mimeTypeOverride = '';
 
   send(_payload?: unknown): void {
     void _payload;
@@ -593,8 +613,13 @@ export class CTSHeadlessEnvironment {
         } else {
           list = [];
         }
-        const arrayLike = list as unknown as Record<string, unknown>;
+        const arrayLike = list as unknown as Record<string, unknown> & { item: (i: number) => DOMElementStub | null };
         arrayLike['length'] = list.length;
+        for (let i = 0; i < list.length; i++) {
+          arrayLike[i] = list[i];
+          arrayLike[String(i)] = list[i];
+        }
+        arrayLike.item = (i: number): DOMElementStub | null => list[i] ?? null;
         return arrayLike;
       },
       body: new DOMElementStub('BODY'),
@@ -697,6 +722,11 @@ export class CTSHeadlessEnvironment {
   }
 
   executeTestPage(testFilePath: string, globalObject: Record<string, unknown>): ExecutionReport {
+    try {
+      activeTestBaseDir = dirname(testFilePath);
+    } catch {
+      activeTestBaseDir = '';
+    }
     let htmlContent: string | null = null;
     try {
       htmlContent = readFileSync(testFilePath, 'utf8');

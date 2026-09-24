@@ -1057,3 +1057,62 @@ describe('M5 DoD Fixture 20: Sprint 12 G3 float-edge byte-identity ReadPixels (T
     expect(gl.getError()).toBe(NO_ERROR);
   });
 });
+describe('M5 DoD Fixture 21: Sprint 13 harness-fix family (TC34)', () => {
+  it('TC34 getElementsByTagName canvas collection indexed with item()', async () => {
+    // Arrange:
+    const { CTSHeadlessEnvironment } = await import('../conformance/webgl1-harness');
+    const env = new CTSHeadlessEnvironment('dummy-bundle.js', 1000);
+    const g = env.setup(() => dodContext(4, 4) as never);
+    const doc = g['document'] as { getElementsByTagName: (t: string) => any };
+    // Act:
+    const coll = doc.getElementsByTagName('canvas');
+    // Assert:
+    expect(coll.length).toBe(1);
+    expect(coll[0]).toBeDefined();
+    expect(coll.item(0)).toBe(coll[0]);
+  });
+});
+
+describe('M5 DoD Fixture 22: Sprint 13 state-fix family (TC35)', () => {
+  it('TC35 pixelStorei UNPACK_COLORSPACE accepts BROWSER_DEFAULT with NO_ERROR', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    const UNPACK_COLORSPACE = 0x9243;
+    const BROWSER_DEFAULT = 0x9244;
+    // Act:
+    gl.pixelStorei(UNPACK_COLORSPACE, BROWSER_DEFAULT);
+    // Assert:
+    expect(gl.getError()).toBe(NO_ERROR);
+    expect(gl.getPixelStorei(UNPACK_COLORSPACE)).toBe(BROWSER_DEFAULT);
+  });
+});
+
+describe('M5 DoD Fixture 23: Sprint 13 TD-027 negation exact-pixel (TC36)', () => {
+  it('TC36 scalar negation fragment readback matches golden bytes [64,191,191,255]', () => {
+    // Arrange:
+    const gl = dodContext(4, 4);
+    gl.disable(DITHER);
+    const fsrc = 'precision mediump float; uniform float u_val; void main() { float n = -u_val; gl_FragColor = vec4(n + 1.0, -(-u_val), (-u_val) * (-1.0), 1.0); }';
+    const program = linkProgram(gl, GOOD_VS, fsrc);
+    gl.useProgram(program);
+    const uLoc = gl.getUniformLocation(program, 'u_val');
+    if (uLoc === null) throw new Error('TC36: u_val location null');
+    gl.uniform1f(uLoc, 0.75);
+    const buf = gl.createBuffer();
+    if (buf === null) throw new Error('TC36: createBuffer failed');
+    gl.bindBuffer(ARRAY_BUFFER, buf);
+    gl.bufferData(ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), STATIC_DRAW);
+    const loc = gl.getAttribLocation(program, 'aPos');
+    gl.vertexAttribPointer(loc, 2, 0x1406, false, 0, 0);
+    gl.enableVertexAttribArray(loc);
+    // Act:
+    gl.drawArrays(TRIANGLES, 0, 3);
+    const pixels = readback(gl, 4, 4);
+    // Assert:
+    expect(pixels[0]).toBe(64);
+    expect(pixels[1]).toBe(191);
+    expect(pixels[2]).toBe(191);
+    expect(pixels[3]).toBe(255);
+    expect(gl.getError()).toBe(NO_ERROR);
+  });
+});

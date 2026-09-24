@@ -1393,6 +1393,10 @@ export class WebGL1Context {
     if (pname === MAX_DRAW_BUFFERS) return LIMIT_MAX_DRAW_BUFFERS_WEBGL1;
     if (pname === MAX_TEXTURE_SIZE) return LIMIT_MAX_TEXTURE_SIZE;
     if (pname === MAX_CUBE_MAP_TEXTURE_SIZE) return LIMIT_MAX_CUBE_MAP_TEXTURE_SIZE;
+    // Spec-minimum limit queries (SUBPIXEL_BITS 0x0D50, MAX_ELEMENT_INDEX 0x8FFE have no constants.ts entries).
+    if (pname === 0x0d50) return 4;
+    if (pname === 0x8ffe) return 0xffffff;
+    if (pname === UNPACK_COLORSPACE_CONVERSION_WEBGL) return this.glState.getPixelStorei(pname as GLenum);
     if (pname === MAX_RENDERBUFFER_SIZE) return LIMIT_MAX_RENDERBUFFER_SIZE;
     if (pname === RED_BITS) return 8;
     if (pname === GREEN_BITS) return 8;
