@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-24T14:28:10.140Z",
+  "timestamp": "2026-09-24T19:41:18.860Z",
   "suites": {
     "webgl1": {
       "suite": "webgl1",
@@ -46,6 +46,22 @@
   },
   "reconciliationValid": true,
   "overallStatus": "GAP_RECORDED",
+  "interimGates": {
+    "webgl1": {
+      "interimGate": 80,
+      "passRate": 1.9345238095238095,
+      "passGapPercentagePoints": 78.06547619047619,
+      "testsNeeded": 525,
+      "verdict": "GAP_RECORDED"
+    },
+    "webgl2": {
+      "interimGate": 50,
+      "passRate": 0.7698229407236336,
+      "passGapPercentagePoints": 49.230177059276365,
+      "testsNeeded": 1279,
+      "verdict": "GAP_RECORDED"
+    }
+  },
   "deltas": {
     "webgl1": {
       "suite": "webgl1",
@@ -57,6 +73,8 @@
       "sprint12Ratio": "13/672",
       "sprint13PassRate": "1.93",
       "sprint13Ratio": "13/672",
+      "sprint14PassRate": "1.93",
+      "sprint14Ratio": "13/672",
       "deltaPercentagePoints": "+0.00%",
       "notes": "Measured on post-fix software context across authentic 672-test WebGL1 suite."
     },
@@ -70,6 +88,8 @@
       "sprint12Ratio": "20/2598",
       "sprint13PassRate": "0.77",
       "sprint13Ratio": "20/2598",
+      "sprint14PassRate": "0.77",
+      "sprint14Ratio": "20/2598",
       "deltaPercentagePoints": "+0.00%",
       "notes": "Measured on post-fix software context across full 2598-test WebGL2 suite."
     }
@@ -81,13 +101,13 @@
       "TD-025 (CLOSED in commit 323a24f): Triage-log clobbering hazard eliminated via per-run isolated log paths; real 672-test WebGL1 denominator restored."
     ],
     "reducedDebts": [
-      "TD-023 (REDUCED): CTS failure triage re-executed in Sprint 13 Task 4 post-T2/T3; residual failure gap updated with measured Sprint 13 deltas (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes."
+      "TD-023 (REDUCED): CTS failure triage re-executed in Sprint 14 Task 1 under the remediated harness; residual failure gap measured at Sprint 14 (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes. The operator-authorized TD-023 spike recorded a NO_LIFT_STOP verdict (no measured percentage-point lift), so CTS-chasing stops per the ADR-006 stop rule and visual qualification under M6 is the primary closure path."
     ],
     "openDebts": [
       "TD-001 (OPEN): Favur gauntlet subsystem external issue; compensating control is sprint-review APPROVE with independently verified gates."
     ],
-    "rationale": "Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 13/672 passed vs 639 needed for 95%; WebGL2: 20/2598 passed vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation is scheduled for Sprint 13.",
-    "nextSteps": "Sprint 14 will execute the next prioritized fix wave on remaining G1 and G3 root causes toward meeting the 95.0% WebGL1 / 90.0% WebGL2 conformance thresholds."
+    "rationale": "Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered as the final M5 targets. Interim gates (80.0% WebGL1 / 50.0% WebGL2 per ADR-006 amendment b48cc2da) are evaluated explicitly in Sprint 14: because both suites have residual gaps against both interim and final gates (WebGL1: 13/672 passed vs 538 needed for 80% interim and 639 needed for 95%; WebGL2: 20/2598 passed vs 1299 needed for 50% interim and 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation yields to the M6 visual-qualification priority.",
+    "nextSteps": "Sprint 14 prioritizes M6 visual qualification (blessed captures keyed to the interim-gate verdict) while retaining the 95.0% WebGL1 / 90.0% WebGL2 final conformance thresholds as M5 targets; no further CTS-chasing beyond the single operator-authorized spike per the NO_LIFT_STOP verdict."
   },
   "feasibility": {
     "historicalVelocity": 3.5,

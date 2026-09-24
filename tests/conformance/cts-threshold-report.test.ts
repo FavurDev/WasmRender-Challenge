@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CTSReportAggregator,
+  interimGateFor,
   InvalidManifestError,
   ReconciliationError,
   ThresholdReportFormatter,
@@ -636,5 +637,180 @@ describe('v4_deferral_narrative_td_currency', () => {
     expect(deferral.rationale).toContain('GAP_RECORDED');
     expect(deferral.rationale).toContain('95.0% WebGL1 / 90.0% WebGL2');
     expect(deferral.nextSteps).toContain('Sprint 14');
+  });
+});
+
+// Sprint 14 Task 1 v5 TDD red-phase extensions (interim gates 80/50 per ADR-006 b48cc2da).
+describe('v5_interim_gate_gap_recorded_at_baseline', () => {
+  it('test_v5_interim_gate_gap_recorded_at_baseline records GAP_RECORDED with exact gaps', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    // Act:
+    const g1 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { interimGate: number; passRate: number; passGapPercentagePoints: number; testsNeeded: number; verdict: string } }).calculateInterimGate('webgl1', 672, 13);
+    const g2 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { interimGate: number; passRate: number; passGapPercentagePoints: number; testsNeeded: number; verdict: string } }).calculateInterimGate('webgl2', 2598, 20);
+    // Assert:
+    expect(g1.interimGate).toBe(80.0);
+    expect(g1.passRate.toFixed(2)).toBe('1.93');
+    expect(g1.passGapPercentagePoints.toFixed(2)).toBe('78.07');
+    expect(g1.testsNeeded).toBe(Math.ceil(0.8 * 672) - 13);
+    expect(g1.testsNeeded).toBe(525);
+    expect(g1.verdict).toBe('GAP_RECORDED');
+    expect(g2.interimGate).toBe(50.0);
+    expect(g2.passRate.toFixed(2)).toBe('0.77');
+    expect(g2.passGapPercentagePoints.toFixed(2)).toBe('49.23');
+    expect(g2.testsNeeded).toBe(Math.ceil(0.5 * 2598) - 20);
+    expect(g2.testsNeeded).toBe(1279);
+    expect(g2.verdict).toBe('GAP_RECORDED');
+  });
+});
+
+describe('v5_interim_gate_pass_case', () => {
+  it('test_v5_interim_gate_pass_case passes when synthetic rate exceeds gate', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    // Act:
+    const g1 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { passGapPercentagePoints: number; testsNeeded: number; verdict: string } }).calculateInterimGate('webgl1', 672, 540);
+    const g2 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { passGapPercentagePoints: number; testsNeeded: number; verdict: string } }).calculateInterimGate('webgl2', 2598, 1350);
+    // Assert:
+    expect(g1.verdict).toBe('PASS');
+    expect(g1.testsNeeded).toBe(0);
+    expect(g1.passGapPercentagePoints).toBeLessThanOrEqual(0.0);
+    expect(g2.verdict).toBe('PASS');
+    expect(g2.testsNeeded).toBe(0);
+    expect(g2.passGapPercentagePoints).toBeLessThanOrEqual(0.0);
+  });
+});
+
+describe('v5_gates_unlowered_invariant', () => {
+  it('test_v5_gates_unlowered_invariant keeps 95/90 targets and 80/50 interim gates with equal=PASS', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    // Act:
+    const target1 = aggregator.calculateGap('webgl1', 672, 13);
+    const target2 = aggregator.calculateGap('webgl2', 2598, 20);
+    const interim1 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { interimGate: number; verdict: string } }).calculateInterimGate('webgl1', 672, 13);
+    const interim2 = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { interimGate: number; verdict: string } }).calculateInterimGate('webgl2', 2598, 20);
+    const boundary = (aggregator as unknown as { calculateInterimGate: (s: string, d: number, p: number) => { verdict: string } }).calculateInterimGate('webgl1', 100, 80);
+    const gateFn = interimGateFor;
+    // Assert:
+    expect(target1.targetGate).toBe(95.0);
+    expect(target2.targetGate).toBe(90.0);
+    expect(interim1.interimGate).toBe(80.0);
+    expect(interim2.interimGate).toBe(50.0);
+    expect(gateFn('webgl1')).toBe(80.0);
+    expect(gateFn('webgl2')).toBe(50.0);
+    expect(boundary.verdict).toBe('PASS');
+  });
+});
+
+describe('v5_honest_zero_delta_recording', () => {
+  it('test_v5_honest_zero_delta_recording records +0.00% with sprint14 fields at baseline', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 13, failed: 659, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    const suites = { webgl1: m1, webgl2: m2 } as unknown as Record<string, never>;
+    // Act:
+    const deltas = (ThresholdReportFormatter as unknown as { composeDeltas: (s: unknown) => { webgl1: Record<string, string>; webgl2: Record<string, string> } }).composeDeltas(suites);
+    // Assert:
+    expect(deltas.webgl1.deltaPercentagePoints).toBe('+0.00%');
+    expect(deltas.webgl2.deltaPercentagePoints).toBe('+0.00%');
+    expect(deltas.webgl1.sprint13Ratio).toBe('13/672');
+    expect(deltas.webgl1.sprint13PassRate).toBe('1.93');
+    expect(deltas.webgl1.sprint14Ratio).toBe('13/672');
+    expect(deltas.webgl1.sprint14PassRate).toBe('1.93');
+    expect(deltas.webgl2.sprint13Ratio).toBe('20/2598');
+    expect(deltas.webgl2.sprint13PassRate).toBe('0.77');
+    expect(deltas.webgl2.sprint14Ratio).toBe('20/2598');
+    expect(deltas.webgl2.sprint14PassRate).toBe('0.77');
+  });
+});
+
+describe('v5_delta_computation_vs_sprint13_baseline', () => {
+  it('test_v5_delta_computation_vs_sprint13_baseline computes +0.60% and +0.19% lifts', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 17, failed: 655, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 25, failed: 2573, crashed: 0, skipped: 0 }));
+    const suites = { webgl1: m1, webgl2: m2 } as unknown as Record<string, never>;
+    // Act:
+    const deltas = (ThresholdReportFormatter as unknown as { composeDeltas: (s: unknown) => { webgl1: Record<string, string>; webgl2: Record<string, string> } }).composeDeltas(suites);
+    // Assert:
+    expect(deltas.webgl1.deltaPercentagePoints).toBe('+0.60%');
+    expect(deltas.webgl1.sprint14Ratio).toBe('17/672');
+    expect(deltas.webgl1.sprint14PassRate).toBe('2.53');
+    expect(deltas.webgl2.deltaPercentagePoints).toBe('+0.19%');
+    expect(deltas.webgl2.sprint14Ratio).toBe('25/2598');
+    expect(deltas.webgl2.sprint14PassRate).toBe('0.96');
+  });
+});
+
+describe('v5_report_artifacts_emission', () => {
+  it('test_v5_report_artifacts_emission emits v5 header, interim section, and interimGates JSON', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 'v5-artifacts-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 672, passed: 13, failed: 659, crashed: 0, skipped: 0 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    const metrics = { suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true };
+    // Act:
+    const ok = ThresholdReportFormatter.writeReports(metrics, mdPath, jsonPath);
+    // Assert:
+    expect(ok).toBe(true);
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    expect(json.interimGates.webgl1.interimGate).toBe(80.0);
+    expect(json.interimGates.webgl2.interimGate).toBe(50.0);
+    expect(json.interimGates.webgl1.verdict).toBe('GAP_RECORDED');
+    expect(json.interimGates.webgl2.verdict).toBe('GAP_RECORDED');
+    expect(json.interimGates.webgl1.testsNeeded).toBe(525);
+    expect(json.interimGates.webgl2.testsNeeded).toBe(1279);
+    expect(json.overallStatus).toBe('GAP_RECORDED');
+    expect(json.reconciliationValid).toBe(true);
+    const md = readFileSync(mdPath, 'utf8');
+    expect(md).toContain('# Sprint 14 CTS Conformance Threshold & Gap Report (v5)');
+    expect(md).toContain('Supersedes: # Sprint 13 CTS Conformance Threshold & Gap Report (v4)');
+    expect(md).toContain('## Interim Gate Evaluation (ADR-006 amendment b48cc2da)');
+    expect(md).toContain('80.00%');
+    expect(md).toContain('50.00%');
+    expect(md).toContain('GAP_RECORDED');
+  });
+});
+
+describe('v5_nonzero_crash_rejection', () => {
+  it('test_v5_nonzero_crash_rejection throws on non-zero crashes without partial reports', () => {
+    // Arrange:
+    const dir = mkdtempSync(join(tmpdir(), 'v5-crash-'));
+    const mdPath = join(dir, 'threshold-report.md');
+    const jsonPath = join(dir, 'threshold-report.json');
+    const aggregator = new CTSReportAggregator();
+    const m1 = aggregator.aggregateSuite('webgl1', buildTriageLog({ discovered: 672, executed: 671, passed: 13, failed: 657, crashed: 1, skipped: 1 }));
+    const m2 = aggregator.aggregateSuite('webgl2', buildTriageLog({ discovered: 2598, executed: 2598, passed: 20, failed: 2578, crashed: 0, skipped: 0 }));
+    const metrics = { suites: { webgl1: m1, webgl2: m2 }, reconciliationValid: true };
+    // Act & Assert:
+    expect(() => ThresholdReportFormatter.writeReports(metrics, mdPath, jsonPath)).toThrow(/Non-zero crashes detected: 1/);
+  });
+});
+
+describe('v5_root_cause_attribution_preservation', () => {
+  it('test_v5_root_cause_attribution_preservation tallies G1-G4 deterministically under v5 paths', () => {
+    // Arrange:
+    const aggregator = new CTSReportAggregator();
+    const records: unknown[] = [
+      { id: 'a.html', status: 'FAIL', classification: 'spec-defect', rootCauseGroup: 'G1' },
+      { id: 'b.html', status: 'FAIL', classification: 'driver', rootCauseGroup: 'G2' },
+      { id: 'c.html', status: 'FAIL', classification: 'float-edge', rootCauseGroup: 'G3' },
+      { id: 'd.html', status: 'FAIL', classification: 'harness-limitation', rootCauseGroup: 'G4' },
+      { id: 'e.html', status: 'FAIL', classification: 'harness-limitation', rootCauseGroup: 'G4' },
+    ];
+    // Act:
+    const dist = aggregator.tallyRootCauses(records);
+    // Assert:
+    expect(dist.G1).toBe(1);
+    expect(dist.G2).toBe(1);
+    expect(dist.G3).toBe(1);
+    expect(dist.G4).toBe(2);
+    expect(dist.total).toBe(5);
   });
 });

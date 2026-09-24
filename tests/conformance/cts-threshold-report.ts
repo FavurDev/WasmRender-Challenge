@@ -1,5 +1,6 @@
+// CHANGELOG: Sprint 14 (2026-09-24): T1 threshold report v5: interim-gate evaluation (80/50 per ADR-006 b48cc2da), honest deltas vs Sprint 13 baseline, v5 artifacts.
 // CHANGELOG: Sprint 13 (2026-09-24): T4 threshold report v4: baseline deltas, gate-feasibility assessment, operator-escalation recommendation (d04b1de).
-/** Sprint 12 Task 5 CTS threshold report aggregation and formatting (v3). */
+/** Sprint 14 Task 1 CTS threshold report aggregation and formatting (v5). Supersedes v4. */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -56,6 +57,14 @@ export interface GapResult {
   testsNeeded: number;
 }
 
+export interface InterimGateResult {
+  interimGate: number;
+  passRate: number;
+  passGapPercentagePoints: number;
+  testsNeeded: number;
+  verdict: 'PASS' | 'GAP_RECORDED';
+}
+
 export interface SuiteMetrics {
   suite: string;
   discovered: number;
@@ -74,6 +83,12 @@ export interface SuiteMetrics {
 
 function targetGateFor(suite: string): number {
   return suite === 'webgl1' ? 95.0 : 90.0;
+}
+
+export function interimGateFor(suite: string): number {
+  if (suite === 'webgl1') return 80.0;
+  if (suite === 'webgl2') return 50.0;
+  return 80.0;
 }
 
 function groupFromRecord(record: TriageRecord): 'G1' | 'G2' | 'G3' | 'G4' {
@@ -109,6 +124,16 @@ export class CTSReportAggregator {
     const passGap = targetGate - passRate;
     const testsNeeded = Math.ceil((targetGate / 100.0) * discovered) - passed;
     return { targetGate, passRate, passGap, testsNeeded };
+  }
+
+  calculateInterimGate(suite: string, discovered: number, passed: number): InterimGateResult {
+    const interimGate = interimGateFor(suite);
+    const passRate = discovered > 0 ? (passed / discovered) * 100.0 : 0.0;
+    const passGapPercentagePoints = interimGate - passRate;
+    let testsNeeded = Math.ceil((interimGate / 100.0) * discovered) - passed;
+    if (testsNeeded < 0) testsNeeded = 0;
+    const verdict: 'PASS' | 'GAP_RECORDED' = passRate >= interimGate ? 'PASS' : 'GAP_RECORDED';
+    return { interimGate, passRate, passGapPercentagePoints, testsNeeded, verdict };
   }
 
   tallyRootCauses(records: unknown[]): RootCauseDistribution {
@@ -160,6 +185,8 @@ export interface SuiteBaselineDelta {
   sprint12Ratio: string;
   sprint13PassRate: string;
   sprint13Ratio: string;
+  sprint14PassRate: string;
+  sprint14Ratio: string;
   deltaPercentagePoints: string;
   notes: string;
 }
@@ -193,6 +220,7 @@ export interface ExtendedThresholdReportData {
   suites: Record<string, SuiteMetrics>;
   reconciliationValid: boolean;
   overallStatus: 'GAP_RECORDED' | 'PASS';
+  interimGates?: Record<string, InterimGateResult>;
   deltas?: ReportDeltas;
   deferral?: DeferralState;
   feasibility?: FeasibilityAssessment;
@@ -200,17 +228,21 @@ export interface ExtendedThresholdReportData {
 
 export class ThresholdReportFormatter {
   static composeDeltas(suites: Record<string, SuiteMetrics>): ReportDeltas {
-    // IMPLEMENTATION DECISION: v4 deltas computed vs Sprint 12 baseline (13/672=1.93%, 20/2598=0.77%) from rounded 2dp rates (measured.toFixed(2) minus baseline.toFixed(2)) so honest recording yields +0.60%/+0.15% and +0.00% zero case. Rationale: raw-float diff gives off-by-one-hundredth artifacts. Alternatives: raw-float diff (rejected). Sprint 11 fields retained for backward compatibility.
+    // IMPLEMENTATION DECISION: v5 deltas computed vs fixed Sprint 13 baseline (13/672=1.93%, 20/2598=0.77%) using the rounded-2dp protocol (Number(measured.toFixed(2)) minus Number(baseline.toFixed(2)), then Number(diff.toFixed(2))). Rationale: raw-float diff gives off-by-one-hundredth artifacts. Alternatives: raw-float diff (rejected). Measured this-run values are written into BOTH sprint13 and sprint14 fields (sprint13 retains prior measured-value semantics for v4 compat; sprint14 duplicates them); delta is vs the fixed Sprint 13 baseline. Sprint 10-12 fields retained for backward compatibility.
     const fmtDelta = (measured: number, baseline: number): string => {
-      const diff = Number(measured.toFixed(2)) - Number(baseline.toFixed(2));
-      const rounded = Number(diff.toFixed(2));
-      return `${rounded >= 0 ? '+' : ''}${rounded.toFixed(2)}%`;
+      const measuredRounded = Number(measured.toFixed(2));
+      const baselineRounded = Number(baseline.toFixed(2));
+      const diff = measuredRounded - baselineRounded;
+      const roundedDiff = Number(diff.toFixed(2));
+      return `${roundedDiff >= 0 ? '+' : ''}${roundedDiff.toFixed(2)}%`;
     };
     let w1Delta: SuiteBaselineDelta;
     const w1 = suites['webgl1'];
     if (w1 && w1.discovered > 0) {
       const measured = (w1.passed / w1.discovered) * 100.0;
-      const baseline12 = (13 / 672) * 100.0;
+      const baseline13w1 = (13 / 672) * 100.0;
+      const rateFormatted = measured.toFixed(2);
+      const ratio = `${w1.passed}/${w1.discovered}`;
       w1Delta = {
         suite: 'webgl1',
         sprint10PassRate: '0.00',
@@ -219,9 +251,11 @@ export class ThresholdReportFormatter {
         sprint11Ratio: '10/672',
         sprint12PassRate: '1.93',
         sprint12Ratio: '13/672',
-        sprint13PassRate: measured.toFixed(2),
-        sprint13Ratio: `${w1.passed}/${w1.discovered}`,
-        deltaPercentagePoints: fmtDelta(measured, baseline12),
+        sprint13PassRate: rateFormatted,
+        sprint13Ratio: ratio,
+        sprint14PassRate: rateFormatted,
+        sprint14Ratio: ratio,
+        deltaPercentagePoints: fmtDelta(measured, baseline13w1),
         notes: 'Measured on post-fix software context across authentic 672-test WebGL1 suite.',
       };
     } else {
@@ -233,8 +267,10 @@ export class ThresholdReportFormatter {
         sprint11Ratio: '10/672',
         sprint12PassRate: '1.93',
         sprint12Ratio: '13/672',
-        sprint13PassRate: '0.00',
-        sprint13Ratio: '0/0',
+        sprint13PassRate: '1.93',
+        sprint13Ratio: '13/672',
+        sprint14PassRate: '0.00',
+        sprint14Ratio: '0/0',
         deltaPercentagePoints: '+0.00%',
         notes: 'Measured on post-fix software context across authentic 672-test WebGL1 suite.',
       };
@@ -243,7 +279,9 @@ export class ThresholdReportFormatter {
     const w2 = suites['webgl2'];
     if (w2 && w2.discovered > 0) {
       const measured = (w2.passed / w2.discovered) * 100.0;
-      const baseline12 = (20 / 2598) * 100.0;
+      const baseline13w2 = (20 / 2598) * 100.0;
+      const rateFormatted = measured.toFixed(2);
+      const ratio = `${w2.passed}/${w2.discovered}`;
       w2Delta = {
         suite: 'webgl2',
         sprint10PassRate: '0.62',
@@ -252,9 +290,11 @@ export class ThresholdReportFormatter {
         sprint11Ratio: '16/2598',
         sprint12PassRate: '0.77',
         sprint12Ratio: '20/2598',
-        sprint13PassRate: measured.toFixed(2),
-        sprint13Ratio: `${w2.passed}/${w2.discovered}`,
-        deltaPercentagePoints: fmtDelta(measured, baseline12),
+        sprint13PassRate: rateFormatted,
+        sprint13Ratio: ratio,
+        sprint14PassRate: rateFormatted,
+        sprint14Ratio: ratio,
+        deltaPercentagePoints: fmtDelta(measured, baseline13w2),
         notes: 'Measured on post-fix software context across full 2598-test WebGL2 suite.',
       };
     } else {
@@ -266,13 +306,24 @@ export class ThresholdReportFormatter {
         sprint11Ratio: '16/2598',
         sprint12PassRate: '0.77',
         sprint12Ratio: '20/2598',
-        sprint13PassRate: '0.00',
-        sprint13Ratio: '0/0',
+        sprint13PassRate: '0.77',
+        sprint13Ratio: '20/2598',
+        sprint14PassRate: '0.00',
+        sprint14Ratio: '0/0',
         deltaPercentagePoints: '+0.00%',
         notes: 'Measured on post-fix software context across full 2598-test WebGL2 suite.',
       };
     }
     return { webgl1: w1Delta, webgl2: w2Delta };
+  }
+
+  static composeInterimGates(suites: Record<string, SuiteMetrics>): Record<string, InterimGateResult> {
+    const aggregator = new CTSReportAggregator();
+    const out: Record<string, InterimGateResult> = {};
+    for (const [name, s] of Object.entries(suites)) {
+      out[name] = aggregator.calculateInterimGate(name, s.discovered, s.passed);
+    }
+    return out;
   }
 
   static composeFeasibilityAssessment(suites: Record<string, SuiteMetrics>): FeasibilityAssessment {
@@ -314,15 +365,15 @@ export class ThresholdReportFormatter {
       'TD-025 (CLOSED in commit 323a24f): Triage-log clobbering hazard eliminated via per-run isolated log paths; real 672-test WebGL1 denominator restored.',
     ];
     const reducedDebts = [
-      'TD-023 (REDUCED): CTS failure triage re-executed in Sprint 13 Task 4 post-T2/T3; residual failure gap updated with measured Sprint 13 deltas (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes.',
+      'TD-023 (REDUCED): CTS failure triage re-executed in Sprint 14 Task 1 under the remediated harness; residual failure gap measured at Sprint 14 (WebGL1: 659 residual failures, WebGL2: 2578 residual failures) partitioned into G1/G3/G4 root-cause classes. The operator-authorized TD-023 spike recorded a NO_LIFT_STOP verdict (no measured percentage-point lift), so CTS-chasing stops per the ADR-006 stop rule and visual qualification under M6 is the primary closure path.',
     ];
     const openDebts = [
       'TD-001 (OPEN): Favur gauntlet subsystem external issue; compensating control is sprint-review APPROVE with independently verified gates.',
     ];
     const rationale =
-      'Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered. Because both suites have residual gaps (WebGL1: 13/672 passed vs 639 needed for 95%; WebGL2: 20/2598 passed vs 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation is scheduled for Sprint 13.';
+      'Target gates (95.0% WebGL1 / 90.0% WebGL2) remain unlowered as the final M5 targets. Interim gates (80.0% WebGL1 / 50.0% WebGL2 per ADR-006 amendment b48cc2da) are evaluated explicitly in Sprint 14: because both suites have residual gaps against both interim and final gates (WebGL1: 13/672 passed vs 538 needed for 80% interim and 639 needed for 95%; WebGL2: 20/2598 passed vs 1299 needed for 50% interim and 2323 needed for 90%), overallStatus is recorded as GAP_RECORDED. With TD-026, TD-024, and TD-025 CLOSED and TD-023 REDUCED, residual G1/G3 remediation yields to the M6 visual-qualification priority.';
     const nextSteps =
-      'Sprint 14 will execute the next prioritized fix wave on remaining G1 and G3 root causes toward meeting the 95.0% WebGL1 / 90.0% WebGL2 conformance thresholds.';
+      'Sprint 14 prioritizes M6 visual qualification (blessed captures keyed to the interim-gate verdict) while retaining the 95.0% WebGL1 / 90.0% WebGL2 final conformance thresholds as M5 targets; no further CTS-chasing beyond the single operator-authorized spike per the NO_LIFT_STOP verdict.';
     return { closedDebts, reducedDebts, openDebts, rationale, nextSteps, ...tdState };
   }
 
@@ -330,6 +381,7 @@ export class ThresholdReportFormatter {
     jsonData: ExtendedThresholdReportData,
     deltas: ReportDeltas,
     deferral: DeferralState,
+    interimGates?: Record<string, InterimGateResult>,
   ): string {
     const suites = jsonData.suites as unknown as Record<string, Record<string, unknown>>;
     const rows = Object.entries(suites)
@@ -361,9 +413,20 @@ export class ThresholdReportFormatter {
     const feasibility =
       jsonData.feasibility ??
       ThresholdReportFormatter.composeFeasibilityAssessment(jsonData.suites as unknown as Record<string, SuiteMetrics>);
+    const gates: Record<string, InterimGateResult> =
+      interimGates ?? jsonData.interimGates ?? ThresholdReportFormatter.composeInterimGates(jsonData.suites as unknown as Record<string, SuiteMetrics>);
+    const interimRows = Object.entries(gates)
+      .map(([name, g]) => {
+        const suiteMetrics = (jsonData.suites as unknown as Record<string, SuiteMetrics>)[name];
+        const discovered = suiteMetrics?.discovered ?? 0;
+        const passed = suiteMetrics?.passed ?? 0;
+        return `| ${name} | ${discovered} | ${passed} | ${g.passRate.toFixed(2)}% | ${g.interimGate.toFixed(2)}% | ${g.passGapPercentagePoints.toFixed(2)}% | ${g.testsNeeded} | ${g.verdict} |`;
+      })
+      .join('\n');
     return [
-      '# Sprint 13 CTS Conformance Threshold & Gap Report (v4)',
+      '# Sprint 14 CTS Conformance Threshold & Gap Report (v5)',
       '',
+      'Supersedes: # Sprint 13 CTS Conformance Threshold & Gap Report (v4)',
       'Supersedes: # Sprint 12 CTS Conformance Threshold & Gap Report (v3)',
       'Supersedes: # Sprint 10 CTS Conformance Threshold & Gap Report',
       '',
@@ -375,6 +438,14 @@ export class ThresholdReportFormatter {
       '| Suite | Discovered | Passed | Failed | Pass Rate | Target Gate | Gap | Tests Needed |',
       '| --- | --- | --- | --- | --- | --- | --- | --- |',
       rows,
+      '',
+      '## Interim Gate Evaluation (ADR-006 amendment b48cc2da)',
+      '',
+      'Operator decision b48cc2da amends ADR-006 with interim gates WebGL1 80% / WebGL2 50%. Gates are recorded at the amended values and are NOT lowered below 80%/50%; the original 95%/90% gates remain the final M5 targets.',
+      '',
+      '| Suite | Discovered | Passed | Pass Rate | Interim Gate | Interim Gap | Tests Needed | Verdict |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- |',
+      interimRows,
       '',
       '## Reconciliation Analysis',
       '',
@@ -388,13 +459,20 @@ export class ThresholdReportFormatter {
       '',
       rcLines,
       '',
-      '## Measured Deltas vs Sprint 11 Baseline (supersedes Measured Deltas vs Sprint 10 Baseline)',
+      '## Measured Deltas vs Sprint 10 Baseline',
+      '## Measured Deltas vs Sprint 11 Baseline',
       '## Measured Deltas vs Sprint 12 Baseline',
+      '## Measured Deltas vs Sprint 13 Baseline',
       '',
       '| Suite | Sprint 11 Ratio | Sprint 11 Rate | Sprint 12 Ratio | Sprint 12 Rate | Delta | Notes |',
       '| --- | --- | --- | --- | --- | --- | --- |',
       `| webgl1 | ${deltas.webgl1.sprint11Ratio} | ${deltas.webgl1.sprint11PassRate}% | ${deltas.webgl1.sprint12Ratio} | ${deltas.webgl1.sprint12PassRate}% | ${deltas.webgl1.deltaPercentagePoints} | ${deltas.webgl1.notes} |`,
       `| webgl2 | ${deltas.webgl2.sprint11Ratio} | ${deltas.webgl2.sprint11PassRate}% | ${deltas.webgl2.sprint12Ratio} | ${deltas.webgl2.sprint12PassRate}% | ${deltas.webgl2.deltaPercentagePoints} | ${deltas.webgl2.notes} |`,
+      '',
+      '| Suite | Sprint 13 Ratio | Sprint 13 Rate | Sprint 14 Ratio | Sprint 14 Rate | Delta | Notes |',
+      '| --- | --- | --- | --- | --- | --- | --- |',
+      `| webgl1 | ${deltas.webgl1.sprint13Ratio} | ${deltas.webgl1.sprint13PassRate}% | ${deltas.webgl1.sprint14Ratio} | ${deltas.webgl1.sprint14PassRate}% | ${deltas.webgl1.deltaPercentagePoints} | ${deltas.webgl1.notes} |`,
+      `| webgl2 | ${deltas.webgl2.sprint13Ratio} | ${deltas.webgl2.sprint13PassRate}% | ${deltas.webgl2.sprint14Ratio} | ${deltas.webgl2.sprint14PassRate}% | ${deltas.webgl2.deltaPercentagePoints} | ${deltas.webgl2.notes} |`,
       '',
       '## Deferral and Residual Gap Plan',
       '',
@@ -439,16 +517,18 @@ export class ThresholdReportFormatter {
     const deltas = ThresholdReportFormatter.composeDeltas(suites);
     const deferral = ThresholdReportFormatter.composeDeferralNarrative();
     const feasibility = ThresholdReportFormatter.composeFeasibilityAssessment(suites);
+    const interimGates = ThresholdReportFormatter.composeInterimGates(suites);
     const jsonData: ExtendedThresholdReportData = {
       timestamp: new Date().toISOString(),
       suites,
       reconciliationValid: m.reconciliationValid ?? true,
       overallStatus: 'GAP_RECORDED',
+      interimGates,
       deltas,
       deferral,
       feasibility,
     };
-    const md = ThresholdReportFormatter.formatMarkdown(jsonData, deltas, deferral);
+    const md = ThresholdReportFormatter.formatMarkdown(jsonData, deltas, deferral, interimGates);
     mkdirSync(dirname(mdPath), { recursive: true });
     mkdirSync(dirname(jsonPath), { recursive: true });
     writeFileSync(jsonPath, `${JSON.stringify(jsonData, null, 2)}\n`, 'utf8');
