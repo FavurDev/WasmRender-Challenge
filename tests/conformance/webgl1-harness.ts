@@ -1,5 +1,5 @@
 /** WebGL1 CTS conformance harness — manifest parsing, headless VM execution, triage logging, runner. */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, normalize, posix, sep } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
@@ -829,7 +829,19 @@ export class CTSTriageLogger {
       },
       tests: [...this.records],
     };
-    writeFileSync(this.logFilePath, JSON.stringify(summary, null, 2), 'utf8');
+    // IMPLEMENTATION DECISION: atomic temp-path + rename isolation (Unit 2). Rationale: a crash mid-write must never leave a partial production log; synthetic fixtures must never target this path. Alternatives: direct write (clobbers on crash — rejected).
+    const tempLogPath = `${this.logFilePath}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tempLogPath, JSON.stringify(summary, null, 2), 'utf8');
+    try {
+      renameSync(tempLogPath, this.logFilePath);
+    } catch {
+      copyFileSync(tempLogPath, this.logFilePath);
+      try {
+        unlinkSync(tempLogPath);
+      } catch {
+        // Best-effort temp cleanup; production log is already in place.
+      }
+    }
     return summary;
   }
 }

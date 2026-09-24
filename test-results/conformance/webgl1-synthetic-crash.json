@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-09-23T20:52:01.996Z",
+  "timestamp": "2026-09-24T01:59:40.843Z",
   "suite": "Khronos WebGL 1.0.3 Conformance",
   "totals": {
     "discovered": 673,
     "executed": 673,
-    "passed": 9,
-    "failed": 664,
+    "passed": 10,
+    "failed": 663,
     "skipped": 0,
     "crashed": 1
   },
@@ -536,7 +536,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -711,12 +711,12 @@
           "message": "gl.getError() should be 0. Was 1280."
         },
         {
-          "success": false,
-          "message": "gl.drawingBufferWidth should be 300 (of type number). Was undefined (of type undefined)."
+          "success": true,
+          "message": "gl.drawingBufferWidth is gl.canvas.width"
         },
         {
-          "success": false,
-          "message": "gl.drawingBufferHeight should be 150 (of type number). Was undefined (of type undefined)."
+          "success": true,
+          "message": "gl.drawingBufferHeight is gl.canvas.height"
         },
         {
           "success": false,
@@ -752,11 +752,11 @@
         },
         {
           "success": false,
-          "message": "gl.drawingBufferWidth should be 32 (of type number). Was undefined (of type undefined)."
+          "message": "gl.drawingBufferWidth should be 32. Was 300."
         },
         {
           "success": false,
-          "message": "gl.drawingBufferHeight should be 16 (of type number). Was undefined (of type undefined)."
+          "message": "gl.drawingBufferHeight should be 16. Was 150."
         },
         {
           "success": false,
@@ -791,12 +791,12 @@
           "message": "context exists"
         },
         {
-          "success": false,
-          "message": "gl.drawingBufferWidth should be 300 (of type number). Was undefined (of type undefined)."
+          "success": true,
+          "message": "gl.drawingBufferWidth is gl.canvas.width"
         },
         {
-          "success": false,
-          "message": "gl.drawingBufferHeight should be 150 (of type number). Was undefined (of type undefined)."
+          "success": true,
+          "message": "gl.drawingBufferHeight is gl.canvas.height"
         },
         {
           "success": false,
@@ -944,18 +944,6 @@
       "passed": false,
       "drainedErrors": [],
       "assertions": [
-        {
-          "success": false,
-          "message": "Property does not exist: DEPTH_BUFFER_BIT"
-        },
-        {
-          "success": false,
-          "message": "Property does not exist: STENCIL_BUFFER_BIT"
-        },
-        {
-          "success": false,
-          "message": "Property does not exist: COLOR_BUFFER_BIT"
-        },
         {
           "success": false,
           "message": "Property does not exist: POINTS"
@@ -2346,10 +2334,6 @@
       "assertions": [
         {
           "success": false,
-          "message": "Property either does not exist or is not a function: clearStencil"
-        },
-        {
-          "success": false,
           "message": "Property either does not exist or is not a function: compressedTexImage2D"
         },
         {
@@ -2359,10 +2343,6 @@
         {
           "success": false,
           "message": "Property either does not exist or is not a function: copyTexSubImage2D"
-        },
-        {
-          "success": false,
-          "message": "Property either does not exist or is not a function: getShaderSource"
         },
         {
           "success": false,
@@ -7717,8 +7697,8 @@
           "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
         },
         {
-          "success": true,
-          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+          "success": false,
+          "message": "context.getShaderSource(argument) should throw an exception. Was null."
         },
         {
           "success": true,
@@ -7821,8 +7801,8 @@
           "message": "context.getShaderParameter(argument, 0) should throw an exception. Was null."
         },
         {
-          "success": true,
-          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function."
+          "success": false,
+          "message": "context.getShaderSource(argument) should throw an exception. Was null."
         },
         {
           "success": true,
@@ -7925,8 +7905,8 @@
           "message": "getError expected one of: NO_ERROR or currentProgram or currentProgram or currentProgram. Was 0x502 : after evaluating: context.getShaderParameter(argument, 0)"
         },
         {
-          "success": true,
-          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function"
+          "success": false,
+          "message": "getError expected one of: NO_ERROR or currentProgram or currentProgram or currentProgram. Was 0x502 : after evaluating: context.getShaderSource(argument)"
         },
         {
           "success": true,
@@ -8029,8 +8009,8 @@
           "message": "getError expected one of: NO_ERROR or currentProgram or currentProgram or currentProgram. Was 0x502 : after evaluating: context.getShaderParameter(argument, 0)"
         },
         {
-          "success": true,
-          "message": "context.getShaderSource(argument) threw exception TypeError: context.getShaderSource is not a function"
+          "success": false,
+          "message": "getError expected one of: NO_ERROR or currentProgram or currentProgram or currentProgram. Was 0x502 : after evaluating: context.getShaderSource(argument)"
         },
         {
           "success": true,
@@ -8493,32 +8473,32 @@
       ],
       "assertions": [
         {
-          "success": false,
-          "message": "gl.getShaderSource(vs) should return a string. Threw exception TypeError: gl.getShaderSource is not a function"
+          "success": true,
+          "message": "gl.getShaderSource(vs) returns a string"
         },
         {
           "success": true,
           "message": "gl.getShaderInfoLog(vs) returns a string"
         },
         {
-          "success": false,
-          "message": "gl.getShaderSource(vs) should return a string. Threw exception TypeError: gl.getShaderSource is not a function"
+          "success": true,
+          "message": "gl.getShaderSource(vs) returns a string"
         },
         {
           "success": true,
           "message": "gl.getShaderInfoLog(vs) returns a string"
         },
         {
-          "success": false,
-          "message": "gl.getShaderSource(fs) should return a string. Threw exception TypeError: gl.getShaderSource is not a function"
+          "success": true,
+          "message": "gl.getShaderSource(fs) returns a string"
         },
         {
           "success": true,
           "message": "gl.getShaderInfoLog(fs) returns a string"
         },
         {
-          "success": false,
-          "message": "gl.getShaderSource(fs) should return a string. Threw exception TypeError: gl.getShaderSource is not a function"
+          "success": true,
+          "message": "gl.getShaderSource(fs) returns a string"
         },
         {
           "success": true,
@@ -8849,8 +8829,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -9117,8 +9097,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -9385,8 +9365,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -9653,8 +9633,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -9921,8 +9901,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -10189,8 +10169,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -10457,8 +10437,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -10725,8 +10705,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -10993,8 +10973,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -11261,8 +11241,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -11529,8 +11509,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -11797,8 +11777,8 @@
           "message": "context.clearDepth(argument) is undefined."
         },
         {
-          "success": false,
-          "message": "context.clearStencil(argument) should be undefined. Threw exception TypeError: context.clearStencil is not a function"
+          "success": true,
+          "message": "context.clearStencil(argument) is undefined."
         },
         {
           "success": true,
@@ -12040,7 +12020,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": true,
@@ -12052,7 +12032,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -12060,7 +12040,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -12072,7 +12052,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -12080,7 +12060,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -12096,7 +12076,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -15034,9 +15014,7 @@
       "id": "conformance/renderbuffers/framebuffer-object-attachment.html",
       "status": "FAIL",
       "passed": false,
-      "drainedErrors": [
-        1280
-      ],
+      "drainedErrors": [],
       "assertions": [
         {
           "success": true,
@@ -15044,15 +15022,15 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 0"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 36061"
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 0"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 36061"
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 0"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 36061"
         },
         {
           "success": true,
@@ -15096,7 +15074,7 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 0"
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) returned 36061"
         },
         {
           "success": false,
@@ -15390,11 +15368,11 @@
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
-          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 0 (of type number)."
+          "message": "gl.checkFramebufferStatus(gl.FRAMEBUFFER) should be undefined (of type undefined). Was 36061 (of type number)."
         },
         {
           "success": false,
@@ -22293,8 +22271,8 @@
     },
     {
       "id": "conformance/typedarrays/array-large-array-tests.html",
-      "status": "FAIL",
-      "passed": false,
+      "status": "PASS",
+      "passed": true,
       "drainedErrors": [],
       "assertions": [
         {
@@ -22302,32 +22280,30 @@
           "message": "Construction of huge Float32Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Float64Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Float64Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Int16Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Int16Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Int32Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Int32Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Uint16Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Uint16Array threw exception"
         },
         {
-          "success": false,
-          "message": "Construction of huge Uint32Array should throw exception"
+          "success": true,
+          "message": "Construction of huge Uint32Array threw exception"
         },
         {
           "success": true,
           "message": "successfullyParsed is true"
         }
-      ],
-      "classification": "spec-defect",
-      "rootCauseGroup": "G1"
+      ]
     },
     {
       "id": "conformance/uniforms/gl-uniform-arrays.html",
@@ -23204,7 +23180,7 @@
       "passed": false,
       "drainedErrors": [],
       "error": "Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined",
-      "stack": "Error: Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined\n    at CTSRunner.runSuite (C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1-harness.ts:938:17)\n    at C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1.test.ts:124:34\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+      "stack": "Error: Uncaught exception in synthetic page crash-page.html: nonExistentFunction is not defined\n    at CTSRunner.runSuite (C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1-harness.ts:950:17)\n    at C:\\Runs\\favur-tb-wasm-render\\favur-tb-wasm-render\\workspace\\tests\\conformance\\webgl1.test.ts:129:34\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///C:/Runs/favur-tb-wasm-render/favur-tb-wasm-render/workspace/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
       "classification": "spec-defect",
       "rootCauseGroup": "G1"
     }

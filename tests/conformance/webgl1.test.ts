@@ -42,9 +42,12 @@ describe('Triage Log Completeness and Error Draining (AC-2)', () => {
 });
 
 describe('Skip Discipline and Unexplained Skip Failure Count (AC-3)', () => {
-  it('records explained skips as SKIP and unexplained skips as FAIL per ADR-017', () => {
-    // Arrange:
-    const logger = new CTSTriageLogger(TRIAGE_LOG);
+  it('records explained skips as SKIP and unexplained skips as FAIL per ADR-017', async () => {
+    // Arrange: isolated sandbox path — synthetic fixtures must never target the production log path.
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const sandbox = join(tmpdir(), `webgl1-ac3-${process.pid}.json`);
+    const logger = new CTSTriageLogger(sandbox);
     // Act:
     logger.recordSkip('test-a', 'Requires GLSL 3.00 es');
     logger.recordSkip('test-b', '');
@@ -55,6 +58,8 @@ describe('Skip Discipline and Unexplained Skip Failure Count (AC-3)', () => {
     expect(summary.tests[1].status).toBe('FAIL');
     expect(summary.tests[1].skipReason).toContain('UNEXPLAINED_SKIP');
     expect(summary.totals.failed).toBe(1);
+    const { unlinkSync: ac3Unlink, existsSync: ac3Exists } = await import('node:fs');
+    if (ac3Exists(sandbox)) ac3Unlink(sandbox);
   });
 });
 
