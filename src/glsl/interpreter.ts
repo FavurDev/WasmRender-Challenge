@@ -401,7 +401,15 @@ function scalarFloatOp(op: string, a: number, b: number): number {
     case '+': return f(a + b);
     case '-': return f(a - b);
     case '*': return f(a * b);
-    case '/': return b === 0 ? (a === 0 ? NaN : a > 0 ? Infinity : -Infinity) : f(a / b);
+    case '/': {
+      if (b === 0) {
+        if (a === 0) return NaN;
+        // Preserve IEEE 754 signed-zero semantics: 1.0 / -0.0 === -Infinity.
+        // (b === 0 is true for both +0 and -0, so recover the divisor sign via 1 / b.)
+        return (a > 0) === (1 / b > 0) ? Infinity : -Infinity;
+      }
+      return f(a / b);
+    }
     case '%': return b === 0 ? NaN : f(a % b);
     default: return f(0);
   }
@@ -862,6 +870,13 @@ function evalUnary(
     case '-': {
       if (v instanceof Int32Array) return evalBinary('-', 0, v as Value);
       if (v instanceof Uint32Array) return evalBinary('-', 0, v as Value);
+      if (v instanceof Float32Array) {
+        const out = new Float32Array(v.length);
+        for (let i = 0; i < v.length; i++) out[i] = f(-f(v[i] as number));
+        return out;
+      }
+      if (Array.isArray(v)) return (v as unknown[]).map((item) => evalUnary('-', item as Value, _prefix, env, operand)) as Value[];
+      if (typeof v === 'number') return f(-f(v));
       return evalBinary('-', f(0), v as Value);
     }
     case '+': return v;
