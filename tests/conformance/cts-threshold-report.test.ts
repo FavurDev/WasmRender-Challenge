@@ -1,5 +1,5 @@
 // CHANGELOG: Sprint 13 (2026-09-24): T4 v4 test extensions (d04b1de).
-/** Sprint 12 Task 5 CTS threshold report v3 vitest suite. */
+/** Sprint 14 CTS threshold report v5 vitest suite. */
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -117,7 +117,7 @@ describe('test_threshold_report_generation', () => {
     expect(json.suites.webgl2).toBeDefined();
     expect(json.reconciliationValid).toBe(true);
     const md = readFileSync(mdPath, 'utf8');
-    expect(md).toContain('# Sprint 10 CTS Conformance Threshold & Gap Report');
+    expect(md).toContain('# Sprint 14 CTS Conformance Threshold & Gap Report (v5)');
     expect(md).toContain('Executive Summary');
     expect(md).toContain('Reconciliation');
     expect(md).toContain('Root Cause Attribution');
@@ -404,7 +404,7 @@ describe('v3_gap_recorded_unlowered_gates', () => {
     expect(json.suites.webgl1.targetGate).toBe(95);
     expect(json.suites.webgl2.targetGate).toBe(90);
     const md = readFileSync(mdPath, 'utf8');
-    expect(md).toContain('# Sprint 12 CTS Conformance Threshold & Gap Report (v3)');
+    expect(md).toContain('# Sprint 14 CTS Conformance Threshold & Gap Report (v5)');
     expect(md).toContain('Overall Status: GAP_RECORDED');
   });
 });

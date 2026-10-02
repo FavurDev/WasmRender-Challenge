@@ -618,7 +618,6 @@ export class CTSHeadlessEnvironment {
         arrayLike['length'] = list.length;
         for (let i = 0; i < list.length; i++) {
           arrayLike[i] = list[i];
-          arrayLike[String(i)] = list[i];
         }
         arrayLike.item = (i: number): DOMElementStub | null => list[i] ?? null;
         return arrayLike;

@@ -38,7 +38,8 @@ def agg(path):
     Returns:
         Tuple of (total test count, G1 count, per-bucket Counter, per-bucket example).
     """
-    data = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
     tests = data["tests"]
     g1 = [t for t in tests if t.get("rootCauseGroup") == "G1"]
     c = Counter()

@@ -1,8 +1,6 @@
 # Sprint 14 CTS Conformance Threshold & Gap Report (v5)
 
 Supersedes: # Sprint 13 CTS Conformance Threshold & Gap Report (v4)
-Supersedes: # Sprint 12 CTS Conformance Threshold & Gap Report (v3)
-Supersedes: # Sprint 10 CTS Conformance Threshold & Gap Report
 
 Generated: 2026-09-24T19:41:18.860Z
 Overall Status: GAP_RECORDED

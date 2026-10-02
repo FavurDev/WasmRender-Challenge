@@ -148,6 +148,8 @@ import {
   UNIFORM_OFFSET,
   UNIFORM_ARRAY_STRIDE,
   UNIFORM_MATRIX_STRIDE,
+  SUBPIXEL_BITS,
+  MAX_ELEMENT_INDEX,
   RED_BITS,
   GREEN_BITS,
   BLUE_BITS,
@@ -1394,9 +1396,9 @@ export class WebGL1Context {
     if (pname === MAX_DRAW_BUFFERS) return LIMIT_MAX_DRAW_BUFFERS_WEBGL1;
     if (pname === MAX_TEXTURE_SIZE) return LIMIT_MAX_TEXTURE_SIZE;
     if (pname === MAX_CUBE_MAP_TEXTURE_SIZE) return LIMIT_MAX_CUBE_MAP_TEXTURE_SIZE;
-    // Spec-minimum limit queries (SUBPIXEL_BITS 0x0D50, MAX_ELEMENT_INDEX 0x8FFE have no constants.ts entries).
-    if (pname === 0x0d50) return 4;
-    if (pname === 0x8ffe) return 0xffffff;
+    // Spec-minimum limit queries (named constants from ./constants).
+    if (pname === SUBPIXEL_BITS) return 4;
+    if (pname === MAX_ELEMENT_INDEX) return 0xffffff;
     if (pname === UNPACK_COLORSPACE_CONVERSION_WEBGL) return this.glState.getPixelStorei(pname as GLenum);
     if (pname === MAX_RENDERBUFFER_SIZE) return LIMIT_MAX_RENDERBUFFER_SIZE;
     if (pname === RED_BITS) return 8;

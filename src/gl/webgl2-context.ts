@@ -53,7 +53,9 @@ import {
   MAX_COLOR_ATTACHMENTS,
   MAX_COMBINED_TEXTURE_IMAGE_UNITS,
   MAX_DRAW_BUFFERS,
+  MAX_ELEMENT_INDEX,
   MAX_FRAGMENT_UNIFORM_VECTORS,
+  MAX_SERVER_WAIT_TIMEOUT,
   MAX_TEXTURE_IMAGE_UNITS,
   MAX_VERTEX_ATTRIBS,
   MAX_VERTEX_UNIFORM_VECTORS,
@@ -208,9 +210,9 @@ export class WebGL2Context extends WebGL1Context {
     if (pname === PNAME_TRANSFORM_FEEDBACK_PAUSED) {
       return this.tfPaused;
     }
-    // WebGL2 limit queries (numeric literals: no constants.ts entries for these enums).
-    if (pname === 0x8ffe) return 0xffffff;
-    if (pname === 0x9111) return 0;
+    // WebGL2 limit queries (named constants from ./constants).
+    if (pname === MAX_ELEMENT_INDEX) return 0xffffff;
+    if (pname === MAX_SERVER_WAIT_TIMEOUT) return 0;
     if ((pname as GLenum) === MAX_DRAW_BUFFERS) return 4;
     if ((pname as GLenum) === MAX_COLOR_ATTACHMENTS) return 4;
     if (

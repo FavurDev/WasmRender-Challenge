@@ -6,7 +6,8 @@ assertion text for the representative tests plus signature samples.
 import json
 
 for path in ("test-results/conformance/webgl1-triage.json", "test-results/conformance/webgl2-triage.json"):
-    data = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
     print("=" * 20, path)
     for t in data["tests"]:
         tid = t.get("id", "")

@@ -28,6 +28,8 @@ export const OUT_OF_MEMORY: GLenum = 0x0505;
 export const INVALID_FRAMEBUFFER_OPERATION: GLenum = 0x0506;
 
 // Pixel bit-depth query pnames (TD-024: named constants for getParameter)
+/** Subpixel bit-depth query pname for getParameter (value-identical 0x0D50). */
+export const SUBPIXEL_BITS: GLenum = 0x0d50;
 export const RED_BITS: GLenum = 0x0d52;
 export const GREEN_BITS: GLenum = 0x0d53;
 export const BLUE_BITS: GLenum = 0x0d54;
@@ -408,6 +410,12 @@ export const MAX_UNIFORM_BUFFER_BINDINGS: GLenum = 0x8a2f;
 export const MAX_SAMPLES: GLenum = 0x8d57;
 export const MAX_ELEMENTS_VERTICES: GLenum = 0x80e8;
 export const MAX_ELEMENTS_INDICES: GLenum = 0x80e9;
+
+// Spec-minimum limit query pnames (Sprint 14 Task 7 N7: named constants for getParameter)
+/** Maximum element index query pname for getParameter (value-identical 0x8FFE). */
+export const MAX_ELEMENT_INDEX: GLenum = 0x8ffe;
+/** Maximum server wait timeout query pname for getParameter (value-identical 0x9111). */
+export const MAX_SERVER_WAIT_TIMEOUT: GLenum = 0x9111;
 
 // SOW-REQ-016 resource limits (exact specified values)
 export const LIMIT_MAX_VERTEX_ATTRIBS: number = 16;
