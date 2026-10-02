@@ -282,56 +282,56 @@ Pins three.js/Babylon.js scenes, captures blessed pixels, enforces 2%/8-delta th
 
 ### [SOW-ADR-001] Pure TypeScript compiled to single-file JS, no WASM toolchain
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Implement entirely in strict TypeScript compiled by esbuild to a single IIFE `/app/renderer.js`; no Rust/C++/wasm-pack pipeline.
 **Rationale**: Zero-outside-library constraint plus installed TS 5.8.3/Node 22 make a hand-written CPU pipeline sufficient; avoids WASM build fragility on Windows CI.
 **Consequences**: Slower than SIMD/WASM for large frames; accepted given 256x256 performance budgets.
 
 ### [SOW-ADR-002] Hand-written GLSL compiler to AST interpreter
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Recursive-descent parser plus type checker plus tree-walking interpreter for both dialects; no ANGLE port, no regex transpilation.
 **Rationale**: Full control of `ERROR: <string>:<line>` diagnostics and precision semantics; ANGLE is an outside library and forbidden.
 **Consequences**: Must maintain builtin tables and packing grids manually.
 
 ### [SOW-ADR-003] CPU Float32 framebuffer with edge-function rasterizer
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: `Uint8ClampedArray` color + `Float32Array` depth + `Uint8Array` stencil; integer `orient2d` edges, 1/w perspective correction, top-left fill rule.
 **Rationale**: Matches GPU semantics deterministically in JS; mirrors Mesa SWvertex 1/w pattern verified in research.
 **Consequences**: No MSAA resolve; `antialias` accepted but ignored.
 
 ### [SOW-ADR-004] WebGL2 as subclass of WebGL1 in one bundle
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: `WebGL2Context extends WebGL1Context`; single `__createSoftwareWebGLContext` dispatches on requested type string.
 **Rationale**: WebGL2 is a specified superset; one intercept path in `context-intercept.ts` covers all three type strings.
 **Consequences**: WebGL1 instances carry no WebGL2-only fields; version string differs per class.
 
 ### [SOW-ADR-005] Vitest forks-pool plus Playwright injection harness
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Unit/conformance under Vitest; browser visual suites drive Playwright `addInitScript(buildInterceptScript())`.
 **Rationale**: Matches installed Vitest 3.1.2 + Playwright 1.52; jsdom alone cannot render pixels.
 **Consequences**: Visual tests require Playwright browser install in CI.
 
 ### [SOW-ADR-006] Vendored Khronos CTS as conformance oracle
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Run vendored `vendor/WebGL/conformance-suites/` subsets with 95%/90% thresholds rather than demanding 100%.
 **Rationale**: task.toml verification names 2071 CTS tests; thresholds acknowledge software-renderer float edge cases.
 **Consequences**: Residual failures must be triaged per-test in logs.
 
 ### [SOW-ADR-007] Pinned three.js and Babylon.js visual scenes
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Pin scenes from `vendor/three.js/` and `vendor/babylon-cdn/` UMD bundles; pixel thresholds 2% / channel delta 8 at 256x256 via sharp.
 **Rationale**: Proves engine usability beyond unit CTS; deterministic without GPU.
 **Consequences**: Scene pins must be updated if vendor repos change.
 
 ### [SOW-ADR-008] std140-only uniform blocks and synchronous sync objects
 
-**Status**: Decided
+**Status**: Accepted
 **Decision**: Support only `std140` layout; `clientWaitSync` returns satisfied immediately; `EXT_disjoint_timer_query` stubbed with zeros.
 **Rationale**: WebGL2 spec mandates std140-only; CPU execution has no async GPU to wait on.
 **Consequences**: `shared/packed` layouts rejected at compile with diagnostic.
@@ -359,13 +359,13 @@ Risk 7 — Timeout flakiness in full CTS (likelihood Medium, impact Low): 2071 t
 | SOW-OQ-001 | Canvas 2D context scope | RESOLVED |
 | SOW-OQ-002 | WASM compilation requirement | RESOLVED |
 | SOW-OQ-003 | Float and half-float texture support | RESOLVED |
-| SOW-OQ-004 | Antialiasing approach | RESOLVED |
-| SOW-OQ-005 | Premultiplied alpha default | RESOLVED |
+| SOW-OQ-004 | Antialiasing approach | ASSUMED |
+| SOW-OQ-005 | Premultiplied alpha default | ASSUMED |
 | SOW-OQ-006 | GPU timing queries | RESOLVED |
 | SOW-OQ-007 | Context-loss testing hook | RESOLVED |
 | SOW-OQ-008 | Uniform block layout support | RESOLVED |
-| SOW-OQ-009 | Power preference handling | RESOLVED |
-| SOW-OQ-010 | failIfMajorPerformanceCaveat behavior | RESOLVED |
+| SOW-OQ-009 | Power preference handling | ASSUMED |
+| SOW-OQ-010 | failIfMajorPerformanceCaveat behavior | ASSUMED |
 
 ### Resolved
 
@@ -455,7 +455,7 @@ task_id: terminal-bench/wasm-render
 benchmark_id: terminal-bench
 source_version: f3adda34e463b124470973dcf9ad39f929c4cd51ba755ab79b72dbfd53556c0f
 instruction_sha256: 15338702df69cc3ec86de1335bd9a9c95007f7f3ed69cd0fefbd7a907d22f3a5
-imported_at: 2026-09-20T00:15:22.592002+00:00
+imported_at: 2026-10-02T02:23:22.529612+00:00
 
 Additional harbor metadata (from .harbor/task.json and .harbor/task.toml): task_name wasm-render; authors Andrew Wang; keywords webgl, glsl, compiler, rasterizer, software-rendering, wasm, graphics, three.js; verification 2071 Khronos CTS tests (887 WebGL 1.0 + 1184 WebGL 2.0) plus three.js and Babylon.js visual suites.
 
@@ -468,3 +468,4 @@ Additional harbor metadata (from .harbor/task.json and .harbor/task.toml): task_
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-09-20 | Initial fully-resolved SOW expanding verbatim wasm-render instruction; 6 goals, 32 requirements, 8 ADRs, 10 OQs resolved, 6 phases, 28 acceptance criteria |
+| 1.1 | 2026-10-02 | Restored resolved SOW after harbor re-seed; provenance refreshed |
